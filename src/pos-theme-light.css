@@ -1,0 +1,224 @@
+/* Light theme — warm beige layers; stronger borders & surface separation for contrast. */
+
+html[data-pos-theme='light'] .shell {
+  background: #e2d7c9;
+}
+
+html[data-pos-theme='light'] .shell-header {
+  border-bottom-color: #6f6254;
+  background: #efe8dc;
+}
+
+html[data-pos-theme='light'] .shell-user {
+  color: #353029;
+}
+
+html[data-pos-theme='light'] .shell-sub {
+  color: #454038;
+}
+
+html[data-pos-theme='light'] .muted {
+  color: #454038;
+}
+
+html[data-pos-theme='light'] .panel {
+  background: #f8f3ea;
+  border-color: #5c5043;
+  box-shadow: 0 1px 0 rgba(28, 22, 16, 0.1);
+}
+
+html[data-pos-theme='light'] .form input {
+  border-color: #5c5043;
+  background: #ffffff;
+  color: #120f0a;
+}
+
+html[data-pos-theme='light'] .search {
+  border-color: #5c5043;
+  background: #ffffff;
+  color: #120f0a;
+}
+
+html[data-pos-theme='light'] .product-row {
+  border-color: #5c5043;
+  background: #cfbfab;
+}
+
+html[data-pos-theme='light'] .product-meta,
+html[data-pos-theme='light'] .product-price {
+  color: #353029;
+}
+
+html[data-pos-theme='light'] .table th,
+html[data-pos-theme='light'] .table td {
+  border-bottom-color: #847566;
+}
+
+html[data-pos-theme='light'] .screen-keyboard {
+  border-top-color: #5c5043;
+  background: #c4b6a2;
+}
+
+html[data-pos-theme='light'] .screen-keyboard-key {
+  border-color: #5c5043;
+  background: #ffffff;
+  color: #120f0a;
+}
+
+html[data-pos-theme='light'] .screen-keyboard-key-done {
+  background: #1d4ed8;
+  border-color: #1e40af;
+  color: #fff;
+}
+
+html[data-pos-theme='light'] .sku-display {
+  border-color: #5c5043;
+  background: #ffffff;
+  color: #120f0a;
+}
+
+html[data-pos-theme='light'] .key-btn {
+  border-color: #5c5043;
+  background: #ffffff;
+  color: #120f0a;
+}
+
+html[data-pos-theme='light'] .panel-cart .cart-footer {
+  border-top-color: #5c5043;
+}
+
+html[data-pos-theme='light'] .cart-change-sticky-footer {
+  border-top-color: #5c5043;
+  background: #f8f3ea;
+}
+
+html[data-pos-theme='light'] .cart-line {
+  border-color: #5c5043;
+  background: #cfbfab;
+}
+
+html[data-pos-theme='light'] .cart-line-discount-badge {
+  background: #92400e;
+  color: #fff;
+}
+
+html[data-pos-theme='light'] .cart-line-sub {
+  color: #454038;
+}
+
+html[data-pos-theme='light'] .stepper {
+  border-color: #5c5043;
+  background: #ffffff;
+}
+
+html[data-pos-theme='light'] .stepper-btn:active {
+  background: rgba(28, 22, 16, 0.1);
+}
+
+html[data-pos-theme='light'] .register-voucher-input {
+  border-color: #5c5043;
+  background: #ffffff;
+  color: #120f0a;
+}
+
+html[data-pos-theme='light'] .register-voucher-panel {
+  border-top-color: #5c5043;
+  border-bottom-color: #5c5043;
+}
+
+html[data-pos-theme='light'] .open-tabs-dialog {
+  background: #f8f3ea;
+  border-color: #5c5043;
+  box-shadow: 0 12px 40px rgba(28, 22, 16, 0.18);
+}
+
+html[data-pos-theme='light'] .open-tabs-li {
+  border-color: #5c5043;
+  background: #cfbfab;
+}
+
+html[data-pos-theme='light'] .open-tabs-input {
+  border-color: #5c5043;
+  background: #ffffff;
+  color: #120f0a;
+}
+
+html[data-pos-theme='light'] .layby-summary {
+  border-color: #5c5043;
+}
+
+html[data-pos-theme='light'] .layby-cancel {
+  border-top-color: #5c5043;
+}
+
+/* Default .btn is dark gray with color:inherit — fix for light UI text */
+html[data-pos-theme='light'] .btn:not(.primary):not(.ghost) {
+  background: #e0d4c4;
+  border-color: #5c5043;
+  color: #120f0a;
+}
+
+html[data-pos-theme='light'] .btn:not(.primary):not(.ghost):active:not(:disabled) {
+  background: #cfc0ad;
+}
+
+html[data-pos-theme='light'] .btn.ghost {
+  color: #120f0a;
+  border-color: #5c5043;
+}
+
+html[data-pos-theme='light'] .btn.primary {
+  background: #1d4ed8;
+  border-color: #1e40af;
+  color: #fff;
+}
+
+html[data-pos-theme='light'] .pos-touch {
+  -webkit-tap-highlight-color: rgba(28, 22, 16, 0.09);
+}
+
+html[data-pos-theme='light'] .panel-cart .cart-lines::-webkit-scrollbar-thumb {
+  background: rgba(28, 22, 16, 0.28);
+}
+
+html[data-pos-theme='light'] .panel-cart .cart-lines::-webkit-scrollbar-thumb:hover {
+  background: rgba(28, 22, 16, 0.42);
+}
+
+html[data-pos-theme='light'] .pos-settings-section {
+  border-color: #5c5043;
+  background: #cfbfab;
+}
+
+html[data-pos-theme='light'] .pos-settings-input,
+html[data-pos-theme='light'] .pos-settings-select {
+  border-color: #5c5043;
+  background: #ffffff;
+  color: #120f0a;
+}
+
+html[data-pos-theme='light'] .pos-settings-check input {
+  accent-color: #1d4ed8;
+}
+
+html[data-pos-theme='light'] .pos-theme-option {
+  border-color: #5c5043;
+  background: #ffffff;
+  color: #120f0a;
+}
+
+html[data-pos-theme='light'] .pos-theme-option:hover {
+  border-color: #4a3f34;
+  background: #ebe4d6;
+}
+
+html[data-pos-theme='light'] .pos-theme-option--selected {
+  border-color: #3d3429;
+  box-shadow: 0 0 0 2px rgba(45, 38, 28, 0.35);
+  background: #d8c9b0;
+  color: #120f0a;
+}
+
+html[data-pos-theme='light'] .pos-theme-option .pos-theme-option-hint {
+  color: #454038;
+}

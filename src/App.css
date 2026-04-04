@@ -1,0 +1,1835 @@
+/* Fill the Electron window — no page-level scroll; inner panes scroll only */
+.pos-app-fill {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
+  max-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.pos-route {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.pos-route > * {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.pos-route .screen.auth-screen {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.shell {
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+  overflow: hidden;
+  background: #1e1e1e;
+}
+
+
+.shell-header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1.25rem;
+  border-bottom: 1px solid #4a4a4a;
+  background: #181818;
+}
+
+
+.shell-brand {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.shell-brand a {
+  font-weight: 600;
+}
+
+.shell-sub {
+  font-size: 0.85rem;
+  color: #a8a8a8;
+}
+
+.shell-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.shell-settings-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.35rem 0.5rem;
+  min-width: 2.5rem;
+}
+
+.shell-settings-icon {
+  width: 1.35rem;
+  height: 1.35rem;
+}
+
+.pos-settings-page {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  max-width: 42rem;
+  width: 100%;
+  margin: 0 auto;
+  padding: 0 0 1rem;
+  text-align: center;
+}
+
+.pos-settings-title {
+  margin: 0 0 0.75rem;
+  font-size: 1.35rem;
+}
+
+.pos-settings-section {
+  margin: 1.5rem 0 1.25rem;
+  padding: 1rem 1.1rem;
+  border-radius: 12px;
+  border: 1px solid #4a4a4a;
+  background: #161616;
+  text-align: left;
+}
+
+.pos-settings-section-title {
+  margin: 0 0 0.35rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.pos-settings-section-lead {
+  margin: 0 0 0.85rem;
+  font-size: 0.88rem;
+}
+
+.pos-theme-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.pos-theme-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.65rem 0.85rem;
+  border-radius: 10px;
+  border: 1px solid #5a5a5a;
+  background: #222222;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.pos-theme-option:hover {
+  border-color: #6e6e6e;
+  filter: brightness(1.05);
+}
+
+.pos-theme-option--selected {
+  border-color: #3b5bdb;
+  box-shadow: 0 0 0 1px #3b5bdb44;
+  background: #1e2440;
+}
+
+.pos-theme-option-label {
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.pos-theme-option-hint {
+  font-size: 0.82rem;
+  margin: 0;
+}
+
+.pos-settings-back {
+  margin: 1.25rem 0 0;
+}
+
+.pos-settings-row {
+  margin: 0 0 0.75rem;
+}
+
+.pos-settings-row-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.65rem 0.75rem;
+  align-items: end;
+}
+
+.pos-settings-hint {
+  margin: 0.35rem 0 0;
+  font-size: 0.85rem;
+}
+
+.pos-settings-hint-span {
+  grid-column: 1 / -1;
+}
+
+.pos-settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+}
+
+.pos-settings-field-label {
+  font-weight: 600;
+  font-size: 0.88rem;
+}
+
+.pos-settings-input,
+.pos-settings-select {
+  padding: 0.5rem 0.6rem;
+  border-radius: 8px;
+  border: 1px solid #5a5a5a;
+  background: #141414;
+  color: inherit;
+  font: inherit;
+  min-height: 44px;
+  box-sizing: border-box;
+}
+
+.pos-settings-check {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-size: 0.95rem;
+  user-select: none;
+}
+
+.pos-settings-check-inline {
+  justify-content: flex-start;
+  padding-bottom: 0.15rem;
+}
+
+.pos-settings-check input {
+  width: 22px;
+  height: 22px;
+}
+
+@media (max-width: 520px) {
+  .pos-settings-row-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.shell-user {
+  font-size: 0.9rem;
+  color: #b8b8b8;
+}
+
+.shell-main {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: 1rem 1.25rem;
+  max-width: 1200px;
+  margin: 0 auto;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.screen {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  box-sizing: border-box;
+}
+
+.panel {
+  background: #242424;
+  border: 1px solid #4a4a4a;
+  border-radius: 12px;
+  padding: 1rem 1.15rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.register-viewport .panel {
+  padding: 1rem 1.25rem 1.1rem;
+}
+
+
+.auth-screen .panel {
+  max-width: 380px;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  text-align: left;
+  margin-top: 1rem;
+}
+
+.form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+}
+
+.form input {
+  padding: 0.5rem 0.6rem;
+  border-radius: 6px;
+  border: 1px solid #5a5a5a;
+  background: #141414;
+  color: inherit;
+}
+
+
+.btn {
+  border-radius: 8px;
+  padding: 0.5rem 1rem;
+  border: 1px solid #6a6a6a;
+  background: #343434;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+
+.btn.primary {
+  background: #3b5bdb;
+  border-color: #3b5bdb;
+  color: #fff;
+}
+
+.btn.ghost {
+  background: transparent;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn.small {
+  padding: 0.35rem 0.65rem;
+  font-size: 0.82rem;
+  min-height: auto;
+}
+
+.muted {
+  color: #a8a8a8;
+  font-size: 0.9rem;
+}
+
+.error {
+  color: #f66;
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.success {
+  color: #6c6;
+  margin-top: 0.75rem;
+}
+
+.register-viewport {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.register-viewport .shell {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.register-viewport .shell-main {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+}
+
+.register-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 0.75rem 1rem;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  align-content: stretch;
+}
+
+.register-grid > .panel {
+  min-height: 0;
+  height: 100%;
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+@media (min-width: 900px) {
+  .register-grid {
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+    grid-template-rows: minmax(0, 1fr);
+    align-items: stretch;
+    gap: 1rem 1.25rem;
+  }
+}
+
+.search {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 0.5rem 0.6rem;
+  margin-bottom: 0.75rem;
+  border-radius: 6px;
+  border: 1px solid #5a5a5a;
+  background: #141414;
+  color: inherit;
+  font: inherit;
+}
+
+
+.product-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.product-row {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+  border: 1px solid #4a4a4a;
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.5rem;
+  background: #141414;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+
+
+.product-row:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.product-name {
+  flex: 1;
+  font-weight: 500;
+}
+
+.product-price {
+  font-variant-numeric: tabular-nums;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+
+.table th,
+.table td {
+  border-bottom: 1px solid #4a4a4a;
+  padding: 0.35rem 0.25rem;
+  text-align: left;
+}
+
+
+.qty {
+  width: 4rem;
+  padding: 0.25rem;
+}
+
+.cart-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1rem;
+  flex-wrap: wrap;
+}
+
+.total {
+  font-size: 1.1rem;
+}
+
+/* —— Touch-first register (min ~48px targets, steppers, large type) —— */
+.pos-touch {
+  -webkit-tap-highlight-color: rgba(255, 255, 255, 0.06);
+}
+
+.pos-touch .shell-main {
+  max-width: none;
+  width: 100%;
+  padding: 0.5rem 0.75rem 0.75rem;
+}
+
+.pos-touch .shell-header {
+  min-height: 52px;
+  padding: 0.5rem 1rem;
+}
+
+.pos-touch .shell-brand a {
+  font-size: 1.15rem;
+}
+
+.pos-touch .btn {
+  min-height: 48px;
+  padding: 0.65rem 1.25rem;
+  font-size: 1.05rem;
+  user-select: none;
+}
+
+.pos-touch .btn.ghost {
+  min-height: 44px;
+}
+
+.pos-touch .pos-theme-option {
+  min-height: 52px;
+  justify-content: center;
+}
+
+.pos-touch .form input {
+  min-height: 52px;
+  font-size: 1rem;
+  padding: 0.65rem 0.85rem;
+}
+
+.pos-touch .form label {
+  font-size: 1rem;
+}
+
+.pos-touch .form .btn.primary {
+  min-height: 52px;
+  font-size: 1.1rem;
+}
+
+.pos-touch .auth-screen .panel {
+  max-width: min(100%, 28rem);
+}
+
+.pos-touch h1 {
+  font-size: 1.85rem;
+}
+
+.pos-touch h2 {
+  font-size: 1.35rem;
+  margin-bottom: 0.65rem;
+}
+
+.panel-products,
+.panel-cart {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.panel-products h2,
+.panel-cart h2 {
+  flex-shrink: 0;
+}
+
+.panel-cart > .cart-change-view {
+  flex: 1;
+  min-height: 0;
+}
+
+.products-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.55rem;
+  flex-shrink: 0;
+}
+
+.products-header-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.products-header-titles h2 {
+  margin: 0;
+}
+
+.register-tab-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.88rem;
+  max-width: 100%;
+}
+
+.register-tab-banner-text strong {
+  font-weight: 700;
+}
+
+.register-tab-walkin {
+  min-height: 36px !important;
+  padding: 0.3rem 0.65rem !important;
+  font-size: 0.82rem !important;
+}
+
+.panel-products .products-header .key-action {
+  min-height: 44px;
+  padding: 0.45rem 0.9rem;
+}
+
+.key-action {
+  min-height: 42px;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.9rem;
+}
+
+.product-browser {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.empty-hint-products {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  margin: 0;
+  padding: 1rem;
+}
+
+.item-list-layout {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.item-list-layout > .search {
+  flex-shrink: 0;
+}
+
+/* Reusable on-screen keyboard (item search + future flows) */
+.screen-keyboard {
+  flex-shrink: 0;
+  max-height: min(42vh, 280px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  border-top: 1px solid #4a4a4a;
+  padding: 0.45rem 0 0.2rem;
+  margin-top: 0.35rem;
+  background: #141414;
+}
+
+.screen-keyboard-row {
+  display: flex;
+  gap: 0.28rem;
+  margin-bottom: 0.28rem;
+}
+
+.screen-keyboard-row:last-child {
+  margin-bottom: 0;
+}
+
+.screen-keyboard-row-actions .screen-keyboard-key-space {
+  flex: 3;
+  min-width: 0;
+}
+
+.screen-keyboard-key {
+  flex: 1;
+  min-width: 0;
+  min-height: 42px;
+  border: 1px solid #505050;
+  border-radius: 8px;
+  background: #222222;
+  color: inherit;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0.2rem 0.12rem;
+}
+
+.screen-keyboard-key:active:not(:disabled) {
+  filter: brightness(1.12);
+}
+
+.screen-keyboard-key-wide {
+  flex: 1.35;
+}
+
+.screen-keyboard-key-done {
+  background: #2e4bd3;
+  border-color: #2e4bd3;
+  color: #fff;
+}
+
+
+.keys-layout {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  overflow: hidden;
+}
+
+/* Register: keypad + function row is tall; scroll instead of clipping, and tighten spacing */
+.panel-products .keys-layout {
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  gap: 0.5rem;
+  padding-bottom: 0.35rem;
+}
+
+.panel-products .sku-display {
+  min-height: 44px;
+  padding: 0.45rem 0.65rem;
+  flex-shrink: 0;
+}
+
+.panel-products .sku-display strong {
+  font-size: 1.05rem;
+}
+
+.panel-products .keys-grid {
+  flex: 1;
+  min-height: 0;
+  align-self: stretch;
+  grid-auto-rows: minmax(52px, 1fr);
+  gap: 0.4rem;
+}
+
+.panel-products .key-btn {
+  font-size: 1.12rem;
+}
+
+.panel-products .function-grid {
+  grid-auto-rows: minmax(44px, auto);
+  gap: 0.4rem;
+  margin-top: 0.2rem;
+  flex-shrink: 0;
+}
+
+.panel-products .key-btn-fn {
+  font-size: 0.82rem;
+}
+
+@media (max-height: 800px) {
+  .panel-products .keys-grid {
+    grid-auto-rows: minmax(46px, 1fr);
+    gap: 0.35rem;
+  }
+
+  .panel-products .function-grid {
+    grid-auto-rows: minmax(40px, auto);
+    gap: 0.35rem;
+  }
+
+  .panel-products .sku-display {
+    min-height: 40px;
+    padding: 0.35rem 0.55rem;
+  }
+}
+
+.sku-display {
+  border: 1px solid #4a4a4a;
+  border-radius: 10px;
+  padding: 0.65rem 0.85rem;
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #181818;
+}
+
+.sku-display strong {
+  font-size: 1.2rem;
+  letter-spacing: 0.03em;
+}
+
+.keys-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  /* Fixed row heights prevents overlap in smaller windows */
+  grid-auto-rows: 64px;
+  gap: 0.55rem;
+}
+
+.key-btn {
+  border: 1px solid #505050;
+  border-radius: 10px;
+  background: #161616;
+  color: inherit;
+  font-size: 1.25rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.key-btn:active:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.key-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.key-btn-primary {
+  background: #2e4bd3;
+  border-color: #2e4bd3;
+  color: #fff;
+}
+
+.key-btn-danger {
+  background: #8a2b2b;
+  border-color: #8a2b2b;
+  color: #fff;
+}
+
+.key-btn-pay {
+  background: #2f7b43;
+  border-color: #2f7b43;
+  color: #fff;
+}
+
+.key-btn-wide {
+  grid-column: span 2;
+}
+
+.key-btn-enter {
+  grid-row: span 2;
+  align-self: stretch;
+}
+
+.function-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-auto-rows: 52px;
+  gap: 0.55rem;
+  margin-top: 0.35rem;
+}
+
+.key-btn-fn {
+  font-size: 0.88rem;
+  letter-spacing: 0.01em;
+}
+
+.key-btn-discount {
+  touch-action: manipulation;
+  user-select: none;
+}
+
+@media (max-width: 1024px) {
+  .function-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+
+.cart-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.cart-empty-msg {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  margin: 0;
+  padding: 1rem;
+}
+
+.panel-cart .cart-footer {
+  flex-shrink: 0;
+  margin-top: auto;
+  padding-top: 1rem;
+  border-top: 1px solid #4a4a4a;
+}
+
+
+.cart-messages {
+  flex-shrink: 0;
+  margin-top: 0.5rem;
+}
+
+.touch-search {
+  min-height: 52px;
+  font-size: 1.1rem;
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+.panel-products .product-list {
+  -webkit-overflow-scrolling: touch;
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+}
+
+.item-list-tap-hint {
+  margin: 0 0 0.5rem;
+  font-size: 0.88rem;
+  flex-shrink: 0;
+}
+
+.panel-products .product-row {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.product-row {
+  min-height: 64px;
+  padding: 1rem 1.15rem;
+  border-radius: 12px;
+  margin-bottom: 0.6rem;
+  align-items: center;
+  gap: 0.5rem 1rem;
+}
+
+.product-row:active:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.product-name {
+  font-size: 1.15rem;
+  width: 100%;
+}
+
+.product-meta {
+  display: flex;
+  flex-wrap: wrap;
+  width: 100%;
+  justify-content: space-between;
+  gap: 0.35rem;
+  font-size: 0.95rem;
+}
+
+.product-price {
+  font-size: 1rem;
+}
+
+.empty-hint {
+  padding: 1rem 0;
+  font-size: 1.05rem;
+}
+
+.panel-cart .cart-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+/* Wider vertical scrollbar for the cart list (Electron/Chromium). */
+.panel-cart .cart-lines::-webkit-scrollbar {
+  width: 28px; /* default ~8px + 20px */
+}
+.panel-cart .cart-lines::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.28);
+  border-radius: 999px;
+  border: 8px solid transparent;
+  background-clip: content-box;
+}
+.panel-cart .cart-lines::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.4);
+  border: 8px solid transparent;
+  background-clip: content-box;
+}
+.panel-cart .cart-lines::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+  z-index: 50;
+}
+
+.modal-panel {
+  width: min(560px, 100%);
+}
+
+/* Sale complete / generic: scroll if content is tall */
+.cart-change-view {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  flex: 1;
+  min-height: 0;
+  align-items: center;
+  text-align: center;
+  padding: 1.25rem;
+  box-sizing: border-box;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+.cart-change-view--complete {
+  justify-content: center;
+}
+
+/* Incomplete payment: scroll summary + voucher; keep Cash/Card in view */
+.cart-change-view--incomplete {
+  padding: 0;
+  overflow: hidden;
+  justify-content: flex-start;
+  align-items: stretch;
+}
+
+.cart-change-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  align-items: center;
+  text-align: center;
+  padding: 1rem 1.25rem 0.75rem;
+  box-sizing: border-box;
+}
+
+.cart-change-sticky-footer {
+  flex-shrink: 0;
+  padding: 0.65rem 1.25rem 1rem;
+  border-top: 1px solid #4a4a4a;
+  background: #222222;
+}
+
+
+.change-summary {
+  display: grid;
+  gap: 0.25rem;
+  font-size: 1.05rem;
+}
+
+.change-amount {
+  font-size: clamp(2.6rem, 6vw, 5.2rem);
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.amount-due-label {
+  color: #e05d5d;
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+@keyframes amount-due-blink {
+  0%,
+  40% {
+    opacity: 1;
+  }
+  50%,
+  90% {
+    opacity: 0.38;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+.amount-due-value {
+  color: #ff5c5c;
+  animation: amount-due-blink 1.25s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .amount-due-value {
+    animation: none;
+  }
+}
+
+.cash-footer {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.cash-checkout-btn {
+  background: #2f7d3f;
+  border-color: #2f7d3f;
+  color: #fff;
+}
+
+.cash-checkout-btn:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+
+.card-checkout-btn {
+  background: #3f5bd8;
+  border-color: #3f5bd8;
+  color: #fff;
+}
+
+.card-checkout-btn:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+
+.cart-line {
+  border: 1px solid #4a4a4a;
+  border-radius: 10px;
+  padding: 0.75rem 1rem;
+  background: #181818;
+}
+
+
+.cart-line-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin-bottom: 0.65rem;
+}
+
+.cart-line-name {
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.cart-line-sub {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.5rem;
+  font-size: 0.9rem;
+  color: #a8a8a8;
+}
+
+.cart-line-was {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+  opacity: 0.75;
+}
+
+.cart-line-price-arrow {
+  opacity: 0.65;
+  font-weight: 500;
+}
+
+.cart-line-unit {
+  font-variant-numeric: tabular-nums;
+}
+
+.cart-line-discount-badge {
+  display: inline-block;
+  padding: 0.12rem 0.45rem;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #fff;
+  background: #6b4c00;
+}
+
+
+.cart-line-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  border-radius: 10px;
+  border: 1px solid #5a5a5a;
+  overflow: hidden;
+  background: #141414;
+}
+
+
+.stepper-btn {
+  width: 52px;
+  height: 52px;
+  min-width: 52px;
+  min-height: 52px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.stepper-btn:active {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+
+.stepper-value {
+  min-width: 2.5rem;
+  text-align: center;
+  font-size: 1.35rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.cart-line-total {
+  font-size: 1.25rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.cart-footer {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.85rem;
+}
+
+.register-alt-payment-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+}
+
+.register-alt-payment-toggle {
+  width: 100%;
+  text-align: center;
+}
+
+.register-voucher-panel {
+  padding: 0.5rem 0;
+  border-top: 1px solid #4a4a4a;
+  border-bottom: 1px solid #4a4a4a;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.register-voucher-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.register-voucher-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  opacity: 1;
+}
+
+.register-voucher-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.register-voucher-input {
+  flex: 1 1 120px;
+  min-width: 0;
+  padding: 0.45rem 0.5rem;
+  border-radius: 8px;
+  border: 1px solid #5a5a5a;
+  background: #141414;
+  color: inherit;
+  font: inherit;
+}
+
+.register-voucher-balance {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.register-voucher-remove {
+  margin-bottom: 0.35rem;
+}
+
+.register-voucher-screen-kb {
+  margin-top: 0.35rem;
+  max-height: min(36vh, 280px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+
+.total {
+  font-size: 1.35rem;
+  text-align: center;
+}
+
+.total-amount {
+  font-size: 1.5rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.checkout-btn {
+  width: 100%;
+  min-height: 58px !important;
+  font-size: 1.25rem !important;
+  font-weight: 600;
+  border-radius: 12px;
+}
+
+.checkout-btn:active:not(:disabled) {
+  filter: brightness(1.05);
+}
+
+.pos-touch .error,
+.pos-touch .success {
+  font-size: 1.05rem;
+  text-align: center;
+}
+
+/* Open bar tabs modal */
+.open-tabs-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0.75rem;
+  box-sizing: border-box;
+}
+
+@media (min-width: 640px) {
+  .open-tabs-backdrop {
+    align-items: center;
+  }
+}
+
+.open-tabs-dialog {
+  background: #242424;
+  border: 1px solid #4a4a4a;
+  border-radius: 14px;
+  max-width: 520px;
+  width: 100%;
+  max-height: min(92dvh, 720px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 1rem 1.15rem 1.15rem;
+  -webkit-overflow-scrolling: touch;
+  /* Hide scrollbar; content can still scroll (touch / trackpad / wheel). */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.open-tabs-dialog::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+/* Quotes modal: dialog shell stays fixed; only the list scrolls */
+.open-tabs-dialog.quotes-modal-dialog {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.quotes-modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.quotes-modal-dialog .open-tabs-section-head {
+  flex-shrink: 0;
+}
+
+.quotes-modal-filters {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+.quotes-modal-filters .open-tabs-input {
+  flex: 1 1 120px;
+  min-width: 0;
+}
+
+.quotes-modal-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding-right: 0.2rem;
+}
+
+.quotes-modal-form {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.quotes-modal-body--with-keyboard .quotes-modal-screen-keyboard {
+  flex-shrink: 0;
+}
+
+.open-tabs-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.open-tabs-header h2 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.open-tabs-close {
+  flex-shrink: 0;
+}
+
+.open-tabs-section {
+  margin-bottom: 1rem;
+}
+
+.open-tabs-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.open-tabs-section-head h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.open-tabs-section-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.open-tabs-empty {
+  margin: 0.5rem 0;
+  font-size: 0.9rem;
+}
+
+.open-tabs-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.open-tabs-li {
+  border: 1px solid #4a4a4a;
+  border-radius: 10px;
+  padding: 0.6rem 0.75rem;
+  background: #181818;
+}
+
+.open-tabs-li.active {
+  border-color: #3b5bdb;
+  box-shadow: 0 0 0 1px #3b5bdb33;
+}
+
+
+.open-tabs-li-main {
+  display: flex;
+  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin-bottom: 0.45rem;
+}
+
+.open-tabs-li-title {
+  font-size: 0.95rem;
+}
+
+.open-tabs-li-phone {
+  font-size: 0.85rem;
+}
+
+.open-tabs-li-total {
+  font-size: 1rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.open-tabs-li-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.open-tabs-void {
+  color: #f66 !important;
+  border-color: #633 !important;
+}
+
+.open-tabs-new {
+  margin-top: 0.25rem;
+}
+
+.open-tabs-form-error {
+  margin: 0 0 0.5rem;
+}
+
+.open-tabs-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-bottom: 0.65rem;
+  font-size: 0.88rem;
+}
+
+.open-tabs-input {
+  padding: 0.55rem 0.65rem;
+  border-radius: 8px;
+  border: 1px solid #5a5a5a;
+  background: #141414;
+  color: inherit;
+  font: inherit;
+  min-height: 44px;
+  box-sizing: border-box;
+}
+
+
+.open-tabs-check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+
+.open-tabs-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+}
+
+/* Extra separation when on-screen keyboard is shown (avoids crowding Done/↵ row). */
+.open-tabs-form-actions--with-keyboard {
+  margin-top: 1.05rem;
+  padding-top: 0.65rem;
+  gap: 0.75rem;
+}
+
+/* Tabs modal: no max-height cap — fit keys without inner scroll (compact rows). */
+.open-tabs-screen-keyboard {
+  max-height: none;
+  overflow-y: visible;
+  overflow-x: hidden;
+  margin-top: 0.35rem;
+  margin-bottom: 0.65rem;
+  padding: 0.3rem 0 0.2rem;
+}
+
+.open-tabs-screen-keyboard .screen-keyboard-row {
+  gap: 0.22rem;
+  margin-bottom: 0.22rem;
+}
+
+.open-tabs-screen-keyboard .screen-keyboard-key {
+  min-height: 34px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 0.1rem 0.06rem;
+  border-radius: 6px;
+}
+
+.layby-modal-dialog {
+  max-width: min(560px, 100vw - 1.5rem);
+  padding: 0.75rem 0.9rem 0.9rem;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  /* Inner .layby-modal-scroll handles overflow; avoids buttons sitting below the fold. */
+  overflow: hidden;
+}
+
+.layby-modal-dialog > .open-tabs-header {
+  flex-shrink: 0;
+}
+
+/* Fill dialog below header; inner .layby-modal-scroll gets overflow */
+.layby-modal-dialog > .layby-modal-scroll,
+.layby-modal-dialog > form.layby-new-form,
+.layby-modal-dialog > .layby-detail-layout {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.layby-modal-scroll {
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+form.layby-new-form {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+form.layby-new-form .layby-modal-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+form.layby-new-form .layby-new-form-keyboard,
+form.layby-new-form .open-tabs-form-actions {
+  flex-shrink: 0;
+}
+
+.layby-modal-dialog .open-tabs-section.layby-detail.layby-detail-layout {
+  margin-bottom: 0;
+}
+
+.layby-detail-layout {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.layby-detail-layout .layby-modal-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.layby-detail-layout .open-tabs-screen-keyboard {
+  flex-shrink: 0;
+}
+
+/* New lay-by: dense grid so the form fits common viewports without scrolling */
+.layby-form-compact .open-tabs-section-head {
+  margin-bottom: 0.35rem;
+}
+
+.layby-form-compact .open-tabs-form-error {
+  margin-bottom: 0.35rem;
+}
+
+.layby-form-compact .open-tabs-field {
+  margin-bottom: 0;
+}
+
+.layby-field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.45rem 0.65rem;
+  align-items: end;
+  margin-bottom: 0.45rem;
+}
+
+@media (max-width: 420px) {
+  .layby-field-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.layby-receipt-one-line {
+  margin: 0 0 0.4rem;
+  font-size: 0.78rem;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.layby-summary.layby-summary-cols {
+  margin: 0.25rem 0 0.4rem;
+  padding: 0.35rem 0.45rem;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.25rem;
+  font-size: 0.78rem;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.layby-summary.layby-summary-cols strong {
+  display: block;
+  font-size: 0.9rem;
+  margin-top: 0.08rem;
+}
+
+.layby-terms-clamp {
+  max-height: 2.5rem;
+  margin: 0 0 0.45rem;
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.layby-input-datetime {
+  font-size: 0.8rem;
+  min-height: 40px;
+  padding: 0.35rem 0.45rem;
+}
+
+.layby-form-compact .open-tabs-form-actions {
+  margin-top: 0.35rem;
+}
+
+/* Single shared keyboard at bottom of lay-by detail (payment + cancel % fields) */
+.layby-detail-screen-kb {
+  margin-top: 0.5rem;
+}
+
+.layby-summary {
+  margin: 0.5rem 0 0.75rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 8px;
+  border: 1px solid #4a4a4a;
+  font-size: 0.88rem;
+}
+
+.layby-summary:not(.layby-summary-cols) {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+
+.layby-terms-snippet {
+  font-size: 0.78rem;
+  margin: 0.35rem 0 0.75rem;
+  max-height: 4.5rem;
+  overflow: hidden;
+}
+
+.layby-receipt-preview {
+  font-size: 0.82rem;
+  margin: 0 0 0.5rem;
+}
+
+.layby-lines,
+.layby-payments {
+  list-style: none;
+  padding: 0;
+  margin: 0.35rem 0 0.75rem;
+  font-size: 0.85rem;
+}
+
+.layby-payments-h {
+  margin: 0.75rem 0 0.25rem;
+  font-size: 0.9rem;
+}
+
+.layby-detail-meta {
+  font-size: 0.85rem;
+  margin-bottom: 0.5rem;
+}
+
+.layby-cancel {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #4a4a4a;
+}
+
+.layby-cancel-hint {
+  margin: 0 0 0.5rem;
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
