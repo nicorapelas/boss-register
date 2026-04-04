@@ -5,10 +5,12 @@ export interface Product {
   barcode?: string | null
   price: number
   stock: number
-  /** Units reserved on active lay-bys (server) */
+  /** When false, service/labour — POS does not treat as stock-limited. Default true if omitted. */
+  trackInventory?: boolean
+  /** Units reserved on active lay-bys (server); omitted/zero for non-tracked in list response */
   layByReservedQty?: number
-  /** stock − layByReservedQty */
-  availableQty?: number
+  /** stock − reserved; null when trackInventory is false */
+  availableQty?: number | null
 }
 
 export type CartLine = {
@@ -17,6 +19,17 @@ export type CartLine = {
   quantity: number
   unitPrice: number
   listUnitPrice?: number
+}
+
+export type ProductPresetsState = {
+  entries: Array<{
+    productId: string
+    category: string
+    subCategory: string
+    label: string
+  }>
+  categories: string[]
+  subCategoriesByCategory: Record<string, string[]>
 }
 
 export interface StoreSettings {
@@ -32,6 +45,7 @@ export interface StoreSettings {
   nextLayBySeq: number
   nextQuoteSeq: number
   nextHouseAccountSeq?: number
+  productPresets?: ProductPresetsState
 }
 
 export interface QuoteListItem {

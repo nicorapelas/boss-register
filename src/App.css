@@ -329,6 +329,12 @@
   color: #fff;
 }
 
+.btn.danger {
+  background: #8a2b2b;
+  border-color: #8a2b2b;
+  color: #fff;
+}
+
 .btn.ghost {
   background: transparent;
 }
@@ -1831,5 +1837,293 @@ form.layby-new-form .open-tabs-form-actions {
   margin: 0 0 0.5rem;
   font-size: 0.82rem;
   line-height: 1.35;
+}
+
+/* —— Register: product presets (hierarchical, max 16 entries) —— */
+.products-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.45rem;
+}
+
+.presets-layout {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  gap: 0.4rem;
+}
+
+.presets-nav-header {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.5rem;
+  align-items: start;
+  flex-shrink: 0;
+}
+
+.presets-back-btn {
+  flex-shrink: 0;
+}
+
+.presets-back-spacer {
+  width: 4.5rem;
+  min-height: 1px;
+}
+
+.presets-breadcrumb {
+  margin: 0.15rem 0 0;
+  text-align: left;
+  font-size: 0.9rem;
+  line-height: 1.35;
+  min-width: 0;
+}
+
+.presets-breadcrumb-sub {
+  font-weight: 400;
+}
+
+.presets-hint {
+  margin: 0;
+  font-size: 0.88rem;
+  flex-shrink: 0;
+  line-height: 1.35;
+}
+
+.presets-screen {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding-bottom: 0.35rem;
+}
+
+.presets-empty {
+  margin: 0.75rem 0;
+  text-align: center;
+  padding: 0.75rem 0.5rem;
+  line-height: 1.4;
+}
+
+.preset-nav-list,
+.preset-item-nav-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.preset-nav-tile {
+  width: 100%;
+  min-height: 52px;
+  padding: 0.65rem 1rem;
+  border-radius: 12px;
+  border: 1px solid #4a4a4a;
+  background: #141414;
+  color: inherit;
+  font: inherit;
+  font-size: 1.05rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.preset-nav-tile:active {
+  filter: brightness(1.08);
+}
+
+.preset-item-nav-li {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.preset-item-tile {
+  width: 100%;
+  min-height: 56px;
+  padding: 0.55rem 0.85rem;
+  border-radius: 12px;
+  border: 1px solid #4a4a4a;
+  background: #161616;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  box-sizing: border-box;
+}
+
+.preset-item-tile--stale {
+  border-style: dashed;
+}
+
+.preset-item-tile:active {
+  filter: brightness(1.06);
+}
+
+.preset-item-tile-title {
+  font-size: 1.05rem;
+  font-weight: 600;
+  line-height: 1.2;
+  word-break: break-word;
+}
+
+.preset-item-tile-meta {
+  font-size: 0.85rem;
+}
+
+.preset-item-tile-stale-msg {
+  color: #ff5c5c;
+}
+
+.preset-item-remove-inline {
+  align-self: flex-start;
+}
+
+.pos-touch .preset-nav-tile {
+  min-height: 56px;
+}
+
+.pos-touch .preset-item-tile {
+  min-height: 60px;
+}
+
+.assign-preset-modal,
+.confirm-preset-delete-modal {
+  max-width: 420px;
+  text-align: left;
+}
+
+.assign-preset-modal {
+  width: min(100%, 420px);
+  max-height: min(92dvh, 720px);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 1.1rem 1.2rem;
+  box-sizing: border-box;
+}
+
+.assign-preset-modal-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+.confirm-preset-delete-modal {
+  padding: 1.1rem 1.2rem;
+}
+
+.confirm-preset-delete-modal {
+  max-width: 380px;
+}
+
+.assign-preset-modal-title,
+.confirm-preset-delete-title {
+  margin: 0 0 0.5rem;
+  font-size: 1.15rem;
+}
+
+.confirm-preset-delete-title {
+  font-size: 1.1rem;
+}
+
+.assign-preset-modal-product {
+  margin: 0 0 0.75rem;
+}
+
+.assign-preset-modal-sku {
+  font-weight: 500;
+}
+
+.assign-preset-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-bottom: 0.75rem;
+}
+
+.assign-preset-label {
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.assign-preset-input,
+.assign-preset-select {
+  padding: 0.5rem 0.6rem;
+  border-radius: 8px;
+  border: 1px solid #5a5a5a;
+  background: #141414;
+  color: inherit;
+  font: inherit;
+  min-height: 44px;
+  box-sizing: border-box;
+}
+
+.assign-preset-slot-msg {
+  margin: 0 0 0.75rem;
+  font-size: 0.95rem;
+}
+
+.assign-preset-label-preview {
+  margin: 0 0 0.5rem;
+  font-size: 0.88rem;
+}
+
+.assign-preset-confirm-line {
+  margin: 0.5rem 0 0.35rem;
+  font-size: 0.95rem;
+}
+
+.assign-preset-modal .assign-preset-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  flex-shrink: 0;
+  margin-top: 0.65rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid #4a4a4a;
+}
+
+.assign-preset-screen-keyboard {
+  flex-shrink: 0;
+  margin-top: 0.35rem;
+  max-height: min(38vh, 280px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+.assign-preset-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.confirm-preset-delete-body {
+  margin: 0 0 0.5rem;
+}
+
+.confirm-preset-delete-path {
+  margin: 0 0 1rem;
+  font-size: 0.9rem;
+  line-height: 1.35;
+  word-break: break-word;
 }
 

@@ -222,3 +222,31 @@ html[data-pos-theme='light'] .pos-theme-option--selected {
 html[data-pos-theme='light'] .pos-theme-option .pos-theme-option-hint {
   color: #454038;
 }
+
+html[data-pos-theme='light'] .btn.danger {
+  background: #b91c1c;
+  border-color: #991b1b;
+  color: #fff;
+}
+
+html[data-pos-theme='light'] .assign-preset-input,
+html[data-pos-theme='light'] .assign-preset-select {
+  border-color: #5c5043;
+  background: #ffffff;
+  color: #120f0a;
+}
+
+html[data-pos-theme='light'] .assign-preset-modal .assign-preset-actions {
+  border-top-color: #5c5043;
+}
+
+html[data-pos-theme='light'] .preset-nav-tile,
+html[data-pos-theme='light'] .preset-item-tile {
+  border-color: #5c5043;
+  background: #ffffff;
+  color: #120f0a;
+}
+
+html[data-pos-theme='light'] .preset-item-tile--stale {
+  background: #f5ebe0;
+}

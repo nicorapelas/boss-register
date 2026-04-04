@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { apiFetch, loginRequest } from '../api/client'
+import { loadProductPresetsWithMigration, pushProductPresets } from '../api/productPresetsApi'
 import type {
   CartLine,
   HouseAccountRow,
@@ -12,6 +13,8 @@ import type {
 } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import {
+  AssignPresetModal,
+  ConfirmPresetDeleteModal,
   HouseAccountsModal,
   LayByModal,
   OpenTabsModal,
@@ -19,8 +22,23 @@ import {
   ScreenKeyboard,
   type ScreenKeyboardAction,
 } from '../components'
+import {
+  assignPresetEntry,
+  presetEntriesForPath,
+  readProductPresets,
+  removePresetAt,
+  uniquePresetCategories,
+  uniquePresetSubCategories,
+  type PresetEntry,
+  type ProductPresetsState,
+} from '../register/posProductPresets'
 import { PosShell } from '../layouts/PosShell'
 import { readPosPrinterSettings, type PosPrinterSettings } from '../printer/posPrinterSettings'
+import {
+  productAvailabilityCaption,
+  productAvailableUnits,
+  productHasSellableStock,
+} from '../utils/productInventory'
 import { formatDateDdMmYyyy } from '../utils/dateFormat'
 
 const LAST_RECEIPT_STORAGE_KEY = 'electropos-pos-last-receipt-sale'
@@ -51,7 +69,15 @@ export function Register() {
   const [products, setProducts] = useState<Product[]>([])
   const [filter, setFilter] = useState('')
   const [skuInput, setSkuInput] = useState('')
-  const [showItemList, setShowItemList] = useState(false)
+  const [registerLeftPanel, setRegisterLeftPanel] = useState<'keys' | 'presets' | 'list'>('keys')
+  const [presetsState, setPresetsState] = useState(() => readProductPresets())
+  const [assignPresetProduct, setAssignPresetProduct] = useState<Product | null>(null)
+  const [presetDeleteIndex, setPresetDeleteIndex] = useState<number | null>(null)
+  const [presetNav, setPresetNav] = useState<
+    | { screen: 'categories' }
+    | { screen: 'subs'; category: string }
+    | { screen: 'items'; category: string; subCategory: string }
+  >({ screen: 'categories' })
   const [itemListScreenKbOpen, setItemListScreenKbOpen] = useState(false)
   const [cart, setCart] = useState<CartLine[]>([])
   const [openTabsModalOpen, setOpenTabsModalOpen] = useState(false)
@@ -118,6 +144,26 @@ export function Register() {
   }>({ timer: null, longPressDone: false, startX: 0, startY: 0 })
   const skipNextDiscountClickRef = useRef(false)
 
+  const productPresetHoldRef = useRef<{
+    timer: ReturnType<typeof setTimeout> | null
+    longPressDone: boolean
+    startX: number
+    startY: number
+  }>({ timer: null, longPressDone: false, startX: 0, startY: 0 })
+  const skipNextProductAddRef = useRef(false)
+
+  const presetItemDeleteHoldRef = useRef<{
+    timer: ReturnType<typeof setTimeout> | null
+    longPressDone: boolean
+    startX: number
+    startY: number
+    entryIndex: number | null
+  }>({ timer: null, longPressDone: false, startX: 0, startY: 0, entryIndex: null })
+  const skipNextPresetItemTapRef = useRef(false)
+
+  const LONG_PRESET_ASSIGN_MS = 550
+  const PRESET_POINTER_MOVE_PX = 14
+
   const voucherKbBlurTimerRef = useRef<number | null>(null)
   const voucherKbFieldRef = useRef<'phone' | 'amount'>('phone')
   const [voucherScreenKbOpen, setVoucherScreenKbOpen] = useState(false)
@@ -138,6 +184,31 @@ export function Register() {
     window.addEventListener('storage', onStorage)
     return () => window.removeEventListener('storage', onStorage)
   }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const s = await loadProductPresetsWithMigration()
+        if (!cancelled) setPresetsState(s)
+      } catch {
+        if (!cancelled) {
+          setPresetsState(readProductPresets())
+          setNotice('Presets could not load from server — using this device until sync works.')
+        }
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  function persistPresets(next: ProductPresetsState, prev: ProductPresetsState) {
+    void pushProductPresets(next).catch(() => {
+      setNotice('Could not sync presets to the server.')
+      setPresetsState(prev)
+    })
+  }
 
   useEffect(() => {
     if (cart.length === 0) {
@@ -319,10 +390,25 @@ export function Register() {
   const itemListKbBlurTimerRef = useRef<number | null>(null)
 
   useEffect(() => {
-    if (!showItemList) {
+    if (registerLeftPanel !== 'list') {
       setItemListScreenKbOpen(false)
     }
-  }, [showItemList])
+  }, [registerLeftPanel])
+
+  useEffect(() => {
+    const ph = productPresetHoldRef
+    const sh = presetItemDeleteHoldRef
+    return () => {
+      if (ph.current.timer) clearTimeout(ph.current.timer)
+      if (sh.current.timer) clearTimeout(sh.current.timer)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (registerLeftPanel !== 'presets') {
+      setPresetNav({ screen: 'categories' })
+    }
+  }, [registerLeftPanel])
 
   useEffect(() => {
     return () => {
@@ -364,6 +450,25 @@ export function Register() {
         p.sku.toLowerCase().includes(q),
     )
   }, [products, filter])
+
+  const presetCategories = useMemo(
+    () => uniquePresetCategories(presetsState.entries),
+    [presetsState.entries],
+  )
+
+  const presetSubCategories = useMemo(() => {
+    if (presetNav.screen !== 'subs') return []
+    return uniquePresetSubCategories(presetsState.entries, presetNav.category)
+  }, [presetNav, presetsState.entries])
+
+  const presetItemsForNav = useMemo(() => {
+    if (presetNav.screen !== 'items') return []
+    return presetEntriesForPath(
+      presetsState.entries,
+      presetNav.category,
+      presetNav.subCategory,
+    )
+  }, [presetNav, presetsState.entries])
 
   const loadOpenTabsList = useCallback(async () => {
     setOpenTabsLoading(true)
@@ -492,7 +597,7 @@ export function Register() {
       setError('Quantity must be a whole number of at least 1')
       return
     }
-    const avail = p.availableQty ?? p.stock
+    const avail = productAvailableUnits(p)
     if (avail < 1) {
       setError('Out of stock')
       return
@@ -554,7 +659,7 @@ export function Register() {
       const line = prev.find((l) => l.productId === productId)
       if (!line) return prev
       const p = products.find((x) => x._id === productId)
-      const max = p ? (p.availableQty ?? p.stock) : 999
+      const max = p ? productAvailableUnits(p) : 999
       const nextQty = line.quantity + delta
       if (nextQty <= 0) return prev.filter((l) => l.productId !== productId)
       if (nextQty > max) return prev
@@ -1333,7 +1438,7 @@ export function Register() {
 
     function onKeyDown(e: KeyboardEvent) {
       // When browsing items, don't hijack typing into the search box.
-      if (showItemList) return
+      if (registerLeftPanel === 'list') return
       if (e.defaultPrevented) return
       if (isTypingTarget(e.target)) return
 
@@ -1372,7 +1477,7 @@ export function Register() {
     return () => window.removeEventListener('keydown', onKeyDown)
     // pressKey/addBySku/read of refs are stable enough for this listener.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showItemList])
+  }, [registerLeftPanel])
 
   function voidLastItem() {
     clearActiveQuote()
@@ -1634,6 +1739,163 @@ export function Register() {
     applyLastLineDiscountPercent()
   }
 
+  function onProductRowPointerDown(e: React.PointerEvent<HTMLButtonElement>, p: Product) {
+    if (!e.isPrimary || !productHasSellableStock(p)) return
+    const h = productPresetHoldRef.current
+    if (h.timer) clearTimeout(h.timer)
+    h.longPressDone = false
+    h.startX = e.clientX
+    h.startY = e.clientY
+    h.timer = setTimeout(() => {
+      h.timer = null
+      h.longPressDone = true
+      setAssignPresetProduct(p)
+    }, LONG_PRESET_ASSIGN_MS)
+    e.currentTarget.setPointerCapture(e.pointerId)
+  }
+
+  function onProductRowPointerMove(e: React.PointerEvent<HTMLButtonElement>) {
+    const h = productPresetHoldRef.current
+    if (!h.timer) return
+    const dx = e.clientX - h.startX
+    const dy = e.clientY - h.startY
+    if (dx * dx + dy * dy > PRESET_POINTER_MOVE_PX * PRESET_POINTER_MOVE_PX) {
+      clearTimeout(h.timer)
+      h.timer = null
+    }
+  }
+
+  function onProductRowPointerUp(e: React.PointerEvent<HTMLButtonElement>) {
+    const h = productPresetHoldRef.current
+    if (h.timer) {
+      clearTimeout(h.timer)
+      h.timer = null
+    }
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId)
+    } catch {
+      /* ignore */
+    }
+    if (h.longPressDone) {
+      h.longPressDone = false
+      skipNextProductAddRef.current = true
+    }
+  }
+
+  function onProductRowPointerCancel(e: React.PointerEvent<HTMLButtonElement>) {
+    const h = productPresetHoldRef.current
+    if (h.timer) {
+      clearTimeout(h.timer)
+      h.timer = null
+    }
+    h.longPressDone = false
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId)
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function onProductRowClick(e: React.MouseEvent<HTMLButtonElement>, p: Product) {
+    if (skipNextProductAddRef.current) {
+      skipNextProductAddRef.current = false
+      e.preventDefault()
+      return
+    }
+    addToCart(p)
+  }
+
+  function presetEntryPathLabel(entry: PresetEntry, productName?: string) {
+    const leaf = productName ?? entry.label
+    return `${entry.category} › ${entry.subCategory} › ${leaf}`
+  }
+
+  function onPresetItemPointerDown(e: React.PointerEvent<HTMLButtonElement>, entryIndex: number) {
+    if (!e.isPrimary) return
+    const h = presetItemDeleteHoldRef.current
+    if (h.timer) clearTimeout(h.timer)
+    h.longPressDone = false
+    h.entryIndex = entryIndex
+    h.startX = e.clientX
+    h.startY = e.clientY
+    h.timer = setTimeout(() => {
+      h.timer = null
+      h.longPressDone = true
+      setPresetDeleteIndex(entryIndex)
+    }, LONG_PRESET_ASSIGN_MS)
+    e.currentTarget.setPointerCapture(e.pointerId)
+  }
+
+  function onPresetItemPointerMove(e: React.PointerEvent<HTMLButtonElement>) {
+    const h = presetItemDeleteHoldRef.current
+    if (!h.timer) return
+    const dx = e.clientX - h.startX
+    const dy = e.clientY - h.startY
+    if (dx * dx + dy * dy > PRESET_POINTER_MOVE_PX * PRESET_POINTER_MOVE_PX) {
+      clearTimeout(h.timer)
+      h.timer = null
+    }
+  }
+
+  function onPresetItemPointerUp(e: React.PointerEvent<HTMLButtonElement>) {
+    const h = presetItemDeleteHoldRef.current
+    if (h.timer) {
+      clearTimeout(h.timer)
+      h.timer = null
+    }
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId)
+    } catch {
+      /* ignore */
+    }
+    if (h.longPressDone) {
+      h.longPressDone = false
+      h.entryIndex = null
+      skipNextPresetItemTapRef.current = true
+    }
+  }
+
+  function onPresetItemPointerCancel(e: React.PointerEvent<HTMLButtonElement>) {
+    const h = presetItemDeleteHoldRef.current
+    if (h.timer) {
+      clearTimeout(h.timer)
+      h.timer = null
+    }
+    h.longPressDone = false
+    h.entryIndex = null
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId)
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function onPresetItemClick(e: React.MouseEvent<HTMLButtonElement>, entry: PresetEntry) {
+    if (skipNextPresetItemTapRef.current) {
+      skipNextPresetItemTapRef.current = false
+      e.preventDefault()
+      return
+    }
+    const p = products.find((x) => x._id === entry.productId)
+    if (!p) {
+      setError(
+        'This preset points to a removed product. Long-press the row or use Remove to clear it.',
+      )
+      return
+    }
+    addToCart(p)
+  }
+
+  function removePresetEntryAt(entryIndex: number) {
+    setPresetsState((prev) => {
+      const next = removePresetAt(prev, entryIndex)
+      persistPresets(next, prev)
+      return next
+    })
+    setPresetDeleteIndex(null)
+    setNotice('Preset removed')
+  }
+
   function lineDiscountDisplay(line: CartLine): { show: boolean; pct: number } | null {
     const list = line.listUnitPrice
     if (list == null || list <= 0) return null
@@ -1886,7 +2148,13 @@ export function Register() {
           <section className="panel panel-products">
             <div className="products-header">
               <div className="products-header-titles">
-                <h2>{showItemList ? 'Item List' : 'Register Keys'}</h2>
+                <h2>
+                  {registerLeftPanel === 'list'
+                    ? 'Item List'
+                    : registerLeftPanel === 'presets'
+                      ? 'Presets'
+                      : 'Register Keys'}
+                </h2>
                 {activeTabBanner ? (
                   <div className="register-tab-banner">
                     <span className="register-tab-banner-text">
@@ -1918,16 +2186,25 @@ export function Register() {
                   </div>
                 ) : null}
               </div>
-              <button
-                type="button"
-                className="btn ghost key-action"
-                onClick={() => setShowItemList((v) => !v)}
-              >
-                {showItemList ? 'Hide list' : 'Item list'}
-              </button>
+              <div className="products-header-actions">
+                <button
+                  type="button"
+                  className="btn ghost key-action"
+                  onClick={() => setRegisterLeftPanel((m) => (m === 'presets' ? 'keys' : 'presets'))}
+                >
+                  {registerLeftPanel === 'presets' ? 'Register keys' : 'Presets'}
+                </button>
+                <button
+                  type="button"
+                  className="btn ghost key-action"
+                  onClick={() => setRegisterLeftPanel((m) => (m === 'list' ? 'keys' : 'list'))}
+                >
+                  {registerLeftPanel === 'list' ? 'Hide list' : 'Item list'}
+                </button>
+              </div>
             </div>
 
-            {!showItemList ? (
+            {registerLeftPanel === 'keys' ? (
               <div className="keys-layout">
                 <div className="sku-display" title="SKU, or qty×SKU then ENTER">
                   <span className="muted">&nbsp;</span>
@@ -2046,6 +2323,140 @@ export function Register() {
                   </button>
                 </div>
               </div>
+            ) : registerLeftPanel === 'presets' ? (
+              <div className="presets-layout">
+                <div className="presets-nav-header">
+                  {presetNav.screen !== 'categories' ? (
+                    <button
+                      type="button"
+                      className="btn ghost key-action presets-back-btn"
+                      onClick={() => {
+                        if (presetNav.screen === 'items') {
+                          setPresetNav({ screen: 'subs', category: presetNav.category })
+                        } else {
+                          setPresetNav({ screen: 'categories' })
+                        }
+                      }}
+                    >
+                      ← Back
+                    </button>
+                  ) : (
+                    <span className="presets-back-spacer" aria-hidden />
+                  )}
+                  <p className="muted presets-breadcrumb">
+                    {presetNav.screen === 'categories' && 'Choose a category'}
+                    {presetNav.screen === 'subs' ? (
+                      <>
+                        <strong>{presetNav.category}</strong>
+                        <span className="presets-breadcrumb-sub"> · choose sub-category</span>
+                      </>
+                    ) : null}
+                    {presetNav.screen === 'items' ? (
+                      <>
+                        <strong>{presetNav.category}</strong>
+                        <span> › </span>
+                        <strong>{presetNav.subCategory}</strong>
+                        <span className="presets-breadcrumb-sub"> · choose item</span>
+                      </>
+                    ) : null}
+                  </p>
+                </div>
+                <p className="muted presets-hint">
+                  Category → sub-category → item. Assign from Item list (long-press or right-click a product). On the
+                  item screen, long-press a row to remove that preset (max 16 items).
+                </p>
+                <div className="presets-screen">
+                  {presetNav.screen === 'categories' ? (
+                    presetCategories.length === 0 ? (
+                      <p className="muted presets-empty">No presets yet. Open Item list and assign products.</p>
+                    ) : (
+                      <ul className="preset-nav-list">
+                        {presetCategories.map((cat) => (
+                          <li key={cat}>
+                            <button
+                              type="button"
+                              className="preset-nav-tile"
+                              onClick={() => setPresetNav({ screen: 'subs', category: cat })}
+                            >
+                              {cat}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )
+                  ) : null}
+                  {presetNav.screen === 'subs' ? (
+                    <ul className="preset-nav-list">
+                      {presetSubCategories.map((sub) => (
+                        <li key={sub}>
+                          <button
+                            type="button"
+                            className="preset-nav-tile"
+                            onClick={() =>
+                              setPresetNav({
+                                screen: 'items',
+                                category: presetNav.category,
+                                subCategory: sub,
+                              })
+                            }
+                          >
+                            {sub}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {presetNav.screen === 'items' ? (
+                    presetItemsForNav.length === 0 ? (
+                      <p className="muted presets-empty">No items in this sub-category. Use Back.</p>
+                    ) : (
+                    <ul className="preset-item-nav-list">
+                      {presetItemsForNav.map(({ entry, index }) => {
+                        const p = products.find((x) => x._id === entry.productId)
+                        const title = p ? p.name : entry.label
+                        const stale = !p
+                        return (
+                          <li key={`${index}-${entry.productId}`} className="preset-item-nav-li">
+                            <button
+                              type="button"
+                              className={`preset-item-tile ${stale ? 'preset-item-tile--stale' : ''}`}
+                              onClick={(e) => onPresetItemClick(e, entry)}
+                              onPointerDown={(e) => onPresetItemPointerDown(e, index)}
+                              onPointerMove={onPresetItemPointerMove}
+                              onPointerUp={onPresetItemPointerUp}
+                              onPointerCancel={onPresetItemPointerCancel}
+                              title={
+                                stale
+                                  ? 'Product missing — long-press to remove or tap Remove'
+                                  : 'Tap to add to cart · Long-press to remove preset'
+                              }
+                            >
+                              <span className="preset-item-tile-title">{title}</span>
+                              {p ? (
+                                <span className="preset-item-tile-meta muted">{p.sku}</span>
+                              ) : (
+                                <span className="preset-item-tile-meta preset-item-tile-stale-msg">
+                                  No longer in catalog
+                                </span>
+                              )}
+                            </button>
+                            {stale ? (
+                              <button
+                                type="button"
+                                className="btn ghost small preset-item-remove-inline"
+                                onClick={() => removePresetEntryAt(index)}
+                              >
+                                Remove preset
+                              </button>
+                            ) : null}
+                          </li>
+                        )
+                      })}
+                    </ul>
+                    )
+                  ) : null}
+                </div>
+              </div>
             ) : (
               <div className="item-list-layout">
                 <input
@@ -2068,7 +2479,10 @@ export function Register() {
                   }}
                   autoComplete="off"
                 />
-                <p className="muted item-list-tap-hint">Tap a row below to add it to the cart.</p>
+                <p className="muted item-list-tap-hint">
+                  Tap a row to add. Long-press or right-click to add to the Presets menu (category → sub-category →
+                  item, up to 16).
+                </p>
                 <div className="product-browser">
                   <ul className="product-list">
                     {filtered.map((p) => (
@@ -2077,16 +2491,28 @@ export function Register() {
                           type="button"
                           className="product-row"
                           aria-label={
-                            p.stock < 1 ? `${p.name} — out of stock` : `Add ${p.name} to cart`
+                            productHasSellableStock(p)
+                              ? `Add ${p.name} to cart`
+                              : `${p.name} — out of stock`
                           }
-                          onClick={() => addToCart(p)}
-                          disabled={(p.availableQty ?? p.stock) < 1}
+                          onClick={(e) => onProductRowClick(e, p)}
+                          onPointerDown={(e) => onProductRowPointerDown(e, p)}
+                          onPointerMove={onProductRowPointerMove}
+                          onPointerUp={onProductRowPointerUp}
+                          onPointerCancel={onProductRowPointerCancel}
+                          onContextMenu={(e) => {
+                            e.preventDefault()
+                            if (!productHasSellableStock(p)) return
+                            setAssignPresetProduct(p)
+                          }}
+                          title="Tap to add · Long-press or right-click to assign to preset"
+                          disabled={!productHasSellableStock(p)}
                         >
                           <span className="product-name">{p.name}</span>
                           <span className="product-meta">
                             <span className="muted">{p.sku}</span>
                             <span className="product-price">
-                              {p.price.toFixed(2)} · {p.availableQty ?? p.stock} available
+                              {p.price.toFixed(2)} · {productAvailabilityCaption(p)}
                             </span>
                           </span>
                         </button>
@@ -2578,6 +3004,39 @@ export function Register() {
             )}
           </section>
         </div>
+        <AssignPresetModal
+          open={assignPresetProduct != null}
+          product={assignPresetProduct}
+          presetsState={presetsState}
+          onClose={() => setAssignPresetProduct(null)}
+          onAssign={(replaceAtIndex, category, subCategory) => {
+            const prod = assignPresetProduct
+            if (!prod) return
+            setPresetsState((prev) => {
+              const next = assignPresetEntry(prev, prod, category, subCategory, replaceAtIndex)
+              persistPresets(next, prev)
+              return next
+            })
+            setAssignPresetProduct(null)
+            setNotice('Preset saved — open Presets to browse category → sub-category → item.')
+          }}
+        />
+        <ConfirmPresetDeleteModal
+          open={presetDeleteIndex !== null}
+          pathLabel={
+            presetDeleteIndex != null && presetsState.entries[presetDeleteIndex]
+              ? presetEntryPathLabel(
+                  presetsState.entries[presetDeleteIndex],
+                  products.find((x) => x._id === presetsState.entries[presetDeleteIndex].productId)?.name,
+                )
+              : ''
+          }
+          onClose={() => setPresetDeleteIndex(null)}
+          onConfirm={() => {
+            if (presetDeleteIndex === null) return
+            removePresetEntryAt(presetDeleteIndex)
+          }}
+        />
         <OpenTabsModal
           open={openTabsModalOpen}
           onClose={() => setOpenTabsModalOpen(false)}
