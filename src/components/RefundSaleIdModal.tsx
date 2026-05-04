@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { apiFetch } from '../api/client'
 import type { SaleRefundPreview } from '../api/types'
 import { ScreenKeyboard, type ScreenKeyboardAction } from './ScreenKeyboard'
@@ -15,6 +15,7 @@ export function RefundSaleIdModal({ open, onClose, onSaleLoaded }: RefundSaleIdM
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saleKbOpen, setSaleKbOpen] = useState(false)
+  const saleIdInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (!open) {
@@ -22,7 +23,10 @@ export function RefundSaleIdModal({ open, onClose, onSaleLoaded }: RefundSaleIdM
       setError(null)
       setLoading(false)
       setSaleKbOpen(false)
+      return
     }
+    const id = window.requestAnimationFrame(() => saleIdInputRef.current?.focus())
+    return () => window.cancelAnimationFrame(id)
   }, [open])
 
   if (!open) return null
@@ -70,9 +74,11 @@ export function RefundSaleIdModal({ open, onClose, onSaleLoaded }: RefundSaleIdM
           </p>
           <div className="quotes-modal-filters" style={{ flexWrap: 'wrap' }}>
             <input
+              ref={saleIdInputRef}
               className="open-tabs-input"
               style={{ minWidth: '12rem', flex: '1 1 12rem' }}
               value={saleId}
+              autoFocus
               onChange={(e) => setSaleId(e.target.value)}
               onFocus={() => setSaleKbOpen(true)}
               onBlur={() => {

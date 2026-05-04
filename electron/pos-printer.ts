@@ -80,6 +80,8 @@ export type ReceiptPayload = {
     refundCard: number
     /** Amount credited to customer voucher account (no cash/card payout). */
     refundStoreCredit?: number
+    /** Masked phone for store-credit refund line, e.g. "*** *** 8788". */
+    storeCreditPhoneDisplay?: string
     note?: string
   }
   /** Optional dedicated layout for shift/Z reports. */
@@ -541,6 +543,9 @@ export function buildReceiptEscPos(payload: ReceiptPayload, opts?: { columns?: n
     chunks.push(pLine(`Card refund: ${money(Math.max(0, refundAck.refundCard))}`))
     if (typeof refundAck.refundStoreCredit === 'number' && refundAck.refundStoreCredit > 0.005) {
       chunks.push(pLine(`Store credit issued: ${money(refundAck.refundStoreCredit)}`))
+    }
+    if (refundAck.storeCreditPhoneDisplay?.trim()) {
+      chunks.push(pLine(`Account: ${refundAck.storeCreditPhoneDisplay.trim()}`))
     }
     if (refundAck.note?.trim()) {
       for (const w of wrapText(`Reason: ${refundAck.note.trim()}`, contentCols)) {

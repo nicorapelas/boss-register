@@ -262,6 +262,12 @@ export function Register() {
   const [refundSession, setRefundSession] = useState<RefundSession | null>(null)
   const [refundNote, setRefundNote] = useState('')
   const [refundCreditPhone, setRefundCreditPhone] = useState('')
+  const refundCartKbBlurTimerRef = useRef<number | null>(null)
+  const refundCartKbTargetRef = useRef<'note' | 'phone'>('note')
+  const refundNoteInputRef = useRef<HTMLTextAreaElement | null>(null)
+  const refundPhoneInputRef = useRef<HTMLInputElement | null>(null)
+  const [refundCartScreenKbOpen, setRefundCartScreenKbOpen] = useState(false)
+  const [refundCartKbTarget, setRefundCartKbTarget] = useState<'note' | 'phone'>('note')
   const [shiftEndModalOpen, setShiftEndModalOpen] = useState(false)
   const [houseAccountForCheckout, setHouseAccountForCheckout] = useState<HouseAccountRow | null>(null)
   const [houseAccountPaymentTarget, setHouseAccountPaymentTarget] = useState<HouseAccountRow | null>(null)
@@ -436,6 +442,13 @@ export function Register() {
     }
   }
 
+  function cancelRefundCartKbBlurHide() {
+    if (refundCartKbBlurTimerRef.current) {
+      clearTimeout(refundCartKbBlurTimerRef.current)
+      refundCartKbBlurTimerRef.current = null
+    }
+  }
+
   function scrollVoucherFieldIntoView(which: 'phone' | 'amount') {
     const target = which === 'phone' ? voucherPhoneInputRef.current : voucherAmountInputRef.current
     target?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' })
@@ -511,6 +524,8 @@ export function Register() {
     return {
       onFocus: () => {
         voucherKbFieldRef.current = which
+        cancelRefundCartKbBlurHide()
+        setRefundCartScreenKbOpen(false)
         cancelVoucherKbBlurHide()
         setVoucherScreenKbOpen(true)
         window.setTimeout(() => scrollVoucherFieldIntoView(which), 20)
@@ -521,6 +536,56 @@ export function Register() {
           setVoucherScreenKbOpen(false)
         }, 200)
       },
+    }
+  }
+
+  function scrollRefundCartFieldIntoView(which: 'note' | 'phone') {
+    const target = which === 'note' ? refundNoteInputRef.current : refundPhoneInputRef.current
+    target?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' })
+  }
+
+  function refundCartKbHandlers(which: 'note' | 'phone') {
+    return {
+      onFocus: () => {
+        refundCartKbTargetRef.current = which
+        setRefundCartKbTarget(which)
+        cancelRefundCartKbBlurHide()
+        cancelVoucherKbBlurHide()
+        setVoucherScreenKbOpen(false)
+        setRefundCartScreenKbOpen(true)
+        window.setTimeout(() => scrollRefundCartFieldIntoView(which), 20)
+      },
+      onBlur: () => {
+        cancelRefundCartKbBlurHide()
+        refundCartKbBlurTimerRef.current = window.setTimeout(() => {
+          setRefundCartScreenKbOpen(false)
+        }, 200)
+      },
+    }
+  }
+
+  function handleRefundCartScreenKeyboardAction(action: ScreenKeyboardAction) {
+    const f = refundCartKbTargetRef.current
+    if (action.type === 'done') {
+      setRefundCartScreenKbOpen(false)
+      return
+    }
+    if (action.type === 'enter') {
+      if (f === 'phone') setRefundCartScreenKbOpen(false)
+      return
+    }
+    if (f === 'note') {
+      if (action.type === 'char') setRefundNote((s) => s + action.char)
+      else if (action.type === 'backspace') setRefundNote((s) => s.slice(0, -1))
+      else if (action.type === 'space') setRefundNote((s) => s + ' ')
+      return
+    }
+    if (f === 'phone') {
+      if (action.type === 'char' && /\d/.test(action.char)) {
+        setRefundCreditPhone((s) => s + action.char)
+      } else if (action.type === 'backspace') {
+        setRefundCreditPhone((s) => s.slice(0, -1))
+      }
     }
   }
 
@@ -547,13 +612,21 @@ export function Register() {
   useEffect(() => {
     return () => {
       if (voucherKbBlurTimerRef.current) clearTimeout(voucherKbBlurTimerRef.current)
+      if (refundCartKbBlurTimerRef.current) clearTimeout(refundCartKbBlurTimerRef.current)
     }
   }, [])
 
   useEffect(() => {
     if (showChangeView) setVoucherScreenKbOpen(false)
     if (cart.length === 0 && !pendingSplit) setVoucherScreenKbOpen(false)
+    if (showChangeView) setRefundCartScreenKbOpen(false)
   }, [showChangeView, cart.length, pendingSplit])
+
+  useEffect(() => {
+    if (!refundSession || !refundCartScreenKbOpen) return
+    const t = window.setTimeout(() => scrollRefundCartFieldIntoView(refundCartKbTargetRef.current), 40)
+    return () => clearTimeout(t)
+  }, [refundSession, refundCartScreenKbOpen, refundCartKbTarget])
 
   useEffect(() => {
     if (!voucherFormOpen || !voucherScreenKbOpen) return
@@ -1109,6 +1182,8 @@ export function Register() {
     setRefundCreditPhone(
       typeof data.sale.storeCreditPhone === 'string' ? data.sale.storeCreditPhone : '',
     )
+    setRefundCartScreenKbOpen(false)
+    cancelRefundCartKbBlurHide()
     setAltPaymentExpanded(false)
     setVoucherFormOpen(false)
     setHouseAccountFormOpen(false)
@@ -1124,6 +1199,8 @@ export function Register() {
     setRefundSession(null)
     setRefundNote('')
     setRefundCreditPhone('')
+    setRefundCartScreenKbOpen(false)
+    cancelRefundCartKbBlurHide()
     setCart([])
   }
 
@@ -1200,6 +1277,9 @@ export function Register() {
                   cardPaidOut: method === 'card' ? settlement.netCashOrCardPaidOut : 0,
                   storeCreditIssued: settlement.storeCreditIssued,
                 }
+              : {}),
+            ...(method === 'store_credit'
+              ? { storeCreditPhoneDigits: normalizePhone(refundCreditPhone) }
               : {}),
           })
           if (!printed.ok) throw new Error(printed.error ?? 'Refund receipt print failed')
@@ -2316,6 +2396,10 @@ export function Register() {
     return (sale.onAccountAmount ?? 0) > 0.005
   }
 
+  function saleUsesStoreCredit(sale: Sale): boolean {
+    return (sale.storeCreditAmount ?? 0) > 0.005
+  }
+
   function resolveCashierDisplayName(user: { displayName?: string; email?: string } | null | undefined): string | undefined {
     const byProfile = user?.displayName?.trim()
     if (byProfile) return byProfile
@@ -2343,6 +2427,7 @@ export function Register() {
         refundCash: number
         refundCard: number
         refundStoreCredit?: number
+        storeCreditPhoneDisplay?: string
         note?: string
       }
       /** Refund slip only: line items and total for this refund (original sale document is unchanged). */
@@ -2484,7 +2569,7 @@ export function Register() {
 
   async function printSaleReceiptsToDevice(sale: Sale): Promise<{ ok: boolean; error?: string }> {
     if (!window.electronPos) return { ok: true }
-    const dual = saleHasOnAccountCharge(sale)
+    const dual = saleHasOnAccountCharge(sale) || saleUsesStoreCredit(sale)
     const labels = dual ? (['CUSTOMER COPY', 'STORE COPY'] as const) : ([undefined] as const)
     for (const copyLabel of labels) {
       const p = receiptPayloadFromSale(sale, copyLabel ? { copyLabel } : undefined)
@@ -2504,6 +2589,8 @@ export function Register() {
       cashPaidOut?: number
       cardPaidOut?: number
       storeCreditIssued?: number
+      /** Digits-only phone used for refund voucher payout (masked on slip). */
+      storeCreditPhoneDigits?: string
     },
   ): Promise<{ ok: boolean; error?: string }> {
     if (!window.electronPos) return { ok: true }
@@ -2533,6 +2620,11 @@ export function Register() {
           ? 'Card'
           : 'Cash'
     const ackNoteParts = [note?.trim(), `Payout: ${payoutLabel}`].filter(Boolean)
+    const digitsForMask = printSlice?.storeCreditPhoneDigits?.replace(/\D/g, '') ?? ''
+    const storeCreditPhoneDisplay =
+      refundStoreCredit > 0.005 && digitsForMask
+        ? maskPhoneForReceipt(digitsForMask)
+        : undefined
     const p = receiptPayloadFromSale(sale, {
       copyLabel: 'REFUND',
       receiptTitle: 'REFUND RECEIPT',
@@ -2546,6 +2638,9 @@ export function Register() {
         refundCash,
         refundCard,
         refundStoreCredit: refundStoreCredit > 0.005 ? refundStoreCredit : undefined,
+        ...(storeCreditPhoneDisplay && storeCreditPhoneDisplay !== '—'
+          ? { storeCreditPhoneDisplay }
+          : {}),
         note: ackNoteParts.join(' · '),
       },
     })
@@ -3896,23 +3991,28 @@ export function Register() {
                       <label className="register-refund-note-field">
                         <span className="muted small">Refund note (optional, audit)</span>
                         <textarea
+                          ref={refundNoteInputRef}
                           className="register-refund-note-input"
                           rows={2}
                           value={refundNote}
                           onChange={(e) => setRefundNote(e.target.value)}
                           placeholder="Reason or reference"
+                          inputMode={refundCartScreenKbOpen && refundCartKbTarget === 'note' ? 'none' : 'text'}
+                          {...refundCartKbHandlers('note')}
                         />
                       </label>
                       <label className="register-refund-note-field">
                         <span className="muted small">Phone for refund voucher (required for Refund voucher)</span>
                         <input
+                          ref={refundPhoneInputRef}
                           className="register-refund-note-input"
                           type="tel"
-                          inputMode="numeric"
+                          inputMode={refundCartScreenKbOpen && refundCartKbTarget === 'phone' ? 'none' : 'numeric'}
                           autoComplete="tel"
                           value={refundCreditPhone}
                           onChange={(e) => setRefundCreditPhone(e.target.value)}
                           placeholder="Digits only — credit loads onto this account"
+                          {...refundCartKbHandlers('phone')}
                         />
                       </label>
                       <p className="muted small register-refund-credit-hint">
@@ -3925,7 +4025,7 @@ export function Register() {
                     {refundSession ? 'Refund total' : 'Total'}{' '}
                     <strong className="total-amount">{cartTotal.toFixed(2)}</strong>
                   </div>
-                  <div className="cash-footer">
+                  <div className={`cash-footer${refundSession ? ' refund-cart-checkout-footer' : ''}`}>
                     <button
                       type="button"
                       className="btn checkout-btn cash-checkout-btn"
@@ -3970,6 +4070,14 @@ export function Register() {
                       </button>
                     ) : null}
                   </div>
+                  {refundSession && cart.length > 0 ? (
+                    <ScreenKeyboard
+                      visible={refundCartScreenKbOpen}
+                      layout={refundCartKbTarget === 'phone' ? 'numeric' : 'full'}
+                      onAction={handleRefundCartScreenKeyboardAction}
+                      className="open-tabs-screen-keyboard register-refund-cart-screen-kb"
+                    />
+                  ) : null}
                 </div>
                 {(error || notice || lastSale) && (
                   <div className="cart-messages">
