@@ -78,6 +78,8 @@ export type ReceiptPayload = {
     refundTotal: number
     refundCash: number
     refundCard: number
+    /** Amount credited to customer voucher account (no cash/card payout). */
+    refundStoreCredit?: number
     note?: string
   }
   /** Optional dedicated layout for shift/Z reports. */
@@ -95,7 +97,7 @@ export type ReceiptPayload = {
     refundDetails?: Array<{
       saleId?: string
       cashierName?: string
-      method?: 'cash' | 'card'
+      method?: 'cash' | 'card' | 'store_credit'
       refundTotal: number
       refundCash: number
       refundCard: number
@@ -370,7 +372,12 @@ export function buildReceiptEscPos(payload: ReceiptPayload, opts?: { columns?: n
       for (const r of refundDetails) {
         const by = r.cashierName?.trim() || 'Cashier'
         const saleRef = r.saleId?.trim() ? `Sale ${r.saleId.trim()}` : 'Sale'
-        const via = r.method ? ` · ${r.method.toUpperCase()}` : ''
+        const via =
+          r.method === 'store_credit'
+            ? ' · VOUCHER'
+            : r.method
+              ? ` · ${r.method.toUpperCase()}`
+              : ''
         chunks.push(pLine(`${saleRef}${via}`))
         row('By', by)
         row('Cash', money(r.refundCash))
@@ -532,6 +539,9 @@ export function buildReceiptEscPos(payload: ReceiptPayload, opts?: { columns?: n
     chunks.push(pLine(`Refund total: ${money(refundAck.refundTotal)}`))
     chunks.push(pLine(`Cash refund: ${money(Math.max(0, refundAck.refundCash))}`))
     chunks.push(pLine(`Card refund: ${money(Math.max(0, refundAck.refundCard))}`))
+    if (typeof refundAck.refundStoreCredit === 'number' && refundAck.refundStoreCredit > 0.005) {
+      chunks.push(pLine(`Store credit issued: ${money(refundAck.refundStoreCredit)}`))
+    }
     if (refundAck.note?.trim()) {
       for (const w of wrapText(`Reason: ${refundAck.note.trim()}`, contentCols)) {
         chunks.push(pLine(w))

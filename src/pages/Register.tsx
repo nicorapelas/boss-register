@@ -11,6 +11,7 @@ import type {
   QuoteListItem,
   Sale,
   SaleRefundPreview,
+  SaleRefundSettlement,
   ShiftReport,
 } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
@@ -260,6 +261,7 @@ export function Register() {
   const [refundSaleIdModalOpen, setRefundSaleIdModalOpen] = useState(false)
   const [refundSession, setRefundSession] = useState<RefundSession | null>(null)
   const [refundNote, setRefundNote] = useState('')
+  const [refundCreditPhone, setRefundCreditPhone] = useState('')
   const [shiftEndModalOpen, setShiftEndModalOpen] = useState(false)
   const [houseAccountForCheckout, setHouseAccountForCheckout] = useState<HouseAccountRow | null>(null)
   const [houseAccountPaymentTarget, setHouseAccountPaymentTarget] = useState<HouseAccountRow | null>(null)
@@ -1104,6 +1106,9 @@ export function Register() {
     setError(null)
     setNotice(null)
     setRefundNote('')
+    setRefundCreditPhone(
+      typeof data.sale.storeCreditPhone === 'string' ? data.sale.storeCreditPhone : '',
+    )
     setAltPaymentExpanded(false)
     setVoucherFormOpen(false)
     setHouseAccountFormOpen(false)
@@ -1118,6 +1123,7 @@ export function Register() {
   function clearRefundModeAndCart() {
     setRefundSession(null)
     setRefundNote('')
+    setRefundCreditPhone('')
     setCart([])
   }
 
@@ -1128,7 +1134,7 @@ export function Register() {
     setError(null)
   }
 
-  async function submitRefundCheckout(method: 'cash' | 'card') {
+  async function submitRefundCheckout(method: 'cash' | 'card' | 'store_credit') {
     if (!refundSession || busy) return
     const lines = cart
       .filter((l) => l.refundSaleLineIndex !== undefined && l.quantity > 0.005)
@@ -1142,19 +1148,33 @@ export function Register() {
       setError('This sale is already fully refunded')
       return
     }
+    if (method === 'store_credit') {
+      const phone = normalizePhone(refundCreditPhone)
+      if (!phone) {
+        setError('Enter the customer phone number for store credit')
+        return
+      }
+    }
     setBusy(true)
     setError(null)
     setNotice(null)
     try {
       const id = snap.routeSaleId
-      const resp = await apiFetch<{ sale?: Sale }>(`/sales/${encodeURIComponent(id)}/refund`, {
-        method: 'POST',
-        body: JSON.stringify({
-          note: refundNote.trim() || undefined,
-          payoutMethod: method,
-          lines,
-        }),
-      })
+      const body: Record<string, unknown> = {
+        note: refundNote.trim() || undefined,
+        payoutMethod: method,
+        lines,
+      }
+      if (method === 'store_credit') {
+        body.storeCreditPhone = normalizePhone(refundCreditPhone)
+      }
+      const resp = await apiFetch<{ sale?: Sale; refundSettlement?: SaleRefundSettlement }>(
+        `/sales/${encodeURIComponent(id)}/refund`,
+        {
+          method: 'POST',
+          body: JSON.stringify(body),
+        },
+      )
       const refundedSale = resp.sale
       const noteTrim = refundNote.trim()
       const refundLinesForPrint = cart
@@ -1167,12 +1187,20 @@ export function Register() {
           lineTotal: cartLineSubtotal(l),
         }))
       const refundPrintTotal = round2(refundLinesForPrint.reduce((s, x) => s + x.lineTotal, 0))
+      const settlement = resp.refundSettlement
       setNotice('Sale refunded — stock and accounts updated where applicable')
       if (refundedSale) {
         try {
           const printed = await printRefundReceiptToDevice(refundedSale, noteTrim || undefined, method, {
             lines: refundLinesForPrint,
             refundTotal: refundPrintTotal,
+            ...(settlement
+              ? {
+                  cashPaidOut: method === 'cash' ? settlement.netCashOrCardPaidOut : 0,
+                  cardPaidOut: method === 'card' ? settlement.netCashOrCardPaidOut : 0,
+                  storeCreditIssued: settlement.storeCreditIssued,
+                }
+              : {}),
           })
           if (!printed.ok) throw new Error(printed.error ?? 'Refund receipt print failed')
         } catch (e) {
@@ -1689,6 +1717,11 @@ export function Register() {
       return
     }
     await applyPartialPayment('card')
+  }
+
+  async function checkoutRefundStoreCredit() {
+    if (!refundSession) return
+    await submitRefundCheckout('store_credit')
   }
 
   function pressKey(key: string) {
@@ -2305,11 +2338,20 @@ export function Register() {
       thankYouLine?: string
       totalDueLabel?: string
       paymentLabelOverride?: string
-      refundAck?: { refundTotal: number; refundCash: number; refundCard: number; note?: string }
+      refundAck?: {
+        refundTotal: number
+        refundCash: number
+        refundCard: number
+        refundStoreCredit?: number
+        note?: string
+      }
       /** Refund slip only: line items and total for this refund (original sale document is unchanged). */
       refundPrintSlice?: {
         lines: Array<{ qty: number; name: string; unitPrice: number; listUnitPrice?: number; lineTotal: number }>
         refundTotal: number
+        cashPaidOut?: number
+        cardPaidOut?: number
+        storeCreditIssued?: number
       }
     },
   ): {
@@ -2455,31 +2497,56 @@ export function Register() {
   async function printRefundReceiptToDevice(
     sale: Sale,
     note?: string,
-    payoutMethod?: 'cash' | 'card',
+    payoutMethod?: 'cash' | 'card' | 'store_credit',
     printSlice?: {
       lines: Array<{ qty: number; name: string; unitPrice: number; listUnitPrice?: number; lineTotal: number }>
       refundTotal: number
+      cashPaidOut?: number
+      cardPaidOut?: number
+      storeCreditIssued?: number
     },
   ): Promise<{ ok: boolean; error?: string }> {
     if (!window.electronPos) return { ok: true }
     const settings = readPosPrinterSettings()
     const settledBy = payoutMethod ?? sale.refundPayoutMethod ?? 'cash'
     const refundTxnTotal = printSlice?.refundTotal ?? sale.total
-    const refundCash = settledBy === 'cash' ? refundTxnTotal : 0
-    const refundCard = settledBy === 'card' ? refundTxnTotal : 0
+    const hasExplicit =
+      printSlice &&
+      (printSlice.cashPaidOut !== undefined ||
+        printSlice.cardPaidOut !== undefined ||
+        printSlice.storeCreditIssued !== undefined)
+    let refundCash = 0
+    let refundCard = 0
+    let refundStoreCredit = 0
+    if (hasExplicit) {
+      refundCash = Math.max(0, Number(printSlice!.cashPaidOut ?? 0))
+      refundCard = Math.max(0, Number(printSlice!.cardPaidOut ?? 0))
+      refundStoreCredit = Math.max(0, Number(printSlice!.storeCreditIssued ?? 0))
+    } else {
+      refundCash = settledBy === 'cash' ? refundTxnTotal : 0
+      refundCard = settledBy === 'card' ? refundTxnTotal : 0
+    }
+    const payoutLabel =
+      settledBy === 'store_credit'
+        ? 'Store credit'
+        : settledBy === 'card'
+          ? 'Card'
+          : 'Cash'
+    const ackNoteParts = [note?.trim(), `Payout: ${payoutLabel}`].filter(Boolean)
     const p = receiptPayloadFromSale(sale, {
       copyLabel: 'REFUND',
       receiptTitle: 'REFUND RECEIPT',
       receiptNumberPrefix: 'Refund',
       totalDueLabel: 'REFUND TOTAL:',
-      paymentLabelOverride: 'Refund',
+      paymentLabelOverride: settledBy === 'store_credit' ? 'Refund (store credit)' : 'Refund',
       thankYouLine: 'PLEASE SIGN BELOW',
       refundPrintSlice: printSlice,
       refundAck: {
         refundTotal: refundTxnTotal,
         refundCash,
         refundCard,
-        note: note ? `${settledBy.toUpperCase()} · ${note}` : `Payout: ${settledBy.toUpperCase()}`,
+        refundStoreCredit: refundStoreCredit > 0.005 ? refundStoreCredit : undefined,
+        note: ackNoteParts.join(' · '),
       },
     })
     const r = await window.electronPos.printReceipt(p.transport, p.receipt, { columns: p.columns, cut: p.cut })
@@ -3825,16 +3892,34 @@ export function Register() {
                     </div>
                   ) : null}
                   {refundSession && cart.length > 0 ? (
-                    <label className="register-refund-note-field">
-                      <span className="muted small">Refund note (optional, audit)</span>
-                      <textarea
-                        className="register-refund-note-input"
-                        rows={2}
-                        value={refundNote}
-                        onChange={(e) => setRefundNote(e.target.value)}
-                        placeholder="Reason or reference"
-                      />
-                    </label>
+                    <>
+                      <label className="register-refund-note-field">
+                        <span className="muted small">Refund note (optional, audit)</span>
+                        <textarea
+                          className="register-refund-note-input"
+                          rows={2}
+                          value={refundNote}
+                          onChange={(e) => setRefundNote(e.target.value)}
+                          placeholder="Reason or reference"
+                        />
+                      </label>
+                      <label className="register-refund-note-field">
+                        <span className="muted small">Phone for refund voucher (required for Refund voucher)</span>
+                        <input
+                          className="register-refund-note-input"
+                          type="tel"
+                          inputMode="numeric"
+                          autoComplete="tel"
+                          value={refundCreditPhone}
+                          onChange={(e) => setRefundCreditPhone(e.target.value)}
+                          placeholder="Digits only — credit loads onto this account"
+                        />
+                      </label>
+                      <p className="muted small register-refund-credit-hint">
+                        Refund voucher: credits the cash/card portion of this refund as store credit. Any voucher used on
+                        the original sale is still restored automatically.
+                      </p>
+                    </>
                   ) : null}
                   <div className="total">
                     {refundSession ? 'Refund total' : 'Total'}{' '}
@@ -3869,6 +3954,21 @@ export function Register() {
                     >
                       {busy ? 'Processing…' : refundSession ? 'Refund card' : 'Card'}
                     </button>
+                    {refundSession ? (
+                      <button
+                        type="button"
+                        className="btn checkout-btn storecredit-checkout-btn"
+                        disabled={
+                          busy ||
+                          cart.length === 0 ||
+                          refundSession.previewSale.refundStatus === 'refunded' ||
+                          refundSession.refundPreview.remainingTotal <= 0.005
+                        }
+                        onClick={() => void checkoutRefundStoreCredit()}
+                      >
+                        {busy ? 'Processing…' : 'Refund voucher'}
+                      </button>
+                    ) : null}
                   </div>
                 </div>
                 {(error || notice || lastSale) && (

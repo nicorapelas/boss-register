@@ -199,8 +199,17 @@ export interface Sale {
   refundStatus?: 'partial' | 'refunded'
   refundedAt?: string
   refundNote?: string
-  refundPayoutMethod?: 'cash' | 'card'
+  refundPayoutMethod?: 'cash' | 'card' | 'store_credit'
   refundPayoutAmount?: number
+}
+
+/** POST /sales/:id/refund settlement breakdown (POS receipt / audit). */
+export interface SaleRefundSettlement {
+  refundTotal: number
+  reversedStoreCredit: number
+  reversedOnAccount: number
+  netCashOrCardPaidOut: number
+  storeCreditIssued: number
 }
 
 export interface SaleRefundPreview {
@@ -238,7 +247,7 @@ export interface ShiftSummary {
     saleId?: string
     cashierId?: string
     cashierName?: string
-    method?: 'cash' | 'card'
+    method?: 'cash' | 'card' | 'store_credit'
     refundTotal: number
     refundCash: number
     refundCard: number

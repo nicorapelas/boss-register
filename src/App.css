@@ -1599,6 +1599,7 @@
 
 .cash-footer {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-end;
   justify-content: flex-end;
   gap: 0.75rem;
@@ -1622,6 +1623,16 @@
 }
 
 .card-checkout-btn:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+
+.storecredit-checkout-btn {
+  background: #6b4f9e;
+  border-color: #6b4f9e;
+  color: #fff;
+}
+
+.storecredit-checkout-btn:hover:not(:disabled) {
   filter: brightness(1.06);
 }
 
