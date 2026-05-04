@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { apiFetch, loginRequest } from '../api/client'
+import { apiFetch } from '../api/client'
 import { loadProductPresetsWithMigration, pushProductPresets } from '../api/productPresetsApi'
 import type {
   CartLine,
@@ -10,8 +10,11 @@ import type {
   QuoteDetail,
   QuoteListItem,
   Sale,
+  SaleRefundPreview,
+  ShiftReport,
 } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
+import { canManageShifts, canOverridePriceOnPos, canRefundSales, isPosManager } from '../auth/permissions'
 import {
   AssignPresetModal,
   ConfirmPresetDeleteModal,
@@ -19,11 +22,14 @@ import {
   LayByModal,
   OpenTabsModal,
   QuotesModal,
+  RefundSaleIdModal,
+  ShiftEndModal,
   ScreenKeyboard,
   type ScreenKeyboardAction,
 } from '../components'
 import {
   assignPresetEntry,
+  PRESET_ENTRY_MAX,
   presetEntriesForPath,
   readProductPresets,
   removePresetAt,
@@ -40,8 +46,21 @@ import {
   productHasSellableStock,
 } from '../utils/productInventory'
 import { formatDateDdMmYyyy } from '../utils/dateFormat'
+import { hasVolumeTiering, lineTotalsForProduct, type ProductForVolume } from '../utils/volumePrice'
 
 const LAST_RECEIPT_STORAGE_KEY = 'electropos-pos-last-receipt-sale'
+const POS_TILL_CODE = (import.meta.env.VITE_POS_TILL_CODE?.trim().toUpperCase() || 'T1').slice(0, 24)
+
+type ReceiptPrintPayload = {
+  transport: unknown
+  receipt: unknown
+  columns: number
+  cut: boolean
+}
+
+type LastReceiptForReprint =
+  | { kind: 'sale'; sale: Sale }
+  | { kind: 'raw'; payload: ReceiptPrintPayload; successNotice?: string }
 
 function readStoredLastReceiptSale(): Sale | null {
   try {
@@ -55,6 +74,68 @@ function readStoredLastReceiptSale(): Sale | null {
   }
 }
 
+function roundCartMoney(n: number) {
+  return Math.round(n * 100) / 100
+}
+
+type RefundSession = {
+  routeSaleId: string
+  previewSale: Sale
+  refundPreview: SaleRefundPreview['refund']
+}
+
+function cartLinesFromRefundPreview(sale: Sale, refund: SaleRefundPreview['refund']): CartLine[] {
+  const lines: CartLine[] = []
+  for (const prog of refund.lines) {
+    if (prog.remainingQty <= 0.005) continue
+    const item = sale.items[prog.index]
+    if (!item) continue
+    const pid = item.product ? String(item.product) : `__refund_line_${prog.index}`
+    lines.push({
+      productId: pid,
+      name: item.name,
+      quantity: prog.remainingQty,
+      unitPrice: item.unitPrice,
+      listUnitPrice: item.listUnitPrice,
+      refundSaleLineIndex: prog.index,
+      refundQtyMax: prog.remainingQty,
+      volumeSegments: undefined,
+    })
+  }
+  return lines
+}
+
+function enrichCartLine(p: Product | undefined, line: CartLine): CartLine {
+  if (!p) {
+    return { ...line, volumeSegments: undefined }
+  }
+  const pf: ProductForVolume = p
+  if (!hasVolumeTiering(pf)) {
+    return { ...line, volumeSegments: undefined }
+  }
+  const { volumeSegments, displayUnitPrice } = lineTotalsForProduct(pf, line.quantity)
+  return {
+    ...line,
+    unitPrice: displayUnitPrice,
+    listUnitPrice: p.price,
+    volumeSegments,
+  }
+}
+
+function cartLineSubtotal(l: CartLine) {
+  if (l.volumeSegments?.length) {
+    return roundCartMoney(l.volumeSegments.reduce((s, g) => s + g.lineTotal, 0))
+  }
+  return roundCartMoney(l.quantity * l.unitPrice)
+}
+
+function cartHasVolumePricedLine(cart: CartLine[], products: Product[]) {
+  return cart.some((l) => {
+    const p = products.find((x) => x._id === l.productId)
+    return p && hasVolumeTiering(p)
+  })
+}
+
 function persistLastReceiptSale(sale: Sale): void {
   try {
     localStorage.setItem(LAST_RECEIPT_STORAGE_KEY, JSON.stringify(sale))
@@ -65,7 +146,9 @@ function persistLastReceiptSale(sale: Sale): void {
 
 export function Register() {
   const { session } = useAuth()
-  const isAdmin = session?.user.role === 'admin'
+  const isAdmin = isPosManager(session?.user)
+  const canRefund = canRefundSales(session?.user)
+  const canShiftEnd = canManageShifts(session?.user)
   const [products, setProducts] = useState<Product[]>([])
   const [filter, setFilter] = useState('')
   const [skuInput, setSkuInput] = useState('')
@@ -104,9 +187,10 @@ export function Register() {
   const [notice, setNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [lastSale, setLastSale] = useState<Sale | null>(null)
-  const [lastReceiptForReprint, setLastReceiptForReprint] = useState<Sale | null>(() =>
-    readStoredLastReceiptSale(),
-  )
+  const [lastReceiptForReprint, setLastReceiptForReprint] = useState<LastReceiptForReprint | null>(() => {
+    const sale = readStoredLastReceiptSale()
+    return sale ? { kind: 'sale', sale } : null
+  })
   const [showChangeView, setShowChangeView] = useState(false)
   const [lastChangeDue, setLastChangeDue] = useState<number | null>(null)
   const [lastTendered, setLastTendered] = useState<number | null>(null)
@@ -122,6 +206,7 @@ export function Register() {
     houseAccountId: string
     houseAccountNumber: string
     houseAccountName: string
+    purchaseOrderNumber: string
     amountDue: number
   } | null>(null)
   const [voucherPhone, setVoucherPhone] = useState('')
@@ -166,11 +251,23 @@ export function Register() {
 
   const voucherKbBlurTimerRef = useRef<number | null>(null)
   const voucherKbFieldRef = useRef<'phone' | 'amount'>('phone')
+  const voucherPhoneInputRef = useRef<HTMLInputElement | null>(null)
+  const voucherAmountInputRef = useRef<HTMLInputElement | null>(null)
   const [voucherScreenKbOpen, setVoucherScreenKbOpen] = useState(false)
   const [voucherFormOpen, setVoucherFormOpen] = useState(false)
   const [houseAccountsModalOpen, setHouseAccountsModalOpen] = useState(false)
+  const [houseAccountsModalMode, setHouseAccountsModalMode] = useState<'checkout' | 'payment'>('checkout')
+  const [refundSaleIdModalOpen, setRefundSaleIdModalOpen] = useState(false)
+  const [refundSession, setRefundSession] = useState<RefundSession | null>(null)
+  const [refundNote, setRefundNote] = useState('')
+  const [shiftEndModalOpen, setShiftEndModalOpen] = useState(false)
   const [houseAccountForCheckout, setHouseAccountForCheckout] = useState<HouseAccountRow | null>(null)
-  const [onAccountAmountStr, setOnAccountAmountStr] = useState('')
+  const [houseAccountPaymentTarget, setHouseAccountPaymentTarget] = useState<HouseAccountRow | null>(null)
+  const [houseAccountPaymentAmountStr, setHouseAccountPaymentAmountStr] = useState('')
+  const [houseAccountPaymentMethod, setHouseAccountPaymentMethod] = useState<'cash' | 'card'>('cash')
+  const [houseAccountPaymentKbOpen, setHouseAccountPaymentKbOpen] = useState(false)
+  const [onAccountPoNumber, setOnAccountPoNumber] = useState('')
+  const [onAccountPoKbOpen, setOnAccountPoKbOpen] = useState(false)
   const [houseAccountFormOpen, setHouseAccountFormOpen] = useState(false)
   const [altPaymentExpanded, setAltPaymentExpanded] = useState(false)
   const [lastOnAccount, setLastOnAccount] = useState<number | null>(null)
@@ -215,7 +312,8 @@ export function Register() {
       setVoucherFormOpen(false)
       setHouseAccountFormOpen(false)
       setHouseAccountForCheckout(null)
-      setOnAccountAmountStr('')
+      setOnAccountPoNumber('')
+      setOnAccountPoKbOpen(false)
       setAltPaymentExpanded(false)
     }
   }, [cart.length])
@@ -225,6 +323,7 @@ export function Register() {
       setVoucherFormOpen(false)
       setHouseAccountFormOpen(false)
       setVoucherScreenKbOpen(false)
+      setOnAccountPoKbOpen(false)
     }
   }, [altPaymentExpanded])
 
@@ -270,9 +369,32 @@ export function Register() {
     return raw.replace(/\D/g, '')
   }
 
+  function maskPhoneForReceipt(digits: string) {
+    const d = digits.replace(/\D/g, '')
+    if (!d) return '—'
+    if (d.length <= 4) return `***${d}`
+    return `*** *** ${d.slice(-4)}`
+  }
+
   function clearActiveQuote() {
     setActiveQuoteId(null)
     setActiveQuoteBanner(null)
+  }
+
+  function closeQuoteFromCart() {
+    clearActiveQuote()
+    setCart([])
+    setPendingSplit(null)
+    setLastSale(null)
+    setShowChangeView(false)
+    setLastChangeDue(null)
+    setLastTendered(null)
+    setLastCardAmount(null)
+    setLastStoreCredit(null)
+    setLastOnAccount(null)
+    setLastTotal(null)
+    resetVoucherForm()
+    setNotice('Quote closed. Cart cleared.')
   }
 
   function resetVoucherForm() {
@@ -281,9 +403,28 @@ export function Register() {
     setVoucherBalanceHint(null)
     setVoucherNameHint('')
     setVoucherFormOpen(false)
-    setOnAccountAmountStr('')
+    setOnAccountPoNumber('')
+    setOnAccountPoKbOpen(false)
     setHouseAccountFormOpen(false)
     setHouseAccountForCheckout(null)
+  }
+
+  function openHouseAccountsForCheckout() {
+    setHouseAccountsModalMode('checkout')
+    setHouseAccountsModalOpen(true)
+  }
+
+  function openHouseAccountsForPayment() {
+    setHouseAccountsModalMode('payment')
+    setHouseAccountsModalOpen(true)
+  }
+
+  function onAccountRemainingDueAmount() {
+    const total = pendingSplit?.total ?? cartTotal
+    const prevCash = pendingSplit?.cashReceived ?? 0
+    const prevCard = pendingSplit?.cardReceived ?? 0
+    const prevSc = pendingSplit?.storeCreditApplied ?? 0
+    return round2(total - prevCash - prevCard - prevSc)
   }
 
   function cancelVoucherKbBlurHide() {
@@ -291,6 +432,11 @@ export function Register() {
       clearTimeout(voucherKbBlurTimerRef.current)
       voucherKbBlurTimerRef.current = null
     }
+  }
+
+  function scrollVoucherFieldIntoView(which: 'phone' | 'amount') {
+    const target = which === 'phone' ? voucherPhoneInputRef.current : voucherAmountInputRef.current
+    target?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' })
   }
 
   function patchVoucherDecimalString(s: string, action: ScreenKeyboardAction): string {
@@ -307,6 +453,32 @@ export function Register() {
     if (action.type === 'backspace') return s.slice(0, -1)
     if (action.type === 'space') return s
     return s
+  }
+
+  function handleHouseAccountPaymentKeyboardAction(action: ScreenKeyboardAction) {
+    if (action.type === 'enter' || action.type === 'done') {
+      setHouseAccountPaymentKbOpen(false)
+      return
+    }
+    setHouseAccountPaymentAmountStr((s) => patchVoucherDecimalString(s, action))
+  }
+
+  function handleOnAccountPoKeyboardAction(action: ScreenKeyboardAction) {
+    if (action.type === 'enter' || action.type === 'done') {
+      setOnAccountPoKbOpen(false)
+      return
+    }
+    if (action.type === 'char') {
+      setOnAccountPoNumber((s) => s + action.char)
+      return
+    }
+    if (action.type === 'backspace') {
+      setOnAccountPoNumber((s) => s.slice(0, -1))
+      return
+    }
+    if (action.type === 'space') {
+      setOnAccountPoNumber((s) => s + ' ')
+    }
   }
 
   function handleVoucherScreenKeyboardAction(action: ScreenKeyboardAction) {
@@ -339,6 +511,7 @@ export function Register() {
         voucherKbFieldRef.current = which
         cancelVoucherKbBlurHide()
         setVoucherScreenKbOpen(true)
+        window.setTimeout(() => scrollVoucherFieldIntoView(which), 20)
       },
       onBlur: () => {
         cancelVoucherKbBlurHide()
@@ -379,6 +552,14 @@ export function Register() {
     if (showChangeView) setVoucherScreenKbOpen(false)
     if (cart.length === 0 && !pendingSplit) setVoucherScreenKbOpen(false)
   }, [showChangeView, cart.length, pendingSplit])
+
+  useEffect(() => {
+    if (!voucherFormOpen || !voucherScreenKbOpen) return
+    const t = window.setTimeout(() => {
+      scrollVoucherFieldIntoView(voucherKbFieldRef.current)
+    }, 40)
+    return () => window.clearTimeout(t)
+  }, [voucherFormOpen, voucherScreenKbOpen])
 
   useEffect(() => {
     const hold = discountHoldRef.current
@@ -451,6 +632,22 @@ export function Register() {
     )
   }, [products, filter])
 
+  /** Same pool as BackOffice Products category field: distinct product categories (no Uncategorized). */
+  const catalogCategoriesForPresetSuggest = useMemo(() => {
+    const seen = new Set<string>()
+    const out: string[] = []
+    for (const p of products) {
+      const raw = p.category?.trim()
+      if (!raw || raw.toLowerCase() === 'uncategorized') continue
+      const k = raw.toLowerCase()
+      if (seen.has(k)) continue
+      seen.add(k)
+      out.push(raw)
+    }
+    out.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+    return out
+  }, [products])
+
   const presetCategories = useMemo(
     () => uniquePresetCategories(presetsState.entries),
     [presetsState.entries],
@@ -509,14 +706,19 @@ export function Register() {
           productId: l.productId,
           quantity: l.quantity,
           unitPrice: l.unitPrice,
+          listUnitPrice: l.listUnitPrice,
         })),
       }),
     })
   }
 
   async function handleLoadQuote(id: string) {
+    if (refundSession) {
+      setError('Exit refund mode before loading a quote')
+      return
+    }
     if (activeOpenTabId) {
-      setError('Finish or walk-in from tab before loading a quote')
+      setError('Finish or close tab before loading a quote')
       return
     }
     if (cart.length > 0 && !window.confirm('Replace current cart with this quote?')) return
@@ -537,13 +739,17 @@ export function Register() {
         validUntil: detail.validUntil,
       })
       setCart(
-        detail.lines.map((l) => ({
-          productId: typeof l.productId === 'string' ? l.productId : String(l.productId),
-          name: l.name,
-          quantity: l.quantity,
-          unitPrice: l.unitPrice,
-          listUnitPrice: l.listUnitPrice,
-        })),
+        detail.lines.map((l) => {
+          const pid = typeof l.productId === 'string' ? l.productId : String(l.productId)
+          const p = products.find((x) => x._id === pid)
+          return enrichCartLine(p, {
+            productId: pid,
+            name: l.name,
+            quantity: l.quantity,
+            unitPrice: l.unitPrice,
+            listUnitPrice: l.listUnitPrice,
+          })
+        }),
       )
       setQuotesModalOpen(false)
       setNotice(`Loaded quote ${detail.quoteNumber}`)
@@ -582,6 +788,10 @@ export function Register() {
   }
 
   function addToCartQty(p: Product, requestedQty: number) {
+    if (refundSession) {
+      setError('Exit refund mode to add items')
+      return
+    }
     clearActiveQuote()
     setLastSale(null)
     setNotice(null)
@@ -599,7 +809,7 @@ export function Register() {
     }
     const avail = productAvailableUnits(p)
     if (avail < 1) {
-      setError('Out of stock')
+      setError(`Out of stock: ${p.name}`)
       return
     }
     setError(null)
@@ -619,7 +829,8 @@ export function Register() {
         if (toAdd < requestedQty) {
           partialNotice = `Added ${toAdd} of ${requestedQty} (${avail} available)`
         }
-        next[i] = { ...line, quantity: line.quantity + toAdd }
+        const merged = { ...line, quantity: line.quantity + toAdd }
+        next[i] = enrichCartLine(p, merged)
         return next
       }
       const toAdd = Math.min(requestedQty, avail)
@@ -627,15 +838,13 @@ export function Register() {
       if (toAdd < requestedQty) {
         partialNotice = `Added ${toAdd} of ${requestedQty} (${avail} available)`
       }
-      return [
-        ...prev,
-        {
-          productId: p._id,
-          name: p.name,
-          quantity: toAdd,
-          unitPrice: p.price,
-        },
-      ]
+      const newLine: CartLine = {
+        productId: p._id,
+        name: p.name,
+        quantity: toAdd,
+        unitPrice: p.price,
+      }
+      return [...prev, enrichCartLine(p, newLine)]
     })
     if (atStockLimit) {
       setError('This line is already at maximum stock for that product')
@@ -646,6 +855,26 @@ export function Register() {
 
   function addToCart(p: Product) {
     addToCartQty(p, 1)
+  }
+
+  function bumpRefundLineQty(saleLineIndex: number, delta: number) {
+    clearActiveQuote()
+    setLastSale(null)
+    setNotice(null)
+    setPendingSplit(null)
+    setLastStoreCredit(null)
+    setLastOnAccount(null)
+    setCart((prev) => {
+      const row = prev.find((l) => l.refundSaleLineIndex === saleLineIndex)
+      if (!row || row.refundQtyMax == null) return prev
+      const maxQ = row.refundQtyMax
+      const nextQty = roundCartMoney(row.quantity + delta)
+      if (nextQty <= 0) return prev.filter((l) => l.refundSaleLineIndex !== saleLineIndex)
+      if (nextQty > maxQ + 0.0001) return prev
+      return prev.map((l) =>
+        l.refundSaleLineIndex === saleLineIndex ? { ...l, quantity: nextQty } : l,
+      )
+    })
   }
 
   function bumpQty(productId: string, delta: number) {
@@ -663,17 +892,25 @@ export function Register() {
       const nextQty = line.quantity + delta
       if (nextQty <= 0) return prev.filter((l) => l.productId !== productId)
       if (nextQty > max) return prev
-      return prev.map((l) =>
-        l.productId === productId ? { ...l, quantity: nextQty } : l,
-      )
+      return prev.map((l) => {
+        if (l.productId !== productId) return l
+        const np = p ? enrichCartLine(p, { ...l, quantity: nextQty }) : { ...l, quantity: nextQty }
+        return np
+      })
     })
+  }
+
+  function bumpCartLineQty(line: CartLine, delta: number) {
+    if (line.refundSaleLineIndex !== undefined) {
+      bumpRefundLineQty(line.refundSaleLineIndex, delta)
+      return
+    }
+    bumpQty(line.productId, delta)
   }
 
   const cartTotal = useMemo(
     () =>
-      Math.round(
-        cart.reduce((s, l) => s + l.quantity * l.unitPrice, 0) * 100,
-      ) / 100,
+      Math.round(cart.reduce((s, l) => s + cartLineSubtotal(l), 0) * 100) / 100,
     [cart],
   )
 
@@ -690,6 +927,10 @@ export function Register() {
   }, [cart, activeOpenTabId, busy])
 
   async function selectOpenTab(id: string) {
+    if (refundSession) {
+      setError('Exit refund mode before opening a tab')
+      return
+    }
     if (id === activeOpenTabId) {
       setOpenTabsModalOpen(false)
       return
@@ -712,13 +953,16 @@ export function Register() {
         phone: tab.phone,
       })
       setCart(
-        tab.lines.map((l) => ({
-          productId: l.productId,
-          name: l.name,
-          quantity: l.quantity,
-          unitPrice: l.unitPrice,
-          listUnitPrice: l.listUnitPrice,
-        })),
+        tab.lines.map((l) => {
+          const p = products.find((x) => x._id === l.productId)
+          return enrichCartLine(p, {
+            productId: l.productId,
+            name: l.name,
+            quantity: l.quantity,
+            unitPrice: l.unitPrice,
+            listUnitPrice: l.listUnitPrice,
+          })
+        }),
       )
       setOpenTabsModalOpen(false)
       await loadOpenTabsList()
@@ -759,8 +1003,11 @@ export function Register() {
     phone: string
     includeCurrentCart: boolean
   }) {
+    if (refundSession) {
+      throw new Error('Exit refund mode before using tabs')
+    }
     if (activeOpenTabId) {
-      throw new Error('Use “Walk-in” to leave the current tab before creating another')
+      throw new Error('Use “Close tab” to leave the current tab before creating another')
     }
     const linesPayload = input.includeCurrentCart
       ? cart.map((l) => ({
@@ -799,18 +1046,21 @@ export function Register() {
       phone: created.phone,
     })
     setCart(
-      created.lines.map((l) => ({
-        productId: l.productId,
-        name: l.name,
-        quantity: l.quantity,
-        unitPrice: l.unitPrice,
-        listUnitPrice: l.listUnitPrice,
-      })),
+      created.lines.map((l) => {
+        const p = products.find((x) => x._id === l.productId)
+        return enrichCartLine(p, {
+          productId: l.productId,
+          name: l.name,
+          quantity: l.quantity,
+          unitPrice: l.unitPrice,
+          listUnitPrice: l.listUnitPrice,
+        })
+      }),
     )
     await loadOpenTabsList()
   }
 
-  async function goWalkInSale() {
+  async function closeActiveTabSession() {
     if (!activeOpenTabId) return
     setError(null)
     try {
@@ -832,15 +1082,123 @@ export function Register() {
     setLastStoreCredit(null)
     setLastOnAccount(null)
     setLastTotal(null)
-    setNotice('Tab saved · walk-in sale')
+    setNotice('Tab saved · tab closed')
+  }
+
+  function beginRefundMode(data: SaleRefundPreview, routeSaleId: string) {
+    const lines = cartLinesFromRefundPreview(data.sale, data.refund)
+    if (!lines.length) {
+      setError('Nothing left to refund on this sale')
+      return
+    }
+    clearActiveQuote()
+    setPendingSplit(null)
+    setShowChangeView(false)
+    setLastSale(null)
+    setLastChangeDue(null)
+    setLastTendered(null)
+    setLastCardAmount(null)
+    setLastStoreCredit(null)
+    setLastOnAccount(null)
+    setLastTotal(null)
+    setError(null)
+    setNotice(null)
+    setRefundNote('')
+    setAltPaymentExpanded(false)
+    setVoucherFormOpen(false)
+    setHouseAccountFormOpen(false)
+    setRefundSession({
+      routeSaleId,
+      previewSale: data.sale,
+      refundPreview: data.refund,
+    })
+    setCart(lines)
+  }
+
+  function clearRefundModeAndCart() {
+    setRefundSession(null)
+    setRefundNote('')
+    setCart([])
+  }
+
+  async function exitRefundModePrompt() {
+    if (!refundSession) return
+    if (!window.confirm('Leave refund mode? The refund cart will be cleared.')) return
+    clearRefundModeAndCart()
+    setError(null)
+  }
+
+  async function submitRefundCheckout(method: 'cash' | 'card') {
+    if (!refundSession || busy) return
+    const lines = cart
+      .filter((l) => l.refundSaleLineIndex !== undefined && l.quantity > 0.005)
+      .map((l) => ({ lineIndex: l.refundSaleLineIndex!, quantity: l.quantity }))
+    if (!lines.length) {
+      setError('Use − / + so at least one line has a quantity to refund')
+      return
+    }
+    const snap = refundSession
+    if (snap.previewSale.refundStatus === 'refunded' || snap.refundPreview.remainingTotal <= 0.005) {
+      setError('This sale is already fully refunded')
+      return
+    }
+    setBusy(true)
+    setError(null)
+    setNotice(null)
+    try {
+      const id = snap.routeSaleId
+      const resp = await apiFetch<{ sale?: Sale }>(`/sales/${encodeURIComponent(id)}/refund`, {
+        method: 'POST',
+        body: JSON.stringify({
+          note: refundNote.trim() || undefined,
+          payoutMethod: method,
+          lines,
+        }),
+      })
+      const refundedSale = resp.sale
+      const noteTrim = refundNote.trim()
+      const refundLinesForPrint = cart
+        .filter((l) => l.refundSaleLineIndex !== undefined && l.quantity > 0.005)
+        .map((l) => ({
+          qty: l.quantity,
+          name: l.name,
+          unitPrice: l.unitPrice,
+          listUnitPrice: l.listUnitPrice,
+          lineTotal: cartLineSubtotal(l),
+        }))
+      const refundPrintTotal = round2(refundLinesForPrint.reduce((s, x) => s + x.lineTotal, 0))
+      setNotice('Sale refunded — stock and accounts updated where applicable')
+      if (refundedSale) {
+        try {
+          const printed = await printRefundReceiptToDevice(refundedSale, noteTrim || undefined, method, {
+            lines: refundLinesForPrint,
+            refundTotal: refundPrintTotal,
+          })
+          if (!printed.ok) throw new Error(printed.error ?? 'Refund receipt print failed')
+        } catch (e) {
+          setError(
+            e instanceof Error
+              ? `${e.message} — refund was saved. Start a new refund from REFUND if you need another line.`
+              : 'Refund receipt print failed — refund was saved.',
+          )
+        }
+      }
+      await loadProducts()
+      clearRefundModeAndCart()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Refund failed')
+    } finally {
+      setBusy(false)
+    }
   }
 
   async function submitSale(
     paymentMethod: string,
     payment?: { cashAmount: number; cardAmount: number; tenderedCash?: number; changeDue?: number },
     storeCredit?: { amount: number; phone: string },
-    houseAccount?: { id: string; amount: number },
+    houseAccount?: { id: string; amount: number; purchaseOrderNumber?: string },
   ) {
+    if (refundSession) return
     if (cart.length === 0) return
     if (storeCredit && storeCredit.amount > 0.005 && !normalizePhone(storeCredit.phone)) {
       setError('Store voucher requires a phone number')
@@ -848,6 +1206,10 @@ export function Register() {
     }
     if (houseAccount && houseAccount.amount > 0.005 && !houseAccount.id) {
       setError('House account required for on-account charge')
+      return
+    }
+    if (houseAccount && houseAccount.amount > 0.005 && !(houseAccount.purchaseOrderNumber ?? '').trim()) {
+      setError('Purchase order number required for on-account charge')
       return
     }
     setBusy(true)
@@ -872,6 +1234,7 @@ export function Register() {
         })),
         paymentMethod,
         payment,
+        tillCode: POS_TILL_CODE,
         ...(tabIdForSale ? { openTabId: tabIdForSale } : {}),
         ...(activeQuoteId ? { quoteId: activeQuoteId } : {}),
       }
@@ -882,13 +1245,14 @@ export function Register() {
       if (houseAccount && houseAccount.amount > 0.005) {
         body.onAccountAmount = round2(houseAccount.amount)
         body.houseAccountId = houseAccount.id
+        body.purchaseOrderNumber = houseAccount.purchaseOrderNumber?.trim()
       }
       const sale = await apiFetch<Sale>('/sales', {
         method: 'POST',
         body: JSON.stringify(body),
       })
       setLastSale(sale)
-      setLastReceiptForReprint(sale)
+      setLastReceiptForReprint({ kind: 'sale', sale })
       persistLastReceiptSale(sale)
       if (tabIdForSale) {
         setActiveOpenTabId(null)
@@ -907,6 +1271,7 @@ export function Register() {
   }
 
   async function applyPartialPayment(method: 'cash' | 'card') {
+    if (refundSession) return
     setError(null)
     const total = pendingSplit?.total ?? cartTotal
     const prevCash = pendingSplit?.cashReceived ?? 0
@@ -917,6 +1282,7 @@ export function Register() {
     const oaId = pendingSplit?.houseAccountId ?? ''
     const oaNum = pendingSplit?.houseAccountNumber ?? ''
     const oaName = pendingSplit?.houseAccountName ?? ''
+    const poNumber = pendingSplit?.purchaseOrderNumber ?? ''
     const due = round2(total - prevCash - prevCard - prevSc - prevOa)
     if (due <= 0) {
       setError('No outstanding amount due')
@@ -950,6 +1316,7 @@ export function Register() {
         houseAccountId: oaId,
         houseAccountNumber: oaNum,
         houseAccountName: oaName,
+        purchaseOrderNumber: poNumber,
         amountDue: remaining,
       })
       setSkuInput('')
@@ -992,7 +1359,7 @@ export function Register() {
         changeDue: change,
       },
       prevSc > 0 ? { amount: prevSc, phone: storeCreditPhone } : undefined,
-      prevOa > 0 && oaId ? { id: oaId, amount: prevOa } : undefined,
+      prevOa > 0 && oaId ? { id: oaId, amount: prevOa, purchaseOrderNumber: poNumber } : undefined,
     )
     if (!sale) return
     setLastTotal(total)
@@ -1004,7 +1371,8 @@ export function Register() {
     setShowChangeView(true)
     setSkuInput('')
     setHouseAccountForCheckout(null)
-    setOnAccountAmountStr('')
+    setOnAccountPoNumber('')
+    setOnAccountPoKbOpen(false)
     void postSaleHardwareActions(sale)
   }
 
@@ -1017,7 +1385,7 @@ export function Register() {
     setError(null)
     try {
       const r = await apiFetch<{ balance: number; name: string }>(
-        `/lay-bys/credit-balance?phone=${encodeURIComponent(phone)}`,
+        `/store-credit/balance?phone=${encodeURIComponent(phone)}`,
       )
       setVoucherBalanceHint(r.balance)
       setVoucherNameHint(r.name ?? '')
@@ -1030,7 +1398,7 @@ export function Register() {
 
   function removeVoucherFromSplit() {
     if (!pendingSplit || pendingSplit.storeCreditApplied <= 0) return
-    const { total, cashReceived, cardReceived, onAccountApplied, houseAccountId, houseAccountNumber, houseAccountName } =
+    const { total, cashReceived, cardReceived, onAccountApplied, houseAccountId, houseAccountNumber, houseAccountName, purchaseOrderNumber } =
       pendingSplit
     setPendingSplit({
       total,
@@ -1042,6 +1410,7 @@ export function Register() {
       houseAccountId,
       houseAccountNumber,
       houseAccountName,
+      purchaseOrderNumber,
       amountDue: round2(total - cashReceived - cardReceived - onAccountApplied),
     })
   }
@@ -1059,6 +1428,7 @@ export function Register() {
       houseAccountId: '',
       houseAccountNumber: '',
       houseAccountName: '',
+      purchaseOrderNumber: '',
       amountDue: round2(total - cashReceived - cardReceived - storeCreditApplied),
     })
   }
@@ -1083,6 +1453,7 @@ export function Register() {
   }
 
   async function applyVoucherToSale() {
+    if (refundSession) return
     if (cart.length === 0 || busy) return
     setError(null)
     const phone = normalizePhone(voucherPhone)
@@ -1103,6 +1474,7 @@ export function Register() {
     const oaId = pendingSplit?.houseAccountId ?? ''
     const oaNum = pendingSplit?.houseAccountNumber ?? ''
     const oaName = pendingSplit?.houseAccountName ?? ''
+    const poNumber = pendingSplit?.purchaseOrderNumber ?? ''
     const maxVoucher = round2(total - prevCash - prevCard - prevOa)
     if (amt > maxVoucher + 0.01) {
       setError(`Voucher cannot exceed ${maxVoucher.toFixed(2)} (still due)`)
@@ -1112,7 +1484,7 @@ export function Register() {
     let balance: number
     try {
       const r = await apiFetch<{ balance: number; name: string }>(
-        `/lay-bys/credit-balance?phone=${encodeURIComponent(phone)}`,
+        `/store-credit/balance?phone=${encodeURIComponent(phone)}`,
       )
       balance = r.balance
       setVoucherBalanceHint(r.balance)
@@ -1140,6 +1512,7 @@ export function Register() {
         houseAccountId: oaId,
         houseAccountNumber: oaNum,
         houseAccountName: oaName,
+        purchaseOrderNumber: poNumber,
         amountDue,
       })
       setVoucherAmountStr('')
@@ -1183,7 +1556,7 @@ export function Register() {
         changeDue: change,
       },
       newSc > 0 ? { amount: newSc, phone } : undefined,
-      prevOa > 0 && oaId ? { id: oaId, amount: prevOa } : undefined,
+      prevOa > 0 && oaId ? { id: oaId, amount: prevOa, purchaseOrderNumber: poNumber } : undefined,
     )
     if (!sale) return
     setLastTotal(total)
@@ -1196,33 +1569,11 @@ export function Register() {
     setSkuInput('')
     setVoucherFormOpen(false)
     setHouseAccountForCheckout(null)
-    setOnAccountAmountStr('')
     void postSaleHardwareActions(sale)
   }
 
-  function applyOnAccountUseMax() {
-    const total = pendingSplit?.total ?? cartTotal
-    const prevCash = pendingSplit?.cashReceived ?? 0
-    const prevCard = pendingSplit?.cardReceived ?? 0
-    const prevSc = pendingSplit?.storeCreditApplied ?? 0
-    const maxByDue = round2(total - prevCash - prevCard - prevSc)
-    if (!houseAccountForCheckout) {
-      setError('Pick a house account first (ACCOUNTS)')
-      return
-    }
-    const limit = houseAccountForCheckout.creditLimit
-    const bal = houseAccountForCheckout.balance
-    const headroom = limit != null ? round2(limit - bal) : maxByDue
-    const use = round2(Math.min(maxByDue, Math.max(0, headroom)))
-    if (use <= 0) {
-      setError(limit != null ? 'At credit limit' : 'Nothing to charge')
-      return
-    }
-    setOnAccountAmountStr(String(use))
-    setError(null)
-  }
-
   async function applyOnAccountToSale() {
+    if (refundSession) return
     if (cart.length === 0 || busy) return
     setError(null)
     if (!houseAccountForCheckout) {
@@ -1242,7 +1593,7 @@ export function Register() {
     }
     setHouseAccountForCheckout(acct)
 
-    const amt = parseTenderedInput(onAccountAmountStr.trim(), 0)
+    const amt = onAccountRemainingDueAmount()
     if (!Number.isFinite(amt) || amt <= 0) {
       setError('Enter amount to charge on account')
       return
@@ -1252,9 +1603,9 @@ export function Register() {
     const prevCash = pendingSplit?.cashReceived ?? 0
     const prevCard = pendingSplit?.cardReceived ?? 0
     const prevSc = pendingSplit?.storeCreditApplied ?? 0
-    const maxByDue = round2(total - prevCash - prevCard - prevSc)
-    if (amt > maxByDue + 0.01) {
-      setError(`On account cannot exceed ${maxByDue.toFixed(2)} (still due)`)
+    const poNumber = onAccountPoNumber.trim().slice(0, 120)
+    if (!poNumber) {
+      setError('Enter purchase order number')
       return
     }
     const nextBal = round2(acct.balance + amt)
@@ -1265,22 +1616,8 @@ export function Register() {
 
     const newOa = round2(amt)
     const amountDue = round2(total - prevCash - prevCard - prevSc - newOa)
-
     if (amountDue > 0.02) {
-      setPendingSplit({
-        total,
-        cashReceived: prevCash,
-        cardReceived: prevCard,
-        storeCreditApplied: prevSc,
-        storeCreditPhone: pendingSplit?.storeCreditPhone ?? '',
-        onAccountApplied: newOa,
-        houseAccountId: acct._id,
-        houseAccountNumber: acct.accountNumber,
-        houseAccountName: acct.name,
-        amountDue,
-      })
-      setOnAccountAmountStr('')
-      setHouseAccountFormOpen(false)
+      setError('Insufficient available account credit. Take an account payment first.')
       return
     }
 
@@ -1320,7 +1657,7 @@ export function Register() {
         changeDue: change,
       },
       prevSc > 0 ? { amount: prevSc, phone: pendingSplit?.storeCreditPhone ?? '' } : undefined,
-      newOa > 0 ? { id: acct._id, amount: newOa } : undefined,
+      newOa > 0 ? { id: acct._id, amount: newOa, purchaseOrderNumber: poNumber } : undefined,
     )
     if (!sale) return
     setLastTotal(total)
@@ -1333,19 +1670,31 @@ export function Register() {
     setSkuInput('')
     setHouseAccountFormOpen(false)
     setHouseAccountForCheckout(null)
-    setOnAccountAmountStr('')
+    setOnAccountPoNumber('')
+    setOnAccountPoKbOpen(false)
     void postSaleHardwareActions(sale)
   }
 
   async function checkoutCash() {
+    if (refundSession) {
+      await submitRefundCheckout('cash')
+      return
+    }
     await applyPartialPayment('cash')
   }
 
   async function checkoutCard() {
+    if (refundSession) {
+      await submitRefundCheckout('card')
+      return
+    }
     await applyPartialPayment('card')
   }
 
   function pressKey(key: string) {
+    if (refundSession && key !== 'clear') {
+      return
+    }
     setLastSale(null)
     setError(null)
     setNotice(null)
@@ -1376,6 +1725,10 @@ export function Register() {
   }
 
   function addBySku(override?: string) {
+    if (refundSession) {
+      setError('Scanner/keypad SKU entry is off during refund — adjust quantities in the cart')
+      return
+    }
     const q = (override ?? skuInputRef.current).trim()
     if (!q) {
       setError('Enter SKU or qty×SKU (e.g. 100×48)')
@@ -1437,6 +1790,7 @@ export function Register() {
     }
 
     function onKeyDown(e: KeyboardEvent) {
+      if (refundSession) return
       // When browsing items, don't hijack typing into the search box.
       if (registerLeftPanel === 'list') return
       if (e.defaultPrevented) return
@@ -1477,7 +1831,7 @@ export function Register() {
     return () => window.removeEventListener('keydown', onKeyDown)
     // pressKey/addBySku/read of refs are stable enough for this listener.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [registerLeftPanel])
+  }, [registerLeftPanel, refundSession])
 
   function voidLastItem() {
     clearActiveQuote()
@@ -1492,29 +1846,22 @@ export function Register() {
     })
   }
 
-  async function requestManagerApproval(actionLabel: string) {
-    if (!session || session.user.role !== 'admin') {
-      setError(`Admin required for ${actionLabel}`)
-      return false
-    }
-    const pin = window.prompt(`Manager PIN required for ${actionLabel}.\nUse admin password:`)
-    if (!pin) return false
-    try {
-      await loginRequest(session.user.email, pin)
-      return true
-    } catch {
-      setError('Manager authentication failed')
-      return false
-    }
-  }
-
   function priceOverrideLast() {
-    if (!isAdmin) {
-      setError('Admin required for price override')
+    if (refundSession) {
+      setError('Price override is not available in refund mode')
+      return
+    }
+    if (!canOverridePriceOnPos(session?.user)) {
+      setError('Not allowed to override price on this login')
       return
     }
     if (cart.length === 0) {
       setError('Add an item to cart first')
+      return
+    }
+    const lastP = products.find((x) => x._id === cart[cart.length - 1].productId)
+    if (lastP && hasVolumeTiering(lastP)) {
+      setError('Price override is not available for products with volume tier pricing')
       return
     }
     const fromKey = skuInputRef.current.trim()
@@ -1600,12 +1947,22 @@ export function Register() {
   }
 
   function applyLastLineDiscountPercent() {
-    if (!isAdmin) {
-      setError('Admin required for discount')
+    if (refundSession) {
+      setError('Discounts are not available in refund mode')
+      return
+    }
+    if (!canOverridePriceOnPos(session?.user)) {
+      setError('Not allowed to apply discounts on this login')
       return
     }
     if (cart.length === 0) {
       setError('Add items to cart first')
+      return
+    }
+    const last = cart[cart.length - 1]
+    const lastP = products.find((x) => x._id === last.productId)
+    if (lastP && hasVolumeTiering(lastP)) {
+      setError('Discounts cannot be applied to volume tier lines — use a new sale for a different price')
       return
     }
 
@@ -1634,12 +1991,20 @@ export function Register() {
   }
 
   function applyWholeCartDiscountPercent() {
-    if (!isAdmin) {
-      setError('Admin required for discount')
+    if (refundSession) {
+      setError('Discounts are not available in refund mode')
+      return
+    }
+    if (!canOverridePriceOnPos(session?.user)) {
+      setError('Not allowed to apply discounts on this login')
       return
     }
     if (cart.length === 0) {
       setError('Add items to cart first')
+      return
+    }
+    if (cartHasVolumePricedLine(cart, products)) {
+      setError('Remove volume-priced lines before applying a whole-cart discount')
       return
     }
 
@@ -1668,7 +2033,7 @@ export function Register() {
   const DISCOUNT_MOVE_PX = 14
 
   function onDiscountPointerDown(e: React.PointerEvent<HTMLButtonElement>) {
-    if (!e.isPrimary || cart.length === 0) return
+    if (!e.isPrimary || cart.length === 0 || refundSession) return
     const h = discountHoldRef.current
     if (h.timer) clearTimeout(h.timer)
     h.longPressDone = false
@@ -1802,6 +2167,10 @@ export function Register() {
       e.preventDefault()
       return
     }
+    if (refundSession) {
+      setError('Exit refund mode to sell from the catalog')
+      return
+    }
     addToCart(p)
   }
 
@@ -1876,6 +2245,10 @@ export function Register() {
       e.preventDefault()
       return
     }
+    if (refundSession) {
+      setError('Exit refund mode to sell from presets')
+      return
+    }
     const p = products.find((x) => x._id === entry.productId)
     if (!p) {
       setError(
@@ -1897,6 +2270,7 @@ export function Register() {
   }
 
   function lineDiscountDisplay(line: CartLine): { show: boolean; pct: number } | null {
+    if (line.volumeSegments && line.volumeSegments.length > 0) return null
     const list = line.listUnitPrice
     if (list == null || list <= 0) return null
     if (line.unitPrice >= list - 0.0001) return null
@@ -1909,9 +2283,35 @@ export function Register() {
     return (sale.onAccountAmount ?? 0) > 0.005
   }
 
+  function resolveCashierDisplayName(user: { displayName?: string; email?: string } | null | undefined): string | undefined {
+    const byProfile = user?.displayName?.trim()
+    if (byProfile) return byProfile
+    const raw = user?.email?.split('@')[0]?.trim()
+    if (!raw) return undefined
+    const cleaned = raw.replace(/[._-]+/g, ' ').replace(/\s+/g, ' ').trim()
+    if (!cleaned) return undefined
+    return cleaned
+      .split(' ')
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ')
+  }
+
   function receiptPayloadFromSale(
     sale: Sale,
-    opts?: { copyLabel?: string },
+    opts?: {
+      copyLabel?: string
+      receiptTitle?: string
+      receiptNumberPrefix?: string
+      thankYouLine?: string
+      totalDueLabel?: string
+      paymentLabelOverride?: string
+      refundAck?: { refundTotal: number; refundCash: number; refundCard: number; note?: string }
+      /** Refund slip only: line items and total for this refund (original sale document is unchanged). */
+      refundPrintSlice?: {
+        lines: Array<{ qty: number; name: string; unitPrice: number; listUnitPrice?: number; lineTotal: number }>
+        refundTotal: number
+      }
+    },
   ): {
     transport: unknown
     receipt: unknown
@@ -1920,14 +2320,35 @@ export function Register() {
   } {
     const cfg = printerSettings.receiptConfig
     const ts = sale.createdAt ?? new Date().toISOString()
-    const gross = sale.items.reduce((sum, l) => sum + (l.lineTotal ?? l.quantity * l.unitPrice), 0)
-    const total = sale.total ?? gross
+    const slice = opts?.refundPrintSlice
+    const receiptLines = slice
+      ? slice.lines.map((l) => ({
+          qty: l.qty,
+          name: l.name,
+          unitPrice: l.unitPrice,
+          listUnitPrice: l.listUnitPrice,
+          lineTotal: l.lineTotal,
+        }))
+      : sale.items.map((l) => ({
+          qty: l.quantity,
+          name: l.name,
+          unitPrice: l.unitPrice,
+          listUnitPrice: l.listUnitPrice,
+          lineTotal: l.lineTotal ?? roundCartMoney(l.quantity * l.unitPrice),
+        }))
+    const gross = receiptLines.reduce(
+      (sum, l) => sum + (l.lineTotal ?? roundCartMoney(l.qty * l.unitPrice)),
+      0,
+    )
+    const total = slice ? slice.refundTotal : (sale.total ?? gross)
     const discountTotal = Math.max(0, gross - total)
     const vatRate = Number(cfg.vatRatePct || 0)
     const taxTotal = vatRate > 0 ? total - total / (1 + vatRate / 100) : 0
     const subtotal = total - taxTotal
     const paymentLabelRaw = (sale.paymentMethod ?? '').toLowerCase()
-    const paymentLabel = paymentLabelRaw.includes('split')
+    const paymentLabel = opts?.paymentLabelOverride
+      ? opts.paymentLabelOverride
+      : paymentLabelRaw.includes('split')
       ? 'Split'
       : paymentLabelRaw === 'on_account'
         ? 'On account'
@@ -1937,16 +2358,44 @@ export function Register() {
             ? 'Store voucher'
             : 'Cash'
 
-    const tendered = sale.payment?.tenderedCash
-    const changeDue = sale.payment?.changeDue
+    const tendered = slice ? undefined : sale.payment?.tenderedCash
+    const changeDue = slice ? undefined : sale.payment?.changeDue
 
-    const onAccountAmt = sale.onAccountAmount ?? 0
+    const onAccountAmt = slice ? 0 : (sale.onAccountAmount ?? 0)
     const accountAck =
       onAccountAmt > 0.005
         ? {
             accountNumber: sale.houseAccountNumber?.trim() || '—',
             accountName: sale.houseAccountName?.trim(),
             amount: onAccountAmt,
+            purchaseOrderNumber: sale.purchaseOrderNumber?.trim(),
+          }
+        : undefined
+
+    const cashAmt = slice ? 0 : Number(sale.payment?.cashAmount ?? 0)
+    const cardAmt = slice ? 0 : Number(sale.payment?.cardAmount ?? 0)
+    const voucherAmt = slice ? 0 : Number(sale.storeCreditAmount ?? 0)
+    const tenderKindCount = slice
+      ? 0
+      : [cashAmt > 0.005, cardAmt > 0.005, voucherAmt > 0.005].filter(Boolean).length
+    const paymentTenders =
+      tenderKindCount >= 2
+        ? {
+            ...(cashAmt > 0.005 ? { cash: cashAmt } : {}),
+            ...(cardAmt > 0.005 ? { card: cardAmt } : {}),
+            ...(voucherAmt > 0.005 ? { storeVoucher: voucherAmt } : {}),
+          }
+        : undefined
+    const storeVoucherAck =
+      !slice && voucherAmt > 0.005
+        ? {
+            phoneDisplay: maskPhoneForReceipt(
+              typeof sale.storeCreditPhone === 'string' ? sale.storeCreditPhone : '',
+            ),
+            amount: voucherAmt,
+            ...(typeof sale.storeCreditBalanceAfter === 'number'
+              ? { balanceAfter: sale.storeCreditBalanceAfter }
+              : {}),
           }
         : undefined
 
@@ -1958,32 +2407,31 @@ export function Register() {
         headerLines: [cfg.headerLine1, cfg.headerLine2, cfg.headerLine3],
         phone: cfg.phone,
         vatNumber: cfg.vatNumber,
-        receiptTitle: cfg.receiptTitle,
-        cashierName: session?.user.email,
-        tillNumber: '2',
+        receiptTitle: opts?.receiptTitle ?? cfg.receiptTitle,
+        receiptNumberPrefix: opts?.receiptNumberPrefix,
+        cashierName: resolveCashierDisplayName(session?.user),
+        tillNumber: POS_TILL_CODE,
         tillLabel: cfg.tillLabel,
         slipLabel: cfg.slipLabel,
-        receiptNumber: sale._id.slice(-8),
+        receiptNumber: sale.saleId ?? sale._id.slice(-8),
         timestampIso: ts,
         paymentLabel,
         copyLabel: opts?.copyLabel,
+        ...(paymentTenders ? { paymentTenders } : {}),
+        ...(storeVoucherAck ? { storeVoucherAck } : {}),
         accountChargeAck: accountAck,
-        lines: sale.items.map((l) => ({
-          qty: l.quantity,
-          name: l.name,
-          unitPrice: l.unitPrice,
-          lineTotal: l.lineTotal,
-        })),
+        refundAck: opts?.refundAck,
+        lines: receiptLines,
         subtotal,
         taxTotal: taxTotal > 0.005 ? taxTotal : undefined,
         vatRatePct: vatRate > 0 ? vatRate : undefined,
         vatLabel: cfg.vatLabel,
         subtotalLabel: cfg.subtotalLabel,
         taxTotalLabel: cfg.taxTotalLabel,
-        totalDueLabel: cfg.totalDueLabel,
+        totalDueLabel: opts?.totalDueLabel ?? cfg.totalDueLabel,
         cashTenderedLabel: cfg.cashTenderedLabel,
         changeDueLabel: cfg.changeDueLabel,
-        thankYouLine: cfg.thankYouLine,
+        thankYouLine: opts?.thankYouLine ?? cfg.thankYouLine,
         discountTotal: discountTotal > 0.005 ? discountTotal : undefined,
         total,
         tendered,
@@ -2002,6 +2450,177 @@ export function Register() {
       if (!r.ok) return { ok: false, error: r.error ?? 'Print failed' }
     }
     return { ok: true }
+  }
+
+  async function printRefundReceiptToDevice(
+    sale: Sale,
+    note?: string,
+    payoutMethod?: 'cash' | 'card',
+    printSlice?: {
+      lines: Array<{ qty: number; name: string; unitPrice: number; listUnitPrice?: number; lineTotal: number }>
+      refundTotal: number
+    },
+  ): Promise<{ ok: boolean; error?: string }> {
+    if (!window.electronPos) return { ok: true }
+    const settings = readPosPrinterSettings()
+    const settledBy = payoutMethod ?? sale.refundPayoutMethod ?? 'cash'
+    const refundTxnTotal = printSlice?.refundTotal ?? sale.total
+    const refundCash = settledBy === 'cash' ? refundTxnTotal : 0
+    const refundCard = settledBy === 'card' ? refundTxnTotal : 0
+    const p = receiptPayloadFromSale(sale, {
+      copyLabel: 'REFUND',
+      receiptTitle: 'REFUND RECEIPT',
+      receiptNumberPrefix: 'Refund',
+      totalDueLabel: 'REFUND TOTAL:',
+      paymentLabelOverride: 'Refund',
+      thankYouLine: 'PLEASE SIGN BELOW',
+      refundPrintSlice: printSlice,
+      refundAck: {
+        refundTotal: refundTxnTotal,
+        refundCash,
+        refundCard,
+        note: note ? `${settledBy.toUpperCase()} · ${note}` : `Payout: ${settledBy.toUpperCase()}`,
+      },
+    })
+    const r = await window.electronPos.printReceipt(p.transport, p.receipt, { columns: p.columns, cut: p.cut })
+    if (!r.ok) return { ok: false, error: r.error ?? 'Refund receipt print failed' }
+    if (settings.autoOpenDrawer && (refundCash > 0.005 || refundCard > 0.005)) {
+      const d = await window.electronPos.kickDrawer(settings.transport)
+      if (!d.ok) return { ok: false, error: d.error ?? 'Refund saved, receipt printed, but drawer failed to open' }
+    }
+    return { ok: true }
+  }
+
+  function houseAccountPaymentReceiptPayload(input: {
+    account: HouseAccountRow
+    amount: number
+    method: 'cash' | 'card'
+  }): ReceiptPrintPayload {
+    const cfg = printerSettings.receiptConfig
+    const nowIso = new Date().toISOString()
+    return {
+      transport: printerSettings.transport,
+      columns: printerSettings.columns,
+      cut: printerSettings.cut,
+      receipt: {
+        headerLines: [cfg.headerLine1, cfg.headerLine2, cfg.headerLine3],
+        phone: cfg.phone,
+        vatNumber: cfg.vatNumber,
+        receiptTitle: 'ACCOUNT PAYMENT',
+        receiptNumberPrefix: 'Account',
+        cashierName: resolveCashierDisplayName(session?.user),
+        tillNumber: POS_TILL_CODE,
+        tillLabel: cfg.tillLabel,
+        slipLabel: cfg.slipLabel,
+        receiptNumber: input.account.accountNumber,
+        timestampIso: nowIso,
+        paymentLabel: input.method === 'cash' ? 'Cash' : 'Card',
+        lines: [
+          {
+            qty: 1,
+            name: `Payment to ${input.account.accountNumber}${input.account.name ? ` · ${input.account.name}` : ''}`,
+            unitPrice: input.amount,
+            lineTotal: input.amount,
+          },
+        ],
+        subtotal: input.amount,
+        total: input.amount,
+        totalDueLabel: 'PAYMENT AMOUNT:',
+        balanceRemaining: Math.max(0, input.account.balance),
+        thankYouLine: 'Account payment recorded',
+      },
+    }
+  }
+
+  async function printHouseAccountPaymentReceiptToDevice(input: {
+    account: HouseAccountRow
+    amount: number
+    method: 'cash' | 'card'
+  }): Promise<{ ok: boolean; error?: string; payload: ReceiptPrintPayload }> {
+    const p = houseAccountPaymentReceiptPayload(input)
+    if (!window.electronPos) return { ok: true, payload: p }
+    const r = await window.electronPos.printReceipt(p.transport, p.receipt, { columns: p.columns, cut: p.cut })
+    if (!r.ok) return { ok: false, error: r.error ?? 'Account payment receipt print failed', payload: p }
+    return { ok: true, payload: p }
+  }
+
+  async function printShiftReportToDevice(report: ShiftReport): Promise<void> {
+    if (!window.electronPos) return
+    const cfg = printerSettings.receiptConfig
+    const s = report.summary
+    const payload = {
+      transport: printerSettings.transport,
+      columns: printerSettings.columns,
+      cut: printerSettings.cut,
+      receipt: {
+        headerLines: [cfg.headerLine1, cfg.headerLine2, cfg.headerLine3],
+        phone: cfg.phone,
+        vatNumber: cfg.vatNumber,
+        receiptTitle: 'SHIFT Z REPORT',
+        receiptNumberPrefix: 'Shift',
+        receiptNumber: String(report.shiftId).slice(-8),
+        cashierName: resolveCashierDisplayName(session?.user),
+        tillNumber: report.tillCode,
+        tillLabel: cfg.tillLabel,
+        slipLabel: cfg.slipLabel,
+        timestampIso: new Date().toISOString(),
+        paymentLabel: 'Shift summary',
+        lines: [{ qty: 1, name: 'Shift report', unitPrice: s.turnover, lineTotal: s.turnover }],
+        shiftReport: {
+          turnover: s.turnover,
+          cashSales: s.cashSales,
+          cardSales: s.cardSales,
+          voucherTotal: s.voucherTotal,
+          onAccountTotal: s.onAccountTotal,
+          refundTotal: s.refundTotal,
+          refundCashTotal: s.refundCashTotal,
+          refundCardTotal: s.refundCardTotal,
+          refundCount: s.refundCount,
+          refundCashierNames: s.refundCashierNames,
+          refundDetails: (s.refundDetails ?? []).map((r) => ({
+            saleId: r.saleId,
+            cashierName: r.cashierName || (r.cashierId ? r.cashierId.slice(-6) : 'Cashier'),
+            method: r.method,
+            refundTotal: r.refundTotal,
+            refundCash: r.refundCash,
+            refundCard: r.refundCard,
+          })),
+          layByCompletions: s.layByCompletions,
+          layByPaymentCount: s.layByPaymentCount,
+          layByPaymentCashTotal: s.layByPaymentCashTotal,
+          layByPaymentCardTotal: s.layByPaymentCardTotal,
+          layByPaymentStoreCreditTotal: s.layByPaymentStoreCreditTotal,
+          layByPaymentTotal: s.layByPaymentTotal,
+          quoteConversions: s.quoteConversions,
+          tabClosures: s.tabClosures,
+          cashierSales: s.cashierSales.map((c) => ({
+            cashierName: c.cashierName || c.cashierId.slice(-6),
+            salesCount: c.salesCount,
+            total: c.total,
+          })),
+          priceOverrides: (s.priceOverrides ?? []).map((o) => ({
+            saleId: o.saleId,
+            cashierName: o.cashierName || (o.cashierId ? o.cashierId.slice(-6) : 'Cashier'),
+            itemName: o.itemName,
+            quantity: o.quantity,
+            listUnitPrice: o.listUnitPrice,
+            overriddenUnitPrice: o.overriddenUnitPrice,
+            lineDiscount: o.lineDiscount,
+          })),
+          cashDifferences: report.cashDifferences.map((d) => ({
+            kind: d.kind,
+            amount: d.amount,
+            note: d.note,
+          })),
+        },
+        subtotal: s.turnover,
+        total: s.turnover,
+      },
+    }
+    await window.electronPos.printReceipt(payload.transport, payload.receipt, {
+      columns: payload.columns,
+      cut: payload.cut,
+    })
   }
 
   function receiptPayloadFromQuote(q: QuoteDetail): {
@@ -2037,8 +2656,8 @@ export function Register() {
         receiptTitle: 'QUOTATION',
         receiptNumberPrefix: 'Quote',
         receiptNumber: q.quoteNumber,
-        cashierName: session?.user.email,
-        tillNumber: '2',
+        cashierName: resolveCashierDisplayName(session?.user),
+        tillNumber: POS_TILL_CODE,
         tillLabel: cfg.tillLabel,
         slipLabel: cfg.slipLabel,
         timestampIso: ts,
@@ -2083,9 +2702,26 @@ export function Register() {
     }
   }
 
-  async function printLastReceipt(sale: Sale) {
+  async function printLastReceipt(last: LastReceiptForReprint) {
     setError(null)
     try {
+      if (last.kind === 'raw') {
+        if (!window.electronPos) {
+          setNotice(last.successNotice ?? 'Receipt printed (web preview)')
+          return
+        }
+        const r = await window.electronPos.printReceipt(last.payload.transport, last.payload.receipt, {
+          columns: last.payload.columns,
+          cut: last.payload.cut,
+        })
+        if (!r.ok) {
+          setError(r.error ?? 'Receipt print failed')
+          return
+        }
+        setNotice(last.successNotice ?? 'Receipt printed')
+        return
+      }
+      const sale = last.sale
       if (!window.electronPos) {
         setNotice('Receipt printed (web preview)')
         return
@@ -2119,11 +2755,9 @@ export function Register() {
 
   async function openDrawer() {
     if (!isAdmin) {
-      setError('Admin required to open drawer')
+      setError('Manager permission required to open drawer')
       return
     }
-    const approved = await requestManagerApproval('open drawer')
-    if (!approved) return
     setError(null)
     try {
       if (!window.electronPos) {
@@ -2141,10 +2775,104 @@ export function Register() {
     }
   }
 
+  async function submitHouseAccountPayment() {
+    if (!houseAccountPaymentTarget || busy) return
+    setError(null)
+    setNotice(null)
+    const amount = round2(parseTenderedInput(houseAccountPaymentAmountStr.trim(), 0))
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setError('Enter payment amount')
+      return
+    }
+    setBusy(true)
+    try {
+      const latest = await apiFetch<HouseAccountRow>(`/house-accounts/${houseAccountPaymentTarget._id}`)
+      if (latest.status !== 'active') {
+        setError('Account is not active')
+        return
+      }
+      if (amount > latest.balance + 0.01) {
+        setError(`Payment cannot exceed owed balance ${latest.balance.toFixed(2)}`)
+        return
+      }
+      const updated = await apiFetch<HouseAccountRow>(`/house-accounts/${houseAccountPaymentTarget._id}/payments`, {
+        method: 'POST',
+        body: JSON.stringify({
+          amount,
+          cashAmount: houseAccountPaymentMethod === 'cash' ? amount : 0,
+          cardAmount: houseAccountPaymentMethod === 'card' ? amount : 0,
+          note: `POS payment (${houseAccountPaymentMethod})`,
+        }),
+      })
+      setHouseAccountPaymentTarget(updated)
+      if (houseAccountForCheckout && houseAccountForCheckout._id === updated._id) {
+        setHouseAccountForCheckout(updated)
+      }
+      const printed = await printHouseAccountPaymentReceiptToDevice({
+        account: updated,
+        amount,
+        method: houseAccountPaymentMethod,
+      })
+      if (!printed.ok) {
+        setError(printed.error ?? 'Payment saved but receipt print failed')
+      }
+      setLastReceiptForReprint({
+        kind: 'raw',
+        payload: printed.payload,
+        successNotice: 'Account payment receipt printed',
+      })
+      if (window.electronPos && houseAccountPaymentMethod === 'cash') {
+        const settings = readPosPrinterSettings()
+        if (settings.autoOpenDrawer) {
+          const d = await window.electronPos.kickDrawer(settings.transport)
+          if (!d.ok) setError(d.error ?? 'Payment saved, but drawer failed to open')
+        }
+      }
+      setNotice(
+        `Account ${updated.accountNumber} paid ${amount.toFixed(2)} · Remaining balance ${updated.balance.toFixed(2)}`,
+      )
+      setHouseAccountPaymentAmountStr('')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to record account payment')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
-    <div className="register-viewport">
-      <PosShell>
-        <div className="register-grid">
+    <div className={`register-viewport${refundSession ? ' register-viewport--refund-mode' : ''}`}>
+      <PosShell
+        beforeSignOut={() => {
+          if (cart.length > 0) {
+            setNotice('Clear the cart or complete the sale before signing out.')
+            return false
+          }
+          return true
+        }}
+      >
+        <div className="register-main-stack">
+          {refundSession ? (
+            <div className="register-refund-banner" role="status" aria-live="polite">
+              <span className="register-refund-banner-badge">Refund</span>
+              <span className="register-refund-banner-meta">
+                Sale{' '}
+                <strong>{refundSession.previewSale.saleId ?? refundSession.previewSale._id.slice(-10)}</strong>
+                {refundSession.previewSale.createdAt ? (
+                  <>
+                    {' '}
+                    · {formatDateDdMmYyyy(refundSession.previewSale.createdAt)}
+                  </>
+                ) : null}
+                {' · '}
+                Already refunded R {refundSession.refundPreview.refundedTotal.toFixed(2)} · Remaining R{' '}
+                {refundSession.refundPreview.remainingTotal.toFixed(2)}
+              </span>
+              <button type="button" className="btn ghost small register-refund-banner-exit" onClick={() => void exitRefundModePrompt()}>
+                Exit refund
+              </button>
+            </div>
+          ) : null}
+          <div className="register-grid">
           <section className="panel panel-products">
             <div className="products-header">
               <div className="products-header-titles">
@@ -2161,8 +2889,8 @@ export function Register() {
                       Tab <strong>#{activeTabBanner.tabNumber}</strong> · {activeTabBanner.customerName}
                       {activeTabBanner.phone ? ` · ${activeTabBanner.phone}` : ''}
                     </span>
-                    <button type="button" className="btn ghost key-action register-tab-walkin" onClick={() => void goWalkInSale()}>
-                      Walk-in
+                    <button type="button" className="btn ghost key-action register-tab-walkin" onClick={() => void closeActiveTabSession()}>
+                      Close tab
                     </button>
                   </div>
                 ) : null}
@@ -2175,13 +2903,22 @@ export function Register() {
                       {' · snapshot prices'}
                     </span>
                     {activeQuoteId ? (
-                      <button
-                        type="button"
-                        className="btn ghost key-action register-tab-walkin"
-                        onClick={() => void printQuoteById(activeQuoteId)}
-                      >
-                        Print quote
-                      </button>
+                      <div className="register-tab-banner-actions">
+                        <button
+                          type="button"
+                          className="btn ghost key-action register-tab-walkin"
+                          onClick={() => void printQuoteById(activeQuoteId)}
+                        >
+                          Print quote
+                        </button>
+                        <button
+                          type="button"
+                          className="btn ghost key-action register-tab-walkin"
+                          onClick={closeQuoteFromCart}
+                        >
+                          Close quote
+                        </button>
+                      </div>
                     ) : null}
                   </div>
                 ) : null}
@@ -2210,117 +2947,190 @@ export function Register() {
                   <span className="muted">&nbsp;</span>
                   <strong>{skuInput}</strong>
                 </div>
-                <div className="keys-grid">
-                  <button type="button" className="key-btn" onClick={() => pressKey('7')}>7</button>
-                  <button type="button" className="key-btn" onClick={() => pressKey('8')}>8</button>
-                  <button type="button" className="key-btn" onClick={() => pressKey('9')}>9</button>
-                  <button type="button" className="key-btn key-btn-danger" onClick={() => pressKey('clear')}>CL</button>
-                  <button type="button" className="key-btn" onClick={() => pressKey('4')}>4</button>
-                  <button type="button" className="key-btn" onClick={() => pressKey('5')}>5</button>
-                  <button type="button" className="key-btn" onClick={() => pressKey('6')}>6</button>
-                  <button type="button" className="key-btn" onClick={() => pressKey('backspace')}>⌫</button>
-                  <button type="button" className="key-btn" onClick={() => pressKey('1')}>1</button>
-                  <button type="button" className="key-btn" onClick={() => pressKey('2')}>2</button>
-                  <button type="button" className="key-btn" onClick={() => pressKey('3')}>3</button>
-                  <button type="button" className="key-btn key-btn-primary key-btn-enter" onClick={() => pressKey('enter')}>ENTER</button>
-                  <button type="button" className="key-btn" onClick={() => pressKey('0')}>0</button>
-                  <button type="button" className="key-btn" onClick={() => pressKey('.')}>.</button>
-                  <button
-                    type="button"
-                    className="key-btn"
-                    title="Quantity × SKU (then ENTER)"
-                    onClick={() => pressKey('×')}
-                  >
-                    ×
-                  </button>
-                </div>
-                <div className="function-grid">
-                  <button type="button" className="key-btn key-btn-fn" onClick={voidLastItem} disabled={cart.length === 0}>
-                    VOID ITEM
-                  </button>
-                  <button
-                    type="button"
-                    className="key-btn key-btn-fn"
-                    onClick={() => {
-                      setOpenTabsModalOpen(true)
-                      void loadOpenTabsList()
-                    }}
-                  >
-                    TABS
-                  </button>
-                  <button
-                    type="button"
-                    className="key-btn key-btn-fn"
-                    onClick={() => setHouseAccountsModalOpen(true)}
-                    title="House accounts (on-account sales)"
-                  >
-                    ACCOUNTS
-                  </button>
-                  <button
-                    type="button"
-                    className="key-btn key-btn-fn"
-                    disabled={!!activeOpenTabId}
-                    title={activeOpenTabId ? 'Finish or walk-in from tab first' : undefined}
-                    onClick={() => {
-                      setQuotesModalOpen(true)
-                      void loadQuotesList('', '')
-                    }}
-                  >
-                    QUOTE
-                  </button>
-                  <button
-                    type="button"
-                    className="key-btn key-btn-fn"
-                    disabled={!!activeOpenTabId}
-                    title={activeOpenTabId ? 'Finish or walk-in from tab first' : undefined}
-                    onClick={() => setLayByModalOpen(true)}
-                  >
-                    LAY-BY
-                  </button>
-                  <button
-                    type="button"
-                    className="key-btn key-btn-fn"
-                    title="Enter price on keypad, then tap (last cart line)"
-                    onClick={() => priceOverrideLast()}
-                  >
-                    PRICE OVERRIDE
-                  </button>
-                  <button
-                    type="button"
-                    className="key-btn key-btn-fn key-btn-discount"
-                    title="Tap: last line · Hold: whole cart"
-                    disabled={cart.length === 0}
-                    onPointerDown={onDiscountPointerDown}
-                    onPointerMove={onDiscountPointerMove}
-                    onPointerUp={onDiscountPointerUp}
-                    onPointerCancel={onDiscountPointerCancel}
-                    onClick={onDiscountClick}
-                  >
-                    DISCOUNT %
-                  </button>
-                  <button
-                    type="button"
-                    className={`key-btn key-btn-fn ${receiptEnabled ? 'key-btn-primary' : ''}`}
-                    onClick={() => setReceiptEnabled((v) => !v)}
-                  >
-                    {receiptEnabled ? 'RECEIPT ON' : 'RECEIPT OFF'}
-                  </button>
-                  <button
-                    type="button"
-                    className="key-btn key-btn-fn"
-                    disabled={!lastReceiptForReprint || busy}
-                    onClick={() => lastReceiptForReprint && void printLastReceipt(lastReceiptForReprint)}
-                    title={
-                      lastReceiptForReprint
-                        ? 'Reprint last completed sale receipt'
-                        : 'Complete a sale to enable reprint'
-                    }
-                  >
-                    PRINT LAST
-                  </button>
-                  <button type="button" className="key-btn key-btn-fn" onClick={() => void openDrawer()}>
-                    OPEN DRAWER
-                  </button>
+                <div className="keys-buttons-wrap">
+                  <div className="keys-main-pad">
+                    <div className="keys-grid">
+                      <button type="button" className="key-btn" onClick={() => pressKey('7')}>7</button>
+                      <button type="button" className="key-btn" onClick={() => pressKey('8')}>8</button>
+                      <button type="button" className="key-btn" onClick={() => pressKey('9')}>9</button>
+                      <button type="button" className="key-btn key-btn-danger" onClick={() => pressKey('clear')}>CL</button>
+                      <button type="button" className="key-btn" onClick={() => pressKey('4')}>4</button>
+                      <button type="button" className="key-btn" onClick={() => pressKey('5')}>5</button>
+                      <button type="button" className="key-btn" onClick={() => pressKey('6')}>6</button>
+                      <button type="button" className="key-btn" onClick={() => pressKey('backspace')}>⌫</button>
+                      <button type="button" className="key-btn" onClick={() => pressKey('1')}>1</button>
+                      <button type="button" className="key-btn" onClick={() => pressKey('2')}>2</button>
+                      <button type="button" className="key-btn" onClick={() => pressKey('3')}>3</button>
+                      <button
+                        type="button"
+                        className="key-btn key-btn-primary key-btn-enter"
+                        aria-label="Enter"
+                        title="Enter"
+                        onClick={() => pressKey('enter')}
+                      >
+                        ↵
+                      </button>
+                      <button type="button" className="key-btn" onClick={() => pressKey('0')}>0</button>
+                      <button type="button" className="key-btn" onClick={() => pressKey('.')}>.</button>
+                      <button
+                        type="button"
+                        className="key-btn"
+                        title="Quantity × SKU (then ENTER)"
+                        onClick={() => pressKey('×')}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  </div>
+                  <div className="keys-function-pad">
+                    <div className="function-grid">
+                      <button
+                        type="button"
+                        className="key-btn key-btn-fn"
+                        onClick={voidLastItem}
+                        disabled={cart.length === 0}
+                      >
+                        VOID ITEM
+                      </button>
+                      <button
+                        type="button"
+                        className="key-btn key-btn-fn"
+                        disabled={!!refundSession}
+                        title={refundSession ? 'Finish refund first' : undefined}
+                        onClick={() => {
+                          setOpenTabsModalOpen(true)
+                          void loadOpenTabsList()
+                        }}
+                      >
+                        TABS
+                      </button>
+                      {canRefund ? (
+                        <button
+                          type="button"
+                          className="key-btn key-btn-fn"
+                          title={
+                            refundSession
+                              ? 'Leave refund mode (cart will clear)'
+                              : 'Refund — enter sale id from receipt'
+                          }
+                          onClick={() => {
+                            if (refundSession) {
+                              void exitRefundModePrompt()
+                              return
+                            }
+                            if (activeOpenTabId) {
+                              setError('Close or complete the open tab before refund')
+                              return
+                            }
+                            if (cart.length > 0) {
+                              setError('Clear the cart or complete the sale before refund')
+                              return
+                            }
+                            setRefundSaleIdModalOpen(true)
+                          }}
+                        >
+                          {refundSession ? 'EXIT REFUND' : 'REFUND'}
+                        </button>
+                      ) : null}
+                      {canShiftEnd ? (
+                        <button
+                          type="button"
+                          className="key-btn key-btn-fn"
+                          disabled={!!refundSession}
+                          title={refundSession ? 'Finish refund first' : 'Print Z report, then continue or close shift'}
+                          onClick={() => setShiftEndModalOpen(true)}
+                        >
+                          SHIFT END
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        className="key-btn key-btn-fn"
+                        disabled={!!refundSession}
+                        title={refundSession ? 'Finish refund first' : 'House accounts payments'}
+                        onClick={openHouseAccountsForPayment}
+                      >
+                        ACCOUNTS
+                      </button>
+                      <button
+                        type="button"
+                        className="key-btn key-btn-fn"
+                        disabled={!!activeOpenTabId || !!refundSession}
+                        title={
+                          refundSession
+                            ? 'Finish refund first'
+                            : activeOpenTabId
+                              ? 'Finish or close tab first'
+                              : undefined
+                        }
+                        onClick={() => {
+                          setQuotesModalOpen(true)
+                          void loadQuotesList('', '')
+                        }}
+                      >
+                        QUOTE
+                      </button>
+                      <button
+                        type="button"
+                        className="key-btn key-btn-fn"
+                        disabled={!!activeOpenTabId || !!refundSession}
+                        title={
+                          refundSession
+                            ? 'Finish refund first'
+                            : activeOpenTabId
+                              ? 'Finish or close tab first'
+                              : undefined
+                        }
+                        onClick={() => setLayByModalOpen(true)}
+                      >
+                        LAY-BY
+                      </button>
+                      <button
+                        type="button"
+                        className="key-btn key-btn-fn"
+                        title="Enter price on keypad, then tap (last cart line)"
+                        onClick={() => priceOverrideLast()}
+                      >
+                        PRICE OVERRIDE
+                      </button>
+                      <button
+                        type="button"
+                        className="key-btn key-btn-fn key-btn-discount"
+                        title="Tap: last line · Hold: whole cart"
+                        disabled={cart.length === 0 || !!refundSession}
+                        onPointerDown={onDiscountPointerDown}
+                        onPointerMove={onDiscountPointerMove}
+                        onPointerUp={onDiscountPointerUp}
+                        onPointerCancel={onDiscountPointerCancel}
+                        onClick={onDiscountClick}
+                      >
+                        DISCOUNT %
+                      </button>
+                      <button
+                        type="button"
+                        className={`key-btn key-btn-fn ${receiptEnabled ? 'key-btn-primary' : ''}`}
+                        onClick={() => setReceiptEnabled((v) => !v)}
+                      >
+                        {receiptEnabled ? 'RECEIPT ON' : 'RECEIPT OFF'}
+                      </button>
+                      <button
+                        type="button"
+                        className="key-btn key-btn-fn"
+                        disabled={!lastReceiptForReprint || busy}
+                        onClick={() => lastReceiptForReprint && void printLastReceipt(lastReceiptForReprint)}
+                        title={
+                          lastReceiptForReprint
+                            ? 'Reprint last completed sale receipt'
+                            : 'Complete a sale to enable reprint'
+                        }
+                      >
+                        PRINT LAST
+                      </button>
+                      <button type="button" className="key-btn key-btn-fn" onClick={() => void openDrawer()}>
+                        OPEN DRAWER
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             ) : registerLeftPanel === 'presets' ? (
@@ -2363,7 +3173,7 @@ export function Register() {
                 </div>
                 <p className="muted presets-hint">
                   Category → sub-category → item. Assign from Item list (long-press or right-click a product). On the
-                  item screen, long-press a row to remove that preset (max 16 items).
+                  item screen, long-press a row to remove that preset (max {PRESET_ENTRY_MAX} items).
                 </p>
                 <div className="presets-screen">
                   {presetNav.screen === 'categories' ? (
@@ -2481,7 +3291,7 @@ export function Register() {
                 />
                 <p className="muted item-list-tap-hint">
                   Tap a row to add. Long-press or right-click to add to the Presets menu (category → sub-category →
-                  item, up to 16).
+                  item, up to {PRESET_ENTRY_MAX}).
                 </p>
                 <div className="product-browser">
                   <ul className="product-list">
@@ -2574,6 +3384,7 @@ export function Register() {
                       <div>
                         On account ({pendingSplit.houseAccountNumber}):{' '}
                         <strong>{pendingSplit.onAccountApplied.toFixed(2)}</strong>
+                        {pendingSplit.purchaseOrderNumber ? ` · PO ${pendingSplit.purchaseOrderNumber}` : ''}
                       </div>
                     ) : null}
                   </div>
@@ -2608,6 +3419,7 @@ export function Register() {
                               <div className="register-voucher-title">Store voucher</div>
                               <div className="register-voucher-row">
                                 <input
+                                  ref={voucherPhoneInputRef}
                                   className="register-voucher-input"
                                   type="tel"
                                   inputMode={voucherScreenKbOpen ? 'none' : 'numeric'}
@@ -2638,6 +3450,7 @@ export function Register() {
                               ) : null}
                               <div className="register-voucher-row">
                                 <input
+                                  ref={voucherAmountInputRef}
                                   className="register-voucher-input"
                                   type="text"
                                   inputMode={voucherScreenKbOpen ? 'none' : 'decimal'}
@@ -2680,13 +3493,9 @@ export function Register() {
                             <button
                               type="button"
                               className="btn ghost small"
-                              onClick={() => setHouseAccountFormOpen((v) => !v)}
-                              aria-expanded={houseAccountFormOpen}
+                              onClick={openHouseAccountsForCheckout}
                             >
-                              {houseAccountFormOpen ? 'Hide on account' : 'Charge on account'}
-                            </button>
-                            <button type="button" className="btn ghost small" onClick={() => setHouseAccountsModalOpen(true)}>
-                              ACCOUNTS
+                              Charge on account
                             </button>
                           </div>
                           {houseAccountForCheckout ? (
@@ -2700,7 +3509,7 @@ export function Register() {
                             </p>
                           ) : (
                             <p className="muted register-voucher-balance" style={{ marginTop: '0.35rem' }}>
-                              Tap ACCOUNTS to pick a house account.
+                              Tap Charge on account to pick a house account.
                             </p>
                           )}
                           {houseAccountFormOpen ? (
@@ -2712,12 +3521,18 @@ export function Register() {
                                   type="text"
                                   inputMode="decimal"
                                   placeholder="Amount"
-                                  value={onAccountAmountStr}
-                                  onChange={(e) => setOnAccountAmountStr(e.target.value)}
+                                  value={onAccountRemainingDueAmount().toFixed(2)}
+                                  readOnly
                                 />
-                                <button type="button" className="btn small" disabled={busy} onClick={applyOnAccountUseMax}>
-                                  Use max
-                                </button>
+                                <input
+                                  className="register-voucher-input"
+                                  type="text"
+                                  placeholder="Purchase order no."
+                                  value={onAccountPoNumber}
+                                  onChange={(e) => setOnAccountPoNumber(e.target.value)}
+                                  inputMode={onAccountPoKbOpen ? 'none' : 'text'}
+                                  onFocus={() => setOnAccountPoKbOpen(true)}
+                                />
                                 <button
                                   type="button"
                                   className="btn small primary"
@@ -2727,6 +3542,11 @@ export function Register() {
                                   Apply
                                 </button>
                               </div>
+                              <ScreenKeyboard
+                                visible={onAccountPoKbOpen}
+                                onAction={handleOnAccountPoKeyboardAction}
+                                className="open-tabs-screen-keyboard register-voucher-screen-kb"
+                              />
                             </>
                           ) : null}
                         </div>
@@ -2766,18 +3586,29 @@ export function Register() {
               </div>
             ) : (
               <>
-                <h2>Cart</h2>
+                <h2>{refundSession ? 'Refund cart' : 'Cart'}</h2>
                 <div className="cart-body">
                   {cart.length === 0 ? (
-                    <p className="muted empty-hint cart-empty-msg">Tap a product to add.</p>
+                    <p className="muted empty-hint cart-empty-msg">
+                      {refundSession ? 'No refundable lines left on this sale.' : 'Tap a product to add.'}
+                    </p>
                   ) : (
                     <div className="cart-lines">
                       {cart.map((l) => {
                         const disc = lineDiscountDisplay(l)
+                        const vol = l.volumeSegments && l.volumeSegments.length > 0
+                        const volShowAvg = (l.volumeSegments?.length ?? 0) > 1
+                        const refundMax = l.refundQtyMax
                         return (
-                        <div className="cart-line" key={l.productId}>
+                        <div
+                          className="cart-line"
+                          key={l.refundSaleLineIndex != null ? `refund-${l.refundSaleLineIndex}` : l.productId}
+                        >
                           <div className="cart-line-info">
-                            <span className="cart-line-name">{l.name}</span>
+                            <span className="cart-line-name">
+                              {l.name}
+                              {vol ? <span className="muted cart-line-vol-badge"> · Volume</span> : null}
+                            </span>
                             <span className="cart-line-sub">
                               {disc ? (
                                 <>
@@ -2785,11 +3616,28 @@ export function Register() {
                                   <span className="cart-line-price-arrow"> → </span>
                                 </>
                               ) : null}
-                              <span className="cart-line-unit">{l.unitPrice.toFixed(2)} each</span>
+                              <span className="cart-line-unit">
+                                {l.unitPrice.toFixed(2)} {vol && volShowAvg ? 'avg' : 'each'}
+                              </span>
                               {disc ? (
                                 <span className="cart-line-discount-badge">−{disc.pct}%</span>
                               ) : null}
                             </span>
+                            {refundMax != null ? (
+                              <span className="muted cart-line-volume-breakdown register-refund-line-cap">
+                                Refund qty (max {refundMax.toFixed(2)})
+                              </span>
+                            ) : null}
+                            {l.volumeSegments && l.volumeSegments.length > 1 ? (
+                              <span className="muted cart-line-volume-breakdown">
+                                {l.volumeSegments.map((s, i, arr) => (
+                                  <span key={i}>
+                                    {s.quantity} × {s.unitPrice.toFixed(2)}
+                                    {i < arr.length - 1 ? ' · ' : ''}
+                                  </span>
+                                ))}
+                              </span>
+                            ) : null}
                           </div>
                           <div className="cart-line-actions">
                             <div className="stepper" role="group" aria-label="Quantity">
@@ -2797,7 +3645,7 @@ export function Register() {
                                 type="button"
                                 className="stepper-btn"
                                 aria-label={`Decrease ${l.name}`}
-                                onClick={() => bumpQty(l.productId, -1)}
+                                onClick={() => bumpCartLineQty(l, -1)}
                               >
                                 −
                               </button>
@@ -2808,12 +3656,12 @@ export function Register() {
                                 type="button"
                                 className="stepper-btn"
                                 aria-label={`Increase ${l.name}`}
-                                onClick={() => bumpQty(l.productId, 1)}
+                                onClick={() => bumpCartLineQty(l, 1)}
                               >
                                 +
                               </button>
                             </div>
-                            <span className="cart-line-total">{(l.quantity * l.unitPrice).toFixed(2)}</span>
+                            <span className="cart-line-total">{cartLineSubtotal(l).toFixed(2)}</span>
                           </div>
                         </div>
                         )
@@ -2822,7 +3670,7 @@ export function Register() {
                   )}
                 </div>
                 <div className="cart-footer">
-                  {cart.length > 0 ? (
+                  {cart.length > 0 && !refundSession ? (
                     <div className="register-alt-payment-wrap">
                       <button
                         type="button"
@@ -2850,6 +3698,7 @@ export function Register() {
                                 <div className="register-voucher-title">Store voucher</div>
                                 <div className="register-voucher-row">
                                   <input
+                                    ref={voucherPhoneInputRef}
                                     className="register-voucher-input"
                                     type="tel"
                                     inputMode={voucherScreenKbOpen ? 'none' : 'numeric'}
@@ -2880,6 +3729,7 @@ export function Register() {
                                 ) : null}
                                 <div className="register-voucher-row">
                                   <input
+                                    ref={voucherAmountInputRef}
                                     className="register-voucher-input"
                                     type="text"
                                     inputMode={voucherScreenKbOpen ? 'none' : 'decimal'}
@@ -2913,13 +3763,9 @@ export function Register() {
                               <button
                                 type="button"
                                 className="btn ghost small"
-                                onClick={() => setHouseAccountFormOpen((v) => !v)}
-                                aria-expanded={houseAccountFormOpen}
+                                onClick={openHouseAccountsForCheckout}
                               >
-                                {houseAccountFormOpen ? 'Hide on account' : 'Charge on account'}
-                              </button>
-                              <button type="button" className="btn ghost small" onClick={() => setHouseAccountsModalOpen(true)}>
-                                ACCOUNTS
+                                Charge on account
                               </button>
                             </div>
                             {houseAccountForCheckout ? (
@@ -2933,7 +3779,7 @@ export function Register() {
                               </p>
                             ) : (
                               <p className="muted register-voucher-balance" style={{ marginTop: '0.35rem' }}>
-                                Tap ACCOUNTS to pick a house account.
+                                Tap Charge on account to pick a house account.
                               </p>
                             )}
                             {houseAccountFormOpen ? (
@@ -2945,12 +3791,18 @@ export function Register() {
                                     type="text"
                                     inputMode="decimal"
                                     placeholder="Amount"
-                                    value={onAccountAmountStr}
-                                    onChange={(e) => setOnAccountAmountStr(e.target.value)}
+                                    value={onAccountRemainingDueAmount().toFixed(2)}
+                                    readOnly
                                   />
-                                  <button type="button" className="btn small" disabled={busy} onClick={applyOnAccountUseMax}>
-                                    Use max
-                                  </button>
+                                <input
+                                  className="register-voucher-input"
+                                  type="text"
+                                  placeholder="Purchase order no."
+                                  value={onAccountPoNumber}
+                                  onChange={(e) => setOnAccountPoNumber(e.target.value)}
+                                  inputMode={onAccountPoKbOpen ? 'none' : 'text'}
+                                  onFocus={() => setOnAccountPoKbOpen(true)}
+                                />
                                   <button
                                     type="button"
                                     className="btn small primary"
@@ -2960,6 +3812,11 @@ export function Register() {
                                     Apply
                                   </button>
                                 </div>
+                                <ScreenKeyboard
+                                  visible={onAccountPoKbOpen}
+                                  onAction={handleOnAccountPoKeyboardAction}
+                                  className="open-tabs-screen-keyboard register-voucher-screen-kb"
+                                />
                               </>
                             ) : null}
                           </div>
@@ -2967,25 +3824,50 @@ export function Register() {
                       ) : null}
                     </div>
                   ) : null}
+                  {refundSession && cart.length > 0 ? (
+                    <label className="register-refund-note-field">
+                      <span className="muted small">Refund note (optional, audit)</span>
+                      <textarea
+                        className="register-refund-note-input"
+                        rows={2}
+                        value={refundNote}
+                        onChange={(e) => setRefundNote(e.target.value)}
+                        placeholder="Reason or reference"
+                      />
+                    </label>
+                  ) : null}
                   <div className="total">
-                    Total <strong className="total-amount">{cartTotal.toFixed(2)}</strong>
+                    {refundSession ? 'Refund total' : 'Total'}{' '}
+                    <strong className="total-amount">{cartTotal.toFixed(2)}</strong>
                   </div>
                   <div className="cash-footer">
                     <button
                       type="button"
                       className="btn checkout-btn cash-checkout-btn"
-                      disabled={busy || cart.length === 0}
+                      disabled={
+                        busy ||
+                        cart.length === 0 ||
+                        (refundSession != null &&
+                          (refundSession.previewSale.refundStatus === 'refunded' ||
+                            refundSession.refundPreview.remainingTotal <= 0.005))
+                      }
                       onClick={() => void checkoutCash()}
                     >
-                      {busy ? 'Processing…' : 'Cash'}
+                      {busy ? 'Processing…' : refundSession ? 'Refund cash' : 'Cash'}
                     </button>
                     <button
                       type="button"
                       className="btn checkout-btn card-checkout-btn"
-                      disabled={busy || cart.length === 0}
+                      disabled={
+                        busy ||
+                        cart.length === 0 ||
+                        (refundSession != null &&
+                          (refundSession.previewSale.refundStatus === 'refunded' ||
+                            refundSession.refundPreview.remainingTotal <= 0.005))
+                      }
                       onClick={() => void checkoutCard()}
                     >
-                      {busy ? 'Processing…' : 'Card'}
+                      {busy ? 'Processing…' : refundSession ? 'Refund card' : 'Card'}
                     </button>
                   </div>
                 </div>
@@ -3004,10 +3886,13 @@ export function Register() {
             )}
           </section>
         </div>
+        </div>
         <AssignPresetModal
           open={assignPresetProduct != null}
           product={assignPresetProduct}
           presetsState={presetsState}
+          catalogCategories={catalogCategoriesForPresetSuggest}
+          catalogProducts={products}
           onClose={() => setAssignPresetProduct(null)}
           onAssign={(replaceAtIndex, category, subCategory) => {
             const prod = assignPresetProduct
@@ -3059,8 +3944,8 @@ export function Register() {
           onLoadQuote={(id) => void handleLoadQuote(id)}
           onSaveQuote={(input) => handleSaveQuote(input)}
           onPrintQuote={(id) => printQuoteById(id)}
-          saveDisabled={cart.length === 0 || !!activeOpenTabId}
-          loadDisabled={!!activeOpenTabId}
+          saveDisabled={cart.length === 0 || !!activeOpenTabId || !!refundSession}
+          loadDisabled={!!activeOpenTabId || !!refundSession}
         />
         <LayByModal
           open={layByModalOpen}
@@ -3068,6 +3953,8 @@ export function Register() {
           cart={cart}
           cartTotal={cartTotal}
           isAdmin={isAdmin}
+          receiptEnabled={receiptEnabled}
+          tillCode={POS_TILL_CODE}
           onCreated={() => {
             clearActiveQuote()
             setCart([])
@@ -3077,11 +3964,129 @@ export function Register() {
         <HouseAccountsModal
           open={houseAccountsModalOpen}
           onClose={() => setHouseAccountsModalOpen(false)}
-          onSelectForCheckout={(row) => {
+          actionLabel={houseAccountsModalMode === 'payment' ? 'Take a payment' : 'Use for checkout'}
+          helperText={
+            houseAccountsModalMode === 'payment'
+              ? 'Select an account and record a customer payment against the amount owed.'
+              : 'Select an account to charge the current sale (on account). Create or edit accounts in Back Office.'
+          }
+          onSelectAccount={(row) => {
+            if (houseAccountsModalMode === 'payment') {
+              setHouseAccountPaymentTarget(row)
+              setHouseAccountPaymentAmountStr('')
+              setHouseAccountPaymentMethod('cash')
+              setHouseAccountPaymentKbOpen(true)
+              return
+            }
             setHouseAccountForCheckout(row)
             setHouseAccountFormOpen(true)
+            setOnAccountPoNumber('')
+            setOnAccountPoKbOpen(false)
           }}
         />
+        {houseAccountPaymentTarget ? (
+          <div
+            className="open-tabs-backdrop"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="house-acct-payment-title"
+            onMouseDown={(e) => {
+              if (e.target === e.currentTarget && !busy) {
+                setHouseAccountPaymentTarget(null)
+                setHouseAccountPaymentKbOpen(false)
+              }
+            }}
+          >
+            <div className="open-tabs-dialog quotes-modal-dialog">
+              <div className="open-tabs-header">
+                <h2 id="house-acct-payment-title">Take account payment</h2>
+                <button
+                  type="button"
+                  className="btn ghost open-tabs-close"
+                  disabled={busy}
+                  onClick={() => {
+                    setHouseAccountPaymentTarget(null)
+                    setHouseAccountPaymentKbOpen(false)
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+              <div className="quotes-modal-body">
+                <p className="muted" style={{ marginBottom: '0.35rem' }}>
+                  <strong>{houseAccountPaymentTarget.accountNumber}</strong>
+                  {houseAccountPaymentTarget.name ? ` · ${houseAccountPaymentTarget.name}` : ''}
+                </p>
+                <p className="muted" style={{ marginBottom: '0.75rem' }}>
+                  Owed {houseAccountPaymentTarget.balance.toFixed(2)}
+                  {houseAccountPaymentTarget.creditLimit != null
+                    ? ` · Limit ${houseAccountPaymentTarget.creditLimit.toFixed(2)}`
+                    : ''}
+                </p>
+                <div className="register-voucher-row">
+                  <input
+                    className="register-voucher-input"
+                    type="text"
+                    inputMode={houseAccountPaymentKbOpen ? 'none' : 'decimal'}
+                    placeholder="Payment amount"
+                    value={houseAccountPaymentAmountStr}
+                    onChange={(e) => setHouseAccountPaymentAmountStr(e.target.value)}
+                    onFocus={() => setHouseAccountPaymentKbOpen(true)}
+                  />
+                  <button
+                    type="button"
+                    className={`btn small ${houseAccountPaymentMethod === 'cash' ? 'primary' : ''}`}
+                    disabled={busy}
+                    onClick={() => setHouseAccountPaymentMethod('cash')}
+                  >
+                    Cash
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn small ${houseAccountPaymentMethod === 'card' ? 'primary' : ''}`}
+                    disabled={busy}
+                    onClick={() => setHouseAccountPaymentMethod('card')}
+                  >
+                    Card
+                  </button>
+                  <button
+                    type="button"
+                    className="btn small primary"
+                    disabled={busy}
+                    onClick={() => void submitHouseAccountPayment()}
+                  >
+                    {busy ? 'Saving…' : 'Record payment'}
+                  </button>
+                </div>
+                <ScreenKeyboard
+                  visible={houseAccountPaymentKbOpen}
+                  onAction={handleHouseAccountPaymentKeyboardAction}
+                  layout="decimal"
+                  className="open-tabs-screen-keyboard register-voucher-screen-kb"
+                />
+              </div>
+            </div>
+          </div>
+        ) : null}
+        {canRefund ? (
+          <RefundSaleIdModal
+            open={refundSaleIdModalOpen}
+            onClose={() => setRefundSaleIdModalOpen(false)}
+            onSaleLoaded={(data, enteredId) => {
+              beginRefundMode(data, enteredId)
+            }}
+          />
+        ) : null}
+        {canShiftEnd ? (
+          <ShiftEndModal
+            open={shiftEndModalOpen}
+            tillCode={POS_TILL_CODE}
+            onClose={() => setShiftEndModalOpen(false)}
+            onPrintReport={async (report) => {
+              await printShiftReportToDevice(report)
+            }}
+          />
+        ) : null}
       </PosShell>
     </div>
   )

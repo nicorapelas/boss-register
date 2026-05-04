@@ -1,0 +1,342 @@
+/* Elon theme — deep Old Glory blue & red; minimal white (stars/stripes accent only). */
+
+html[data-pos-theme='elon'] .shell {
+  background: linear-gradient(
+    165deg,
+    #0a1628 0%,
+    #1a237e 28%,
+    #0d1b2a 55%,
+    #1b0a0f 85%,
+    #0a1628 100%
+  );
+}
+
+html[data-pos-theme='elon'] .shell-header {
+  border-bottom: 4px solid #b22234;
+  background: linear-gradient(90deg, #3c3b6e 0%, #1e3a8a 50%, #3c3b6e 100%);
+}
+
+html[data-pos-theme='elon'] .shell-brand a {
+  color: #f8fafc;
+}
+
+html[data-pos-theme='elon'] .shell-header .btn.ghost {
+  color: #f8fafc;
+  border-color: rgba(248, 250, 252, 0.45);
+}
+
+html[data-pos-theme='elon'] .shell-header .btn.ghost:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+html[data-pos-theme='elon'] .shell-user {
+  color: #e2e8f0;
+}
+
+html[data-pos-theme='elon'] .shell-sub {
+  color: #93c5fd;
+}
+
+html[data-pos-theme='elon'] .muted {
+  color: #94a3b8;
+}
+
+html[data-pos-theme='elon'] .panel {
+  background: #0f172a;
+  border: 2px solid #3c3b6e;
+  box-shadow: 0 0 0 1px rgba(178, 34, 52, 0.25);
+}
+
+html[data-pos-theme='elon'] .form input {
+  border-color: #3b82f6;
+  background: #020617;
+  color: #f1f5f9;
+}
+
+html[data-pos-theme='elon'] .search {
+  border-color: #3b82f6;
+  background: #020617;
+  color: #f1f5f9;
+}
+
+html[data-pos-theme='elon'] .product-row {
+  border-color: #2563eb;
+  background: #172554;
+}
+
+html[data-pos-theme='elon'] .product-meta,
+html[data-pos-theme='elon'] .product-price {
+  color: #e2e8f0;
+}
+
+html[data-pos-theme='elon'] .table th,
+html[data-pos-theme='elon'] .table td {
+  border-bottom-color: #475569;
+}
+
+html[data-pos-theme='elon'] .screen-keyboard {
+  border-top-color: #b22234;
+  background: #0f172a;
+}
+
+html[data-pos-theme='elon'] .screen-keyboard-key {
+  border-color: #dbeafe;
+  background: #ffffff;
+  color: #1d4ed8;
+}
+
+html[data-pos-theme='elon'] .screen-keyboard-key:active:not(:disabled) {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+  color: #ffffff;
+}
+
+html[data-pos-theme='elon'] .screen-keyboard-key-done {
+  background: #ffffff;
+  border-color: #dbeafe;
+  color: #1d4ed8;
+}
+
+html[data-pos-theme='elon'] .sku-display {
+  border-color: #b22234;
+  background: #020617;
+  color: #f8fafc;
+}
+
+html[data-pos-theme='elon'] .key-btn {
+  border-color: #dbeafe;
+  background: #ffffff;
+  color: #1d4ed8;
+}
+
+html[data-pos-theme='elon'] .key-btn:active:not(:disabled) {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+  color: #ffffff;
+}
+
+html[data-pos-theme='elon'] .keys-grid .key-btn {
+  font-size: clamp(1.35rem, 2.6vw, 2rem);
+  font-weight: 800;
+}
+
+@media (max-width: 900px), (max-height: 740px) {
+  html[data-pos-theme='elon'] .keys-grid .key-btn {
+    font-size: clamp(1.15rem, 2.2vw, 1.6rem);
+  }
+}
+
+html[data-pos-theme='elon'] .key-btn-primary,
+html[data-pos-theme='elon'] .key-btn-danger,
+html[data-pos-theme='elon'] .key-btn-pay {
+  border-color: #dbeafe;
+  background: #ffffff;
+  color: #1d4ed8;
+}
+
+html[data-pos-theme='elon'] .panel-cart .cart-footer {
+  border-top-color: #b22234;
+}
+
+html[data-pos-theme='elon'] .cart-change-sticky-footer {
+  border-top-color: #b22234;
+  background: #0f172a;
+}
+
+html[data-pos-theme='elon'] .cart-line {
+  border-color: #1d4ed8;
+  background: #172554;
+}
+
+html[data-pos-theme='elon'] .cart-line-discount-badge {
+  background: #b22234;
+  color: #fef2f2;
+}
+
+html[data-pos-theme='elon'] .cart-line-sub {
+  color: #94a3b8;
+}
+
+html[data-pos-theme='elon'] .stepper {
+  border-color: #3b82f6;
+  background: #020617;
+}
+
+html[data-pos-theme='elon'] .stepper-btn:active {
+  background: rgba(59, 130, 246, 0.25);
+}
+
+html[data-pos-theme='elon'] .register-voucher-input {
+  border-color: #b22234;
+  background: #020617;
+  color: #fef2f2;
+}
+
+html[data-pos-theme='elon'] .register-voucher-panel {
+  border-top-color: #b22234;
+  border-bottom-color: #3c3b6e;
+}
+
+html[data-pos-theme='elon'] .open-tabs-dialog {
+  background: #0f172a;
+  border: 2px solid #3c3b6e;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.55);
+}
+
+html[data-pos-theme='elon'] .open-tabs-li {
+  border-color: #2563eb;
+  background: #172554;
+}
+
+html[data-pos-theme='elon'] .open-tabs-input {
+  border-color: #3b82f6;
+  background: #020617;
+  color: #f1f5f9;
+}
+
+html[data-pos-theme='elon'] .layby-summary {
+  border-color: #3c3b6e;
+}
+
+html[data-pos-theme='elon'] .layby-cancel {
+  border-top-color: #475569;
+}
+
+html[data-pos-theme='elon'] .btn:not(.primary):not(.ghost) {
+  background: #1e3a8a;
+  border-color: #60a5fa;
+  color: #f8fafc;
+}
+
+html[data-pos-theme='elon'] .btn:not(.primary):not(.ghost):active:not(:disabled) {
+  background: #1e40af;
+}
+
+html[data-pos-theme='elon'] .btn.ghost {
+  color: #93c5fd;
+  border-color: #3b82f6;
+}
+
+html[data-pos-theme='elon'] .btn.primary {
+  background: linear-gradient(180deg, #dc2626 0%, #b22234 100%);
+  border-color: #7f1d1d;
+  color: #fef2f2;
+}
+
+html[data-pos-theme='elon'] .pos-touch {
+  -webkit-tap-highlight-color: rgba(178, 34, 52, 0.2);
+}
+
+html[data-pos-theme='elon'] .panel-cart .cart-lines::-webkit-scrollbar-thumb,
+html[data-pos-theme='elon'] .panel-products .product-list::-webkit-scrollbar-thumb,
+html[data-pos-theme='elon'] .presets-screen::-webkit-scrollbar-thumb,
+html[data-pos-theme='elon'] .screen-keyboard::-webkit-scrollbar-thumb,
+html[data-pos-theme='elon'] .panel-products .keys-buttons-wrap::-webkit-scrollbar-thumb,
+html[data-pos-theme='elon'] .panel-products .keys-function-pad::-webkit-scrollbar-thumb,
+html[data-pos-theme='elon'] .panel-products .keys-layout::-webkit-scrollbar-thumb,
+html[data-pos-theme='elon'] .cart-change-view::-webkit-scrollbar-thumb,
+html[data-pos-theme='elon'] .cart-change-scroll::-webkit-scrollbar-thumb,
+html[data-pos-theme='elon'] .register-voucher-screen-kb::-webkit-scrollbar-thumb,
+html[data-pos-theme='elon'] .open-tabs-dialog::-webkit-scrollbar-thumb,
+html[data-pos-theme='elon'] .quotes-modal-scroll::-webkit-scrollbar-thumb,
+html[data-pos-theme='elon'] .quotes-modal-form::-webkit-scrollbar-thumb,
+html[data-pos-theme='elon'] .layby-modal-scroll::-webkit-scrollbar-thumb,
+html[data-pos-theme='elon'] .assign-preset-modal-scroll::-webkit-scrollbar-thumb,
+html[data-pos-theme='elon'] .assign-preset-screen-keyboard::-webkit-scrollbar-thumb,
+html[data-pos-theme='elon'] .pos-settings-page::-webkit-scrollbar-thumb {
+  background: rgba(60, 59, 110, 0.6);
+}
+
+html[data-pos-theme='elon'] .panel-cart .cart-lines::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='elon'] .panel-products .product-list::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='elon'] .presets-screen::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='elon'] .screen-keyboard::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='elon'] .panel-products .keys-buttons-wrap::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='elon'] .panel-products .keys-function-pad::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='elon'] .panel-products .keys-layout::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='elon'] .cart-change-view::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='elon'] .cart-change-scroll::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='elon'] .register-voucher-screen-kb::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='elon'] .open-tabs-dialog::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='elon'] .quotes-modal-scroll::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='elon'] .quotes-modal-form::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='elon'] .layby-modal-scroll::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='elon'] .assign-preset-modal-scroll::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='elon'] .assign-preset-screen-keyboard::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='elon'] .pos-settings-page::-webkit-scrollbar-thumb:hover {
+  background: rgba(178, 34, 52, 0.45);
+}
+
+html[data-pos-theme='elon'] .pos-settings-section {
+  border-color: #3c3b6e;
+  background: #172554;
+}
+
+html[data-pos-theme='elon'] .pos-settings-input,
+html[data-pos-theme='elon'] .pos-settings-select {
+  border-color: #3b82f6;
+  background: #020617;
+  color: #f1f5f9;
+}
+
+html[data-pos-theme='elon'] .pos-settings-check input {
+  accent-color: #b22234;
+}
+
+html[data-pos-theme='elon'] .pos-theme-option {
+  border-color: #3c3b6e;
+  background: #0f172a;
+  color: #e2e8f0;
+}
+
+html[data-pos-theme='elon'] .pos-theme-option:hover {
+  border-color: #2563eb;
+  background: #172554;
+}
+
+html[data-pos-theme='elon'] .pos-theme-option--selected {
+  border-color: #b22234;
+  box-shadow: 0 0 0 2px rgba(178, 34, 52, 0.45);
+  background: #1a0a0d;
+  color: #fef2f2;
+}
+
+html[data-pos-theme='elon'] .pos-theme-option .pos-theme-option-hint {
+  color: #94a3b8;
+}
+
+html[data-pos-theme='elon'] .btn.danger {
+  background: #7f1d1d;
+  border-color: #450a0a;
+  color: #fef2f2;
+}
+
+html[data-pos-theme='elon'] .assign-preset-input,
+html[data-pos-theme='elon'] .assign-preset-select {
+  border-color: #3b82f6;
+  background: #020617;
+  color: #f1f5f9;
+}
+
+html[data-pos-theme='elon'] .assign-preset-modal .assign-preset-actions {
+  border-top-color: #475569;
+}
+
+html[data-pos-theme='elon'] .preset-nav-tile,
+html[data-pos-theme='elon'] .preset-item-tile {
+  border-color: #2563eb;
+  background: #1e293b;
+  color: #f1f5f9;
+}
+
+html[data-pos-theme='elon'] .preset-item-tile--stale {
+  background: #0f172a;
+}
+
+html[data-pos-theme='elon'] .success {
+  color: #4ade80;
+}
+
+html[data-pos-theme='elon'] .error {
+  color: #f87171;
+}

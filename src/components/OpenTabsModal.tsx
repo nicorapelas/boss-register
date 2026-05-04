@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { OpenTabListItem } from '../api/types'
 import { ScreenKeyboard, type ScreenKeyboardAction } from './ScreenKeyboard'
 
@@ -44,17 +44,31 @@ export function OpenTabsModal({
   const [busy, setBusy] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [showNewTabForm, setShowNewTabForm] = useState(false)
+  const [lookup, setLookup] = useState('')
   const [newTabScreenKbOpen, setNewTabScreenKbOpen] = useState(false)
   const newTabKbFieldRef = useRef<NewTabKbField>('tabNumber')
   const newTabKbBlurTimerRef = useRef<number | null>(null)
+  const tabNumberInputRef = useRef<HTMLInputElement | null>(null)
+  const customerNameInputRef = useRef<HTMLInputElement | null>(null)
+  const phoneInputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
     if (!open) return
     setShowNewTabForm(false)
+    setLookup('')
     void onRefresh()
     setFormError(null)
     setIncludeCurrentCart(canIncludeWalkInCart && walkInLineCount > 0)
   }, [open, onRefresh, canIncludeWalkInCart, walkInLineCount])
+
+  const filteredTabs = useMemo(() => {
+    const q = lookup.trim().toLowerCase()
+    if (!q) return tabs
+    return tabs.filter((t) => {
+      const haystack = `${t.tabNumber} ${t.customerName} ${t.phone ?? ''}`.toLowerCase()
+      return haystack.includes(q)
+    })
+  }, [tabs, lookup])
 
   useEffect(() => {
     if (!open) return
@@ -88,6 +102,20 @@ export function OpenTabsModal({
     }
   }
 
+  function scrollNewTabFieldIntoView(which: NewTabKbField) {
+    const target =
+      which === 'tabNumber' ? tabNumberInputRef.current : which === 'customerName' ? customerNameInputRef.current : phoneInputRef.current
+    target?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' })
+  }
+
+  useEffect(() => {
+    if (!open || !showNewTabForm || !newTabScreenKbOpen) return
+    const t = window.setTimeout(() => {
+      scrollNewTabFieldIntoView(newTabKbFieldRef.current)
+    }, 40)
+    return () => window.clearTimeout(t)
+  }, [open, showNewTabForm, newTabScreenKbOpen])
+
   function handleNewTabScreenKeyboardAction(action: ScreenKeyboardAction) {
     const field = newTabKbFieldRef.current
     const patch = (updater: (s: string) => string) => {
@@ -118,6 +146,7 @@ export function OpenTabsModal({
         newTabKbFieldRef.current = which
         cancelNewTabKbBlurHide()
         setNewTabScreenKbOpen(true)
+        window.setTimeout(() => scrollNewTabFieldIntoView(which), 20)
       },
       onBlur: () => {
         cancelNewTabKbBlurHide()
@@ -225,6 +254,7 @@ export function OpenTabsModal({
               <label className="open-tabs-field">
                 <span>Tab number</span>
                 <input
+                  ref={tabNumberInputRef}
                   className="open-tabs-input"
                   value={tabNumber}
                   onChange={(e) => setTabNumber(e.target.value)}
@@ -237,6 +267,7 @@ export function OpenTabsModal({
               <label className="open-tabs-field">
                 <span>Name</span>
                 <input
+                  ref={customerNameInputRef}
                   className="open-tabs-input"
                   value={customerName}
                   onChange={(e) => setCustomerName(e.target.value)}
@@ -249,6 +280,7 @@ export function OpenTabsModal({
               <label className="open-tabs-field">
                 <span>Phone</span>
                 <input
+                  ref={phoneInputRef}
                   className="open-tabs-input"
                   type="tel"
                   value={phone}
@@ -300,8 +332,24 @@ export function OpenTabsModal({
           ) : tabs.length === 0 && !loading ? (
             <p className="muted open-tabs-empty">No open tabs yet.</p>
           ) : (
-            <ul className="open-tabs-list">
-              {tabs.map((t) => (
+            <>
+              <div className="quotes-modal-filters" style={{ marginBottom: '0.6rem' }}>
+                <input
+                  className="open-tabs-input"
+                  value={lookup}
+                  onChange={(e) => setLookup(e.target.value)}
+                  placeholder="Find tab #, name, or phone"
+                  aria-label="Find tab"
+                />
+                <button type="button" className="btn small" onClick={() => setLookup('')} disabled={!lookup.trim()}>
+                  Clear
+                </button>
+              </div>
+              {filteredTabs.length === 0 ? (
+                <p className="muted open-tabs-empty">No tabs match that search.</p>
+              ) : null}
+              <ul className="open-tabs-list">
+                {filteredTabs.map((t) => (
                 <li key={t._id} className={t._id === activeOpenTabId ? 'open-tabs-li active' : 'open-tabs-li'}>
                   <div className="open-tabs-li-main">
                     <span className="open-tabs-li-title">
@@ -332,8 +380,9 @@ export function OpenTabsModal({
                     </button>
                   </div>
                 </li>
-              ))}
-            </ul>
+                ))}
+              </ul>
+            </>
           )}
         </div>
       </div>

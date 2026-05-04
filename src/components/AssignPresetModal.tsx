@@ -3,6 +3,9 @@ import type { Product } from '../api/types'
 import {
   autoPresetLabel,
   PRESET_ENTRY_MAX,
+  mergePresetSubCategoryOptions,
+  quickPresetCategorySuggestions,
+  quickPresetSubCategorySuggestions,
   type ProductPresetsState,
 } from '../register/posProductPresets'
 import { ScreenKeyboard, type ScreenKeyboardAction } from './ScreenKeyboard'
@@ -11,6 +14,10 @@ export type AssignPresetModalProps = {
   open: boolean
   product: Product | null
   presetsState: ProductPresetsState
+  /** Unique category names from the catalog (e.g. product.category), same source as BackOffice Products suggestions. */
+  catalogCategories?: readonly string[]
+  /** Full catalog for sub-category suggestions (product.subCategory by category), same as BackOffice Products. */
+  catalogProducts?: readonly Product[]
   onClose: () => void
   /** When under max entries, `replaceAtIndex` is ignored (append). When full, must be index to replace. */
   onAssign: (replaceAtIndex: number | null, category: string, subCategory: string) => void
@@ -28,6 +35,8 @@ export function AssignPresetModal({
   open,
   product,
   presetsState,
+  catalogCategories = [],
+  catalogProducts = [],
   onClose,
   onAssign,
 }: AssignPresetModalProps) {
@@ -42,17 +51,46 @@ export function AssignPresetModal({
 
   const presetKbTargetRef = useRef<'category' | 'sub' | null>(null)
   const assignPresetKbBlurTimerRef = useRef<number | null>(null)
+  const categoryInputRef = useRef<HTMLInputElement | null>(null)
+  const subCategoryInputRef = useRef<HTMLInputElement | null>(null)
 
   const canAppend = presetsState.entries.length < PRESET_ENTRY_MAX
   const nextNum = presetsState.entries.length + 1
 
   const labelPreview = product ? autoPresetLabel(product) : ''
 
-  const subSuggestions = useMemo(() => {
-    const c = category.trim()
-    if (!c) return []
-    return presetsState.subCategoriesByCategory[c] ?? []
-  }, [category, presetsState.subCategoriesByCategory])
+  const categoryNamesForQuickPick = useMemo(() => {
+    const seen = new Set<string>()
+    const out: string[] = []
+    function add(raw: string) {
+      const name = raw.trim()
+      if (!name) return
+      const k = name.toLowerCase()
+      if (seen.has(k)) return
+      seen.add(k)
+      out.push(name)
+    }
+    for (const c of presetsState.categories) add(c)
+    for (const e of presetsState.entries) add(e.category)
+    for (const c of catalogCategories) add(c)
+    out.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+    return out
+  }, [presetsState.categories, presetsState.entries, catalogCategories])
+
+  const categorySuggestions = useMemo(
+    () => quickPresetCategorySuggestions(categoryNamesForQuickPick, category),
+    [categoryNamesForQuickPick, category],
+  )
+
+  const mergedSubCategoryNames = useMemo(
+    () => mergePresetSubCategoryOptions(catalogProducts, presetsState, category),
+    [catalogProducts, presetsState, category],
+  )
+
+  const subSuggestions = useMemo(
+    () => quickPresetSubCategorySuggestions(mergedSubCategoryNames, subCategory),
+    [mergedSubCategoryNames, subCategory],
+  )
 
   function cancelAssignPresetKbBlur() {
     if (assignPresetKbBlurTimerRef.current) {
@@ -96,6 +134,18 @@ export function AssignPresetModal({
     return () => cancelAssignPresetKbBlur()
   }, [])
 
+  useEffect(() => {
+    if (!open || !assignPresetKbOpen) return
+    const t = window.setTimeout(() => {
+      if (presetKbTargetRef.current === 'category') {
+        categoryInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' })
+      } else if (presetKbTargetRef.current === 'sub') {
+        subCategoryInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' })
+      }
+    }, 40)
+    return () => window.clearTimeout(t)
+  }, [open, assignPresetKbOpen])
+
   if (!open || !product) return null
 
   const canConfirm = category.trim().length > 0 && subCategory.trim().length > 0
@@ -117,12 +167,18 @@ export function AssignPresetModal({
     cancelAssignPresetKbBlur()
     presetKbTargetRef.current = 'category'
     setAssignPresetKbOpen(true)
+    window.setTimeout(() => {
+      categoryInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' })
+    }, 20)
   }
 
   function onSubCategoryFocus() {
     cancelAssignPresetKbBlur()
     presetKbTargetRef.current = 'sub'
     setAssignPresetKbOpen(true)
+    window.setTimeout(() => {
+      subCategoryInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' })
+    }, 20)
   }
 
   function onPresetTextBlur() {
@@ -181,10 +237,11 @@ export function AssignPresetModal({
           <label className="assign-preset-field">
             <span className="assign-preset-label">Category</span>
             <input
+              ref={categoryInputRef}
               className="assign-preset-input"
               type="text"
               inputMode={inputMode}
-              list={catListId}
+              list={categorySuggestions.length > 0 ? catListId : undefined}
               value={category}
               onChange={(e) => setCategory(e.target.value)}
               onFocus={onCategoryFocus}
@@ -192,20 +249,23 @@ export function AssignPresetModal({
               placeholder="Shown as first screen button"
               autoComplete="off"
             />
-            <datalist id={catListId}>
-              {presetsState.categories.map((c) => (
-                <option key={c} value={c} />
-              ))}
-            </datalist>
+            {categorySuggestions.length > 0 ? (
+              <datalist id={catListId}>
+                {categorySuggestions.map((c) => (
+                  <option key={c} value={c} />
+                ))}
+              </datalist>
+            ) : null}
           </label>
 
           <label className="assign-preset-field">
             <span className="assign-preset-label">Sub-category</span>
             <input
+              ref={subCategoryInputRef}
               className="assign-preset-input"
               type="text"
               inputMode={inputMode}
-              list={subListId}
+              list={subSuggestions.length > 0 ? subListId : undefined}
               value={subCategory}
               onChange={(e) => setSubCategory(e.target.value)}
               onFocus={onSubCategoryFocus}
@@ -213,11 +273,13 @@ export function AssignPresetModal({
               placeholder="Shown as second screen button"
               autoComplete="off"
             />
-            <datalist id={subListId}>
-              {subSuggestions.map((s) => (
-                <option key={s} value={s} />
-              ))}
-            </datalist>
+            {subSuggestions.length > 0 ? (
+              <datalist id={subListId}>
+                {subSuggestions.map((s) => (
+                  <option key={s} value={s} />
+                ))}
+              </datalist>
+            ) : null}
           </label>
 
           <p className="muted assign-preset-label-preview">

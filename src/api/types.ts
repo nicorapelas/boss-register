@@ -2,9 +2,14 @@ export interface Product {
   _id: string
   name: string
   sku: string
+  category?: string | null
+  subCategory?: string | null
   barcode?: string | null
   price: number
   stock: number
+  /** Progressive volume unit pricing; ordinals 1..qty. */
+  volumeTieringEnabled?: boolean
+  volumeTiers?: Array<{ minQty: number; maxQty: number | null; unitPrice: number }>
   /** When false, service/labour — POS does not treat as stock-limited. Default true if omitted. */
   trackInventory?: boolean
   /** Units reserved on active lay-bys (server); omitted/zero for non-tracked in list response */
@@ -19,6 +24,17 @@ export type CartLine = {
   quantity: number
   unitPrice: number
   listUnitPrice?: number
+  /** Refund mode: original sale line index for POST /sales/:id/refund */
+  refundSaleLineIndex?: number
+  /** Refund mode: max quantity refundable on this line (remaining from server). */
+  refundQtyMax?: number
+  /** Single segment for flat bucket volume price (display); server uses same rule. */
+  volumeSegments?: Array<{
+    quantity: number
+    unitPrice: number
+    lineTotal: number
+    listUnitPrice?: number
+  }>
 }
 
 export type ProductPresetsState = {
@@ -99,6 +115,7 @@ export interface LayByListItem {
 
 export interface LayByDetail {
   _id: string
+  createdAt?: string
   layByNumber: string
   customerName: string
   phone: string
@@ -144,11 +161,16 @@ export interface SaleLine {
   name: string
   quantity: number
   unitPrice: number
+  listUnitPrice?: number
   lineTotal: number
 }
 
 export interface Sale {
   _id: string
+  /** 10 hex characters — primary id for receipts and refunds (Mongo _id remains for internal refs) */
+  saleId?: string
+  /** Register / till code snapshot from POS device config. */
+  tillCode?: string
   cashier: string
   items: SaleLine[]
   total: number
@@ -162,12 +184,96 @@ export interface Sale {
   }
   /** Amount paid from store voucher / credit account */
   storeCreditAmount?: number
+  /** Normalized digits-only phone used for redemption (present on create-sale response when voucher applied). */
+  storeCreditPhone?: string
+  /** Account balance immediately after redemption (create-sale response only). */
+  storeCreditBalanceAfter?: number
   /** Charged to house / on-account (AR) */
   onAccountAmount?: number
   houseAccountId?: string
   houseAccountNumber?: string
   houseAccountName?: string
+  purchaseOrderNumber?: string
   createdAt?: string
+  /** Server marks partial/full refunds */
+  refundStatus?: 'partial' | 'refunded'
+  refundedAt?: string
+  refundNote?: string
+  refundPayoutMethod?: 'cash' | 'card'
+  refundPayoutAmount?: number
+}
+
+export interface SaleRefundPreview {
+  sale: Sale
+  refund: {
+    refundedTotal: number
+    remainingTotal: number
+    lines: Array<{ index: number; soldQty: number; refundedQty: number; remainingQty: number }>
+  }
+}
+
+export interface ShiftCashDifference {
+  kind: 'over' | 'under'
+  amount: number
+  note?: string
+  source: 'pos' | 'backoffice'
+  createdAt: string
+}
+
+export interface ShiftSummary {
+  /** Retail sale totals this shift minus refunds recorded this shift (same till). */
+  turnover: number
+  /** Net cash tenders: gross cash from retail sales minus refund payouts by cash. */
+  cashSales: number
+  /** Net card tenders: gross card from retail sales minus refund payouts by card. */
+  cardSales: number
+  voucherTotal: number
+  onAccountTotal: number
+  refundTotal: number
+  refundCashTotal: number
+  refundCardTotal: number
+  refundCount: number
+  refundCashierNames?: string[]
+  refundDetails?: Array<{
+    saleId?: string
+    cashierId?: string
+    cashierName?: string
+    method?: 'cash' | 'card'
+    refundTotal: number
+    refundCash: number
+    refundCard: number
+  }>
+  layByCompletions: number
+  /** Number of lay-by payments (deposit + installments) recorded during this shift window. */
+  layByPaymentCount: number
+  /** Lay-by payment tender totals recorded during this shift window. */
+  layByPaymentCashTotal: number
+  layByPaymentCardTotal: number
+  layByPaymentStoreCreditTotal: number
+  layByPaymentTotal: number
+  quoteConversions: number
+  tabClosures: number
+  /** Per cashier: gross retail totals minus refunds attributed to that cashier’s original sales. */
+  cashierSales: Array<{ cashierId: string; cashierName?: string; salesCount: number; total: number }>
+  priceOverrides?: Array<{
+    saleId?: string
+    cashierId?: string
+    cashierName?: string
+    itemName: string
+    quantity: number
+    listUnitPrice: number
+    overriddenUnitPrice: number
+    lineDiscount: number
+  }>
+}
+
+export interface ShiftReport {
+  shiftId: string
+  tillCode: string
+  openedAt: string
+  status: 'open' | 'closed'
+  summary: ShiftSummary
+  cashDifferences: ShiftCashDifference[]
 }
 
 /** GET /house-accounts */

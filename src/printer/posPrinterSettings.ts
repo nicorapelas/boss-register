@@ -1,6 +1,7 @@
 export type PrinterTransport =
   | { kind: 'usb'; path: string }
   | { kind: 'lan'; host: string; port: number }
+  | { kind: 'serial'; path: string; baudRate: number }
 
 export type PosPrinterSettings = {
   autoPrintReceipt: boolean
@@ -33,8 +34,8 @@ const STORAGE_KEY = 'electropos-pos-printer-settings'
 export const DEFAULT_PRINTER_SETTINGS: PosPrinterSettings = {
   autoPrintReceipt: true,
   autoOpenDrawer: true,
-  transport: { kind: 'usb', path: '/dev/usb/lp0' },
-  columns: 48,
+  transport: { kind: 'serial', path: '/dev/ttyS0', baudRate: 38400 },
+  columns: 42,
   cut: true,
   receiptConfig: {
     headerLine1: 'JACOBS CYCLES',
@@ -79,6 +80,16 @@ export function readPosPrinterSettings(): PosPrinterSettings {
         t.port > 0
       ) {
         next.transport = { kind: 'lan', host: t.host, port: t.port }
+      }
+      if (
+        t.kind === 'serial' &&
+        typeof t.path === 'string' &&
+        t.path &&
+        typeof t.baudRate === 'number' &&
+        Number.isFinite(t.baudRate) &&
+        t.baudRate > 0
+      ) {
+        next.transport = { kind: 'serial', path: t.path, baudRate: t.baudRate }
       }
     }
     if (typeof next.columns !== 'number' || !Number.isFinite(next.columns) || next.columns < 24) next.columns = 48

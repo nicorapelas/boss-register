@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { apiFetch } from '../api/client'
 import type { CartLine, LayByDetail, LayByListItem, LayByPaymentResponse, StoreSettings } from '../api/types'
+import { readPosPrinterSettings } from '../printer/posPrinterSettings'
 import { ScreenKeyboard, type ScreenKeyboardAction } from './ScreenKeyboard'
 
 type LayByKbField =
@@ -19,6 +20,8 @@ export type LayByModalProps = {
   cart: CartLine[]
   cartTotal: number
   isAdmin: boolean
+  receiptEnabled: boolean
+  tillCode: string
   onCreated: () => void
 }
 
@@ -31,7 +34,7 @@ function vatFromIncl(totalIncl: number, vatRate: number) {
   return round2(totalIncl - net)
 }
 
-export function LayByModal({ open, onClose, cart, cartTotal, isAdmin, onCreated }: LayByModalProps) {
+export function LayByModal({ open, onClose, cart, cartTotal, isAdmin, receiptEnabled, tillCode, onCreated }: LayByModalProps) {
   const [settings, setSettings] = useState<StoreSettings | null>(null)
   const [list, setList] = useState<LayByListItem[]>([])
   const [loading, setLoading] = useState(false)
@@ -40,6 +43,9 @@ export function LayByModal({ open, onClose, cart, cartTotal, isAdmin, onCreated 
   const [busy, setBusy] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [paySuccess, setPaySuccess] = useState<string | null>(null)
+  const [printNotice, setPrintNotice] = useState<string | null>(null)
+  const [searchQ, setSearchQ] = useState('')
+  const searchInputRef = useRef<HTMLInputElement | null>(null)
 
   const [customerName, setCustomerName] = useState('')
   const [phone, setPhone] = useState('')
@@ -56,7 +62,16 @@ export function LayByModal({ open, onClose, cart, cartTotal, isAdmin, onCreated 
 
   const [layByScreenKbOpen, setLayByScreenKbOpen] = useState(false)
   const layByKbFieldRef = useRef<LayByKbField>('customerName')
+  const [layByKbLayout, setLayByKbLayout] = useState<'full' | 'decimal' | 'tel' | 'numeric'>('full')
   const layByKbBlurTimerRef = useRef<number | null>(null)
+  const customerNameInputRef = useRef<HTMLInputElement | null>(null)
+  const phoneInputRef = useRef<HTMLInputElement | null>(null)
+  const depositPctInputRef = useRef<HTMLInputElement | null>(null)
+  const cashInInputRef = useRef<HTMLInputElement | null>(null)
+  const cardInInputRef = useRef<HTMLInputElement | null>(null)
+  const payCashInputRef = useRef<HTMLInputElement | null>(null)
+  const payCardInputRef = useRef<HTMLInputElement | null>(null)
+  const cancelPctInputRef = useRef<HTMLInputElement | null>(null)
 
   const vatRate = settings?.vatRate ?? 0.14
 
@@ -68,12 +83,13 @@ export function LayByModal({ open, onClose, cart, cartTotal, isAdmin, onCreated 
   const depositAmount = round2((cartTotal * depositPercent) / 100)
   const vatTotal = vatFromIncl(cartTotal, vatRate)
 
-  async function refresh() {
+  async function refresh(queryRaw?: string) {
     setLoading(true)
     try {
+      const q = (queryRaw ?? searchQ).trim()
       const [s, l] = await Promise.all([
         apiFetch<StoreSettings>('/settings/store'),
-        apiFetch<LayByListItem[]>('/lay-bys/active'),
+        apiFetch<LayByListItem[]>(q ? `/lay-bys/active?q=${encodeURIComponent(q)}` : '/lay-bys/active'),
       ])
       setSettings(s)
       setList(l)
@@ -98,9 +114,21 @@ export function LayByModal({ open, onClose, cart, cartTotal, isAdmin, onCreated 
     setPayCash('')
     setPayCard('')
     setPaySuccess(null)
+    setPrintNotice(null)
+    setSearchQ('')
     setLayByScreenKbOpen(false)
+    setLayByKbLayout('full')
     void refresh()
   }, [open])
+
+  useEffect(() => {
+    if (!open || view !== 'list') return
+    const t = window.setTimeout(() => {
+      searchInputRef.current?.focus()
+      searchInputRef.current?.select()
+    }, 0)
+    return () => window.clearTimeout(t)
+  }, [open, view])
 
   useEffect(() => {
     return () => {
@@ -133,6 +161,34 @@ export function LayByModal({ open, onClose, cart, cartTotal, isAdmin, onCreated 
       layByKbBlurTimerRef.current = null
     }
   }
+
+  function scrollLayByFieldIntoView(field: LayByKbField) {
+    const target =
+      field === 'customerName'
+        ? customerNameInputRef.current
+        : field === 'phone'
+          ? phoneInputRef.current
+          : field === 'depositPct'
+            ? depositPctInputRef.current
+            : field === 'cashIn'
+              ? cashInInputRef.current
+              : field === 'cardIn'
+                ? cardInInputRef.current
+                : field === 'payCash'
+                  ? payCashInputRef.current
+                  : field === 'payCard'
+                    ? payCardInputRef.current
+                    : cancelPctInputRef.current
+    target?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' })
+  }
+
+  useEffect(() => {
+    if (!open || !layByScreenKbOpen) return
+    const t = window.setTimeout(() => {
+      scrollLayByFieldIntoView(layByKbFieldRef.current)
+    }, 40)
+    return () => window.clearTimeout(t)
+  }, [open, layByScreenKbOpen, view])
 
   function patchDecimalString(s: string, action: ScreenKeyboardAction): string {
     if (action.type === 'char') {
@@ -193,11 +249,19 @@ export function LayByModal({ open, onClose, cart, cartTotal, isAdmin, onCreated 
   }
 
   function layByKbHandlers(which: LayByKbField) {
+    function layoutForField(field: LayByKbField): 'full' | 'decimal' | 'tel' | 'numeric' {
+      if (field === 'customerName') return 'full'
+      if (field === 'phone') return 'tel'
+      if (field === 'depositPct') return 'numeric'
+      return 'decimal'
+    }
     return {
       onFocus: () => {
         layByKbFieldRef.current = which
+        setLayByKbLayout(layoutForField(which))
         cancelLayByKbBlurHide()
         setLayByScreenKbOpen(true)
+        window.setTimeout(() => scrollLayByFieldIntoView(which), 20)
       },
       onBlur: () => {
         cancelLayByKbBlurHide()
@@ -206,6 +270,112 @@ export function LayByModal({ open, onClose, cart, cartTotal, isAdmin, onCreated 
         }, 200)
       },
     }
+  }
+
+  function buildLayByReceiptPayload(input: {
+    detail: LayByDetail
+    paymentLabel: string
+    payment?: { tenderedCash?: number; changeDue?: number }
+    receiptTitle: string
+    receiptNumber: string
+    thankYouLine: string
+    timestampIso?: string
+    copyLabel?: string
+  }): {
+    transport: unknown
+    receipt: unknown
+    columns: number
+    cut: boolean
+  } {
+    const printerSettings = readPosPrinterSettings()
+    const cfg = printerSettings.receiptConfig
+    return {
+      transport: printerSettings.transport,
+      columns: printerSettings.columns,
+      cut: printerSettings.cut,
+      receipt: {
+        headerLines: [
+          cfg.headerLine1,
+          cfg.headerLine2,
+          cfg.headerLine3,
+          `Customer: ${input.detail.customerName}`,
+          `Phone: ${input.detail.phone}`,
+        ],
+        phone: cfg.phone,
+        vatNumber: cfg.vatNumber,
+        receiptTitle: input.receiptTitle,
+        receiptNumberPrefix: 'Lay-by',
+        showReceiptNumberLine: false,
+        receiptNumber: input.receiptNumber,
+        barcodeValue: input.receiptNumber,
+        copyLabel: input.copyLabel,
+        tillNumber: tillCode,
+        tillLabel: cfg.tillLabel,
+        slipLabel: cfg.slipLabel,
+        timestampIso: input.timestampIso ?? input.detail.createdAt ?? new Date().toISOString(),
+        paymentLabel: input.paymentLabel,
+        lines: input.detail.lines.map((l) => ({
+          qty: l.quantity,
+          name: l.name,
+          unitPrice: l.unitPrice,
+          lineTotal: l.lineTotal,
+        })),
+        subtotal: input.detail.totalNetAmount,
+        taxTotal: input.detail.totalVatAmount,
+        vatRatePct: input.detail.vatRate > 0 ? input.detail.vatRate * 100 : undefined,
+        vatLabel: cfg.vatLabel,
+        subtotalLabel: cfg.subtotalLabel,
+        taxTotalLabel: cfg.taxTotalLabel,
+        totalDueLabel: cfg.totalDueLabel,
+        cashTenderedLabel: cfg.cashTenderedLabel,
+        changeDueLabel: cfg.changeDueLabel,
+        thankYouLine: input.thankYouLine,
+        total: input.detail.totalInclVat,
+        balanceRemaining: input.detail.balance,
+        tendered: input.payment?.tenderedCash,
+        changeDue: input.payment?.changeDue,
+      },
+    }
+  }
+
+  async function printLayByReceipt(input: {
+    detail: LayByDetail
+    paymentLabel: string
+    payment?: { tenderedCash?: number; changeDue?: number }
+    receiptTitle: string
+    receiptNumber: string
+    thankYouLine: string
+    successMessage: string
+    timestampIso?: string
+  }) {
+    if (!receiptEnabled) return
+    const settings = readPosPrinterSettings()
+    if (!settings.autoPrintReceipt) return
+    if (!window.electronPos) {
+      setPrintNotice(`${input.successMessage} (web preview)`)
+      return
+    }
+    const labels = ['CUSTOMER COPY', 'ATTACH TO ITEM'] as const
+    for (const copyLabel of labels) {
+      const payload = buildLayByReceiptPayload({ ...input, copyLabel })
+      const r = await window.electronPos.printReceipt(payload.transport, payload.receipt, {
+        columns: payload.columns,
+        cut: payload.cut,
+      })
+      if (!r.ok) {
+        throw new Error(r.error ?? 'Lay-by receipt print failed')
+      }
+    }
+    setPrintNotice(input.successMessage)
+  }
+
+  async function openDrawerForLayByCash(cashTendered: number) {
+    if (cashTendered <= 0.005) return
+    if (!window.electronPos) return
+    const settings = readPosPrinterSettings()
+    if (!settings.autoOpenDrawer) return
+    const r = await window.electronPos.kickDrawer(settings.transport)
+    if (!r.ok) throw new Error(r.error ?? 'Drawer open failed')
   }
 
   async function openDetail(id: string) {
@@ -254,6 +424,7 @@ export function LayByModal({ open, onClose, cart, cartTotal, isAdmin, onCreated 
           unitPrice: l.unitPrice,
         })),
         firstPayment: { cashAmount: cash, cardAmount: card },
+        tillCode,
       }
       if (isAdmin && depositPct !== (settings?.defaultDepositPercent ?? 30)) {
         body.depositPercentOverride = depositPct
@@ -261,7 +432,29 @@ export function LayByModal({ open, onClose, cart, cartTotal, isAdmin, onCreated 
       if (isAdmin && expiresAt.trim()) {
         body.expiresAtOverride = new Date(expiresAt).toISOString()
       }
-      await apiFetch<LayByDetail>('/lay-bys', { method: 'POST', body: JSON.stringify(body) })
+      const created = await apiFetch<LayByDetail>('/lay-bys', { method: 'POST', body: JSON.stringify(body) })
+      const firstPayment = created.payments[0]
+      const paymentLabel = firstPayment
+        ? `Deposit paid ${firstPayment.amount.toFixed(2)} (cash ${firstPayment.cashAmount.toFixed(2)}, card ${firstPayment.cardAmount.toFixed(2)})`
+        : `Deposit paid ${paid.toFixed(2)}`
+      await printLayByReceipt({
+        detail: created,
+        paymentLabel,
+        payment: firstPayment
+          ? {
+              tenderedCash: firstPayment.cashAmount,
+              changeDue: 0,
+            }
+          : {
+              tenderedCash: cash,
+              changeDue: 0,
+            },
+        receiptTitle: 'LAY-BY CREATED',
+        receiptNumber: created.layByNumber,
+        thankYouLine: 'LAY-BY AGREEMENT CREATED',
+        successMessage: 'Lay-by receipt printed',
+      })
+      await openDrawerForLayByCash(cash)
       onCreated()
       onClose()
     } catch (err) {
@@ -287,23 +480,37 @@ export function LayByModal({ open, onClose, cart, cartTotal, isAdmin, onCreated 
     try {
       const d = await apiFetch<LayByPaymentResponse>(`/lay-bys/${selected._id}/payments`, {
         method: 'POST',
-        body: JSON.stringify({ cashAmount: cash, cardAmount: card }),
+        body: JSON.stringify({ cashAmount: cash, cardAmount: card, tillCode }),
       })
-      setSelected(d)
-      setPayCash('')
-      setPayCard('')
       const applied = round2(
         (d.paymentAppliedCash ?? 0) + (d.paymentAppliedCard ?? 0) + (d.paymentAppliedStoreCredit ?? 0),
       )
       const ch = d.paymentChangeDue ?? 0
+      await printLayByReceipt({
+        detail: d,
+        paymentLabel: `Installment ${applied.toFixed(2)} (cash ${(d.paymentAppliedCash ?? 0).toFixed(2)}, card ${(d.paymentAppliedCard ?? 0).toFixed(2)})`,
+        payment: {
+          tenderedCash: d.paymentTenderedCash ?? 0,
+          changeDue: ch,
+        },
+        receiptTitle: 'LAY-BY PAYMENT',
+        receiptNumber: d.layByNumber,
+        thankYouLine: 'LAY-BY PAYMENT RECEIVED',
+        successMessage: 'Lay-by payment receipt printed',
+      })
+      await openDrawerForLayByCash(d.paymentTenderedCash ?? cash)
+      setSelected(d)
+      setPayCash('')
+      setPayCard('')
       if (ch > 0.01) {
         setPaySuccess(
-          `Change due ${ch.toFixed(2)} · ${applied.toFixed(2)} applied to this lay-by (tendered cash ${(d.paymentTenderedCash ?? 0).toFixed(2)}, card ${(d.paymentTenderedCard ?? 0).toFixed(2)}). Balance ${d.balance.toFixed(2)}.`,
+          `Change owing ${ch.toFixed(2)} · ${applied.toFixed(2)} applied to this lay-by (tendered cash ${(d.paymentTenderedCash ?? 0).toFixed(2)}, card ${(d.paymentTenderedCard ?? 0).toFixed(2)}). Balance ${d.balance.toFixed(2)}.`,
         )
       } else {
         setPaySuccess(`Payment ${applied.toFixed(2)} applied. Balance ${d.balance.toFixed(2)}.`)
       }
       await refresh()
+      onClose()
     } catch (err) {
       setFormError(err instanceof Error ? err.message : 'Payment failed')
     } finally {
@@ -316,7 +523,7 @@ export function LayByModal({ open, onClose, cart, cartTotal, isAdmin, onCreated 
     setFormError(null)
     setBusy(true)
     try {
-      await apiFetch(`/lay-bys/${selected._id}/complete`, { method: 'POST', body: '{}' })
+      await apiFetch(`/lay-bys/${selected._id}/complete`, { method: 'POST', body: JSON.stringify({ tillCode }) })
       await refresh()
       setView('list')
       setSelected(null)
@@ -393,6 +600,40 @@ export function LayByModal({ open, onClose, cart, cartTotal, isAdmin, onCreated 
                   </button>
                 </div>
               </div>
+              <div className="layby-field-row">
+                <label className="open-tabs-field">
+                  <span>Search / scan lay-by barcode</span>
+                  <input
+                    ref={searchInputRef}
+                    className="open-tabs-input"
+                    value={searchQ}
+                    onChange={(e) => setSearchQ(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        void refresh(searchQ)
+                      }
+                    }}
+                    placeholder="Scan barcode or type lay-by number"
+                  />
+                </label>
+                <div className="open-tabs-form-actions">
+                  <button type="button" className="btn ghost" disabled={loading} onClick={() => void refresh(searchQ)}>
+                    Search
+                  </button>
+                  <button
+                    type="button"
+                    className="btn ghost"
+                    disabled={loading}
+                    onClick={() => {
+                      setSearchQ('')
+                      void refresh('')
+                    }}
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
               {list.length === 0 && !loading ? (
                 <p className="muted open-tabs-empty">No active lay-bys.</p>
               ) : (
@@ -407,7 +648,15 @@ export function LayByModal({ open, onClose, cart, cartTotal, isAdmin, onCreated 
                         <span className="open-tabs-li-total">Bal {t.balance.toFixed(2)}</span>
                       </div>
                       <div className="open-tabs-li-actions">
-                        <button type="button" className="btn small" disabled={busy} onClick={() => void openDetail(t._id)}>
+                        <button
+                          type="button"
+                          className="btn small"
+                          disabled={busy}
+                          onClick={() => {
+                            setSearchQ('')
+                            void openDetail(t._id)
+                          }}
+                        >
                           Open
                         </button>
                       </div>
@@ -429,6 +678,11 @@ export function LayByModal({ open, onClose, cart, cartTotal, isAdmin, onCreated 
                 </button>
               </div>
               {formError && <p className="error open-tabs-form-error">{formError}</p>}
+              {printNotice && (
+                <p className="success open-tabs-form-error" role="status">
+                  {printNotice}
+                </p>
+              )}
               <p className="muted layby-receipt-preview layby-receipt-one-line">
                 {settings?.storeName && <strong>{settings.storeName}</strong>}
                 {settings?.storePhone && <span> · {settings.storePhone}</span>}
@@ -438,6 +692,7 @@ export function LayByModal({ open, onClose, cart, cartTotal, isAdmin, onCreated 
                 <label className="open-tabs-field">
                   <span>Name</span>
                   <input
+                    ref={customerNameInputRef}
                     className="open-tabs-input"
                     value={customerName}
                     onChange={(e) => setCustomerName(e.target.value)}
@@ -448,6 +703,7 @@ export function LayByModal({ open, onClose, cart, cartTotal, isAdmin, onCreated 
                 <label className="open-tabs-field">
                   <span>Phone</span>
                   <input
+                    ref={phoneInputRef}
                     className="open-tabs-input"
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
@@ -461,6 +717,7 @@ export function LayByModal({ open, onClose, cart, cartTotal, isAdmin, onCreated 
                   <label className="open-tabs-field">
                     <span>Deposit %</span>
                     <input
+                      ref={depositPctInputRef}
                       className="open-tabs-input"
                       type="number"
                       min={0}
@@ -498,6 +755,7 @@ export function LayByModal({ open, onClose, cart, cartTotal, isAdmin, onCreated 
                 <label className="open-tabs-field">
                   <span>Pay cash</span>
                   <input
+                    ref={cashInInputRef}
                     className="open-tabs-input"
                     value={cashIn}
                     onChange={(e) => setCashIn(e.target.value)}
@@ -508,6 +766,7 @@ export function LayByModal({ open, onClose, cart, cartTotal, isAdmin, onCreated 
                 <label className="open-tabs-field">
                   <span>Pay card</span>
                   <input
+                    ref={cardInInputRef}
                     className="open-tabs-input"
                     value={cardIn}
                     onChange={(e) => setCardIn(e.target.value)}
@@ -520,6 +779,7 @@ export function LayByModal({ open, onClose, cart, cartTotal, isAdmin, onCreated 
             <ScreenKeyboard
               visible={layByScreenKbOpen}
               onAction={handleLayByScreenKeyboardAction}
+              layout={layByKbLayout}
               className="open-tabs-screen-keyboard layby-new-form-keyboard"
             />
             <div
@@ -549,6 +809,11 @@ export function LayByModal({ open, onClose, cart, cartTotal, isAdmin, onCreated 
                 </button>
               </div>
               {formError && <p className="error open-tabs-form-error">{formError}</p>}
+              {printNotice && (
+                <p className="success open-tabs-form-error" role="status">
+                  {printNotice}
+                </p>
+              )}
               {paySuccess && (
                 <p className="success open-tabs-form-error" role="status">
                   {paySuccess}
@@ -589,6 +854,7 @@ export function LayByModal({ open, onClose, cart, cartTotal, isAdmin, onCreated 
                   <label className="open-tabs-field">
                     <span>Add payment — cash</span>
                     <input
+                      ref={payCashInputRef}
                       className="open-tabs-input"
                       value={payCash}
                       onChange={(e) => setPayCash(e.target.value)}
@@ -599,6 +865,7 @@ export function LayByModal({ open, onClose, cart, cartTotal, isAdmin, onCreated 
                   <label className="open-tabs-field">
                     <span>Add payment — card</span>
                     <input
+                      ref={payCardInputRef}
                       className="open-tabs-input"
                       value={payCard}
                       onChange={(e) => setPayCard(e.target.value)}
@@ -653,6 +920,7 @@ export function LayByModal({ open, onClose, cart, cartTotal, isAdmin, onCreated 
                     <label className="open-tabs-field">
                       <span>Refund % of amount paid</span>
                       <input
+                        ref={cancelPctInputRef}
                         className="open-tabs-input"
                         value={cancelPct}
                         onChange={(e) => setCancelPct(e.target.value)}
@@ -670,6 +938,7 @@ export function LayByModal({ open, onClose, cart, cartTotal, isAdmin, onCreated 
             <ScreenKeyboard
               visible={layByScreenKbOpen}
               onAction={handleLayByScreenKeyboardAction}
+              layout={layByKbLayout}
               className="open-tabs-screen-keyboard layby-detail-screen-kb"
             />
           </div>

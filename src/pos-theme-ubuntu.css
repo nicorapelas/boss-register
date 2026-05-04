@@ -1,0 +1,292 @@
+/* Ubuntu theme — deep indigo / violet base with cyan, coral, and amber accents. */
+
+html[data-pos-theme='ubuntu'] .shell {
+  background: linear-gradient(155deg, #1e1b4b 0%, #312e81 38%, #115e59 100%);
+}
+
+html[data-pos-theme='ubuntu'] .shell-header {
+  border-bottom-color: #a78bfa;
+  background: linear-gradient(90deg, rgba(67, 56, 202, 0.92) 0%, rgba(109, 40, 217, 0.88) 100%);
+  box-shadow: 0 2px 12px rgba(15, 23, 42, 0.35);
+}
+
+html[data-pos-theme='ubuntu'] .shell-user {
+  color: #e9d5ff;
+}
+
+html[data-pos-theme='ubuntu'] .shell-sub {
+  color: #c4b5fd;
+}
+
+html[data-pos-theme='ubuntu'] .muted {
+  color: #c4b5fd;
+}
+
+html[data-pos-theme='ubuntu'] .panel {
+  background: rgba(49, 46, 129, 0.72);
+  border-color: #8b5cf6;
+  box-shadow: 0 2px 0 rgba(139, 92, 246, 0.25);
+}
+
+html[data-pos-theme='ubuntu'] .form input {
+  border-color: #6366f1;
+  background: #1e1b4b;
+  color: #f5f3ff;
+}
+
+html[data-pos-theme='ubuntu'] .search {
+  border-color: #6366f1;
+  background: #1e1b4b;
+  color: #f5f3ff;
+}
+
+html[data-pos-theme='ubuntu'] .product-row {
+  border-color: #a78bfa;
+  background: rgba(76, 29, 149, 0.55);
+}
+
+html[data-pos-theme='ubuntu'] .product-meta,
+html[data-pos-theme='ubuntu'] .product-price {
+  color: #f5f3ff;
+}
+
+html[data-pos-theme='ubuntu'] .table th,
+html[data-pos-theme='ubuntu'] .table td {
+  border-bottom-color: #818cf8;
+}
+
+html[data-pos-theme='ubuntu'] .screen-keyboard {
+  border-top-color: #06b6d4;
+  background: rgba(30, 27, 75, 0.9);
+}
+
+html[data-pos-theme='ubuntu'] .screen-keyboard-key {
+  border-color: #22d3ee;
+  background: #164e63;
+  color: #ecfeff;
+}
+
+html[data-pos-theme='ubuntu'] .screen-keyboard-key-done {
+  background: #059669;
+  border-color: #047857;
+  color: #fff;
+}
+
+html[data-pos-theme='ubuntu'] .sku-display {
+  border-color: #f472b6;
+  background: #1e1b4b;
+  color: #fce7f3;
+}
+
+html[data-pos-theme='ubuntu'] .key-btn {
+  border-color: #f472b6;
+  background: #831843;
+  color: #fce7f3;
+}
+
+html[data-pos-theme='ubuntu'] .panel-cart .cart-footer {
+  border-top-color: #06b6d4;
+}
+
+html[data-pos-theme='ubuntu'] .cart-change-sticky-footer {
+  border-top-color: #06b6d4;
+  background: rgba(49, 46, 129, 0.85);
+}
+
+html[data-pos-theme='ubuntu'] .cart-line {
+  border-color: #22d3ee;
+  background: rgba(22, 78, 99, 0.45);
+}
+
+html[data-pos-theme='ubuntu'] .cart-line-discount-badge {
+  background: #ea580c;
+  color: #fff;
+}
+
+html[data-pos-theme='ubuntu'] .cart-line-sub {
+  color: #c4b5fd;
+}
+
+html[data-pos-theme='ubuntu'] .stepper {
+  border-color: #6366f1;
+  background: #1e1b4b;
+}
+
+html[data-pos-theme='ubuntu'] .stepper-btn:active {
+  background: rgba(139, 92, 246, 0.35);
+}
+
+html[data-pos-theme='ubuntu'] .register-voucher-input {
+  border-color: #fbbf24;
+  background: #1e1b4b;
+  color: #fef3c7;
+}
+
+html[data-pos-theme='ubuntu'] .register-voucher-panel {
+  border-top-color: #fbbf24;
+  border-bottom-color: #fbbf24;
+}
+
+html[data-pos-theme='ubuntu'] .open-tabs-dialog {
+  background: rgba(49, 46, 129, 0.95);
+  border-color: #a78bfa;
+  box-shadow: 0 12px 40px rgba(15, 23, 42, 0.55);
+}
+
+html[data-pos-theme='ubuntu'] .open-tabs-li {
+  border-color: #6366f1;
+  background: rgba(76, 29, 149, 0.5);
+}
+
+html[data-pos-theme='ubuntu'] .open-tabs-input {
+  border-color: #6366f1;
+  background: #1e1b4b;
+  color: #f5f3ff;
+}
+
+html[data-pos-theme='ubuntu'] .layby-summary {
+  border-color: #22d3ee;
+}
+
+html[data-pos-theme='ubuntu'] .layby-cancel {
+  border-top-color: #22d3ee;
+}
+
+html[data-pos-theme='ubuntu'] .btn:not(.primary):not(.ghost) {
+  background: #4c1d95;
+  border-color: #c084fc;
+  color: #faf5ff;
+}
+
+html[data-pos-theme='ubuntu'] .btn:not(.primary):not(.ghost):active:not(:disabled) {
+  background: #5b21b6;
+}
+
+html[data-pos-theme='ubuntu'] .btn.ghost {
+  color: #e9d5ff;
+  border-color: #a78bfa;
+}
+
+html[data-pos-theme='ubuntu'] .btn.primary {
+  background: linear-gradient(180deg, #fb923c 0%, #ea580c 100%);
+  border-color: #c2410c;
+  color: #fff;
+}
+
+html[data-pos-theme='ubuntu'] .pos-touch {
+  -webkit-tap-highlight-color: rgba(139, 92, 246, 0.25);
+}
+
+html[data-pos-theme='ubuntu'] .panel-cart .cart-lines::-webkit-scrollbar-thumb,
+html[data-pos-theme='ubuntu'] .panel-products .product-list::-webkit-scrollbar-thumb,
+html[data-pos-theme='ubuntu'] .presets-screen::-webkit-scrollbar-thumb,
+html[data-pos-theme='ubuntu'] .screen-keyboard::-webkit-scrollbar-thumb,
+html[data-pos-theme='ubuntu'] .panel-products .keys-buttons-wrap::-webkit-scrollbar-thumb,
+html[data-pos-theme='ubuntu'] .panel-products .keys-function-pad::-webkit-scrollbar-thumb,
+html[data-pos-theme='ubuntu'] .panel-products .keys-layout::-webkit-scrollbar-thumb,
+html[data-pos-theme='ubuntu'] .cart-change-view::-webkit-scrollbar-thumb,
+html[data-pos-theme='ubuntu'] .cart-change-scroll::-webkit-scrollbar-thumb,
+html[data-pos-theme='ubuntu'] .register-voucher-screen-kb::-webkit-scrollbar-thumb,
+html[data-pos-theme='ubuntu'] .open-tabs-dialog::-webkit-scrollbar-thumb,
+html[data-pos-theme='ubuntu'] .quotes-modal-scroll::-webkit-scrollbar-thumb,
+html[data-pos-theme='ubuntu'] .quotes-modal-form::-webkit-scrollbar-thumb,
+html[data-pos-theme='ubuntu'] .layby-modal-scroll::-webkit-scrollbar-thumb,
+html[data-pos-theme='ubuntu'] .assign-preset-modal-scroll::-webkit-scrollbar-thumb,
+html[data-pos-theme='ubuntu'] .assign-preset-screen-keyboard::-webkit-scrollbar-thumb,
+html[data-pos-theme='ubuntu'] .pos-settings-page::-webkit-scrollbar-thumb {
+  background: rgba(6, 182, 212, 0.45);
+}
+
+html[data-pos-theme='ubuntu'] .panel-cart .cart-lines::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='ubuntu'] .panel-products .product-list::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='ubuntu'] .presets-screen::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='ubuntu'] .screen-keyboard::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='ubuntu'] .panel-products .keys-buttons-wrap::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='ubuntu'] .panel-products .keys-function-pad::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='ubuntu'] .panel-products .keys-layout::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='ubuntu'] .cart-change-view::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='ubuntu'] .cart-change-scroll::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='ubuntu'] .register-voucher-screen-kb::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='ubuntu'] .open-tabs-dialog::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='ubuntu'] .quotes-modal-scroll::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='ubuntu'] .quotes-modal-form::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='ubuntu'] .layby-modal-scroll::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='ubuntu'] .assign-preset-modal-scroll::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='ubuntu'] .assign-preset-screen-keyboard::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='ubuntu'] .pos-settings-page::-webkit-scrollbar-thumb:hover {
+  background: rgba(6, 182, 212, 0.65);
+}
+
+html[data-pos-theme='ubuntu'] .pos-settings-section {
+  border-color: #8b5cf6;
+  background: rgba(76, 29, 149, 0.45);
+}
+
+html[data-pos-theme='ubuntu'] .pos-settings-input,
+html[data-pos-theme='ubuntu'] .pos-settings-select {
+  border-color: #6366f1;
+  background: #1e1b4b;
+  color: #f5f3ff;
+}
+
+html[data-pos-theme='ubuntu'] .pos-settings-check input {
+  accent-color: #f472b6;
+}
+
+html[data-pos-theme='ubuntu'] .pos-theme-option {
+  border-color: #6366f1;
+  background: #1e1b4b;
+  color: #f5f3ff;
+}
+
+html[data-pos-theme='ubuntu'] .pos-theme-option:hover {
+  border-color: #22d3ee;
+  background: rgba(22, 78, 99, 0.55);
+}
+
+html[data-pos-theme='ubuntu'] .pos-theme-option--selected {
+  border-color: #fbbf24;
+  box-shadow: 0 0 0 2px rgba(251, 191, 36, 0.45);
+  background: rgba(109, 40, 217, 0.55);
+  color: #fef3c7;
+}
+
+html[data-pos-theme='ubuntu'] .pos-theme-option .pos-theme-option-hint {
+  color: #c4b5fd;
+}
+
+html[data-pos-theme='ubuntu'] .btn.danger {
+  background: #dc2626;
+  border-color: #b91c1c;
+  color: #fff;
+}
+
+html[data-pos-theme='ubuntu'] .assign-preset-input,
+html[data-pos-theme='ubuntu'] .assign-preset-select {
+  border-color: #6366f1;
+  background: #1e1b4b;
+  color: #f5f3ff;
+}
+
+html[data-pos-theme='ubuntu'] .assign-preset-modal .assign-preset-actions {
+  border-top-color: #8b5cf6;
+}
+
+html[data-pos-theme='ubuntu'] .preset-nav-tile,
+html[data-pos-theme='ubuntu'] .preset-item-tile {
+  border-color: #22d3ee;
+  background: #164e63;
+  color: #ecfeff;
+}
+
+html[data-pos-theme='ubuntu'] .preset-item-tile--stale {
+  background: rgba(30, 27, 75, 0.85);
+}
+
+html[data-pos-theme='ubuntu'] .success {
+  color: #86efac;
+}
+
+html[data-pos-theme='ubuntu'] .error {
+  color: #fca5a5;
+}

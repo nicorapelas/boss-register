@@ -32,6 +32,16 @@ function parseTransport(raw: unknown): PrinterTransport | null {
   ) {
     return { kind: 'lan', host: r.host, port: r.port }
   }
+  if (
+    r.kind === 'serial' &&
+    typeof r.path === 'string' &&
+    r.path.length > 0 &&
+    typeof r.baudRate === 'number' &&
+    Number.isFinite(r.baudRate) &&
+    r.baudRate > 0
+  ) {
+    return { kind: 'serial', path: r.path, baudRate: r.baudRate }
+  }
   return null
 }
 
@@ -56,11 +66,19 @@ ipcMain.handle(
       const receipt = args.receipt as ReceiptPayload
       const columns = typeof args.columns === 'number' && Number.isFinite(args.columns) ? args.columns : undefined
       const cut = typeof args.cut === 'boolean' ? args.cut : undefined
+      const now = new Date().toISOString()
+      console.log(
+        `[pos-print] ${now} request kind=${transport.kind} columns=${columns ?? 'default'} cut=${cut ?? 'default'} receiptNo=${receipt.receiptNumber ?? 'n/a'} lines=${Array.isArray(receipt.lines) ? receipt.lines.length : 0}`,
+      )
       const bytes = buildReceiptEscPos(receipt, { columns, cut })
+      console.log(`[pos-print] ${now} encodedBytes=${bytes.length}`)
       await sendEscPosToPrinter(transport, bytes)
+      console.log(`[pos-print] ${now} print-success kind=${transport.kind}`)
       return { ok: true }
     } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : 'Receipt print failed' }
+      const msg = e instanceof Error ? e.message : 'Receipt print failed'
+      console.error(`[pos-print] ${new Date().toISOString()} print-error ${msg}`)
+      return { ok: false, error: msg }
     }
   },
 )
@@ -85,6 +103,7 @@ function createWindow() {
     height: 800,
     minWidth: 800,
     minHeight: 560,
+    fullscreen: true,
     icon: path.join(process.env.VITE_PUBLIC, 'electron-vite.svg'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),

@@ -1,6 +1,10 @@
 import type { ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
+import { isPosManager } from '../auth/permissions'
+import { useServerConnection } from '../network/useServerConnection'
+
+const POS_TILL_CODE = (import.meta.env.VITE_POS_TILL_CODE?.trim().toUpperCase() || 'T1').slice(0, 24)
 
 function CogIcon() {
   return (
@@ -23,13 +27,27 @@ function CogIcon() {
   )
 }
 
-export function PosShell({ children }: { children: ReactNode }) {
+export function PosShell({
+  children,
+  beforeSignOut,
+}: {
+  children: ReactNode
+  /** Return false to keep the session (e.g. cart not empty). */
+  beforeSignOut?: () => boolean
+}) {
   const { session, logout } = useAuth()
   const location = useLocation()
-  const isAdmin = session?.user.role === 'admin'
+  const isAdmin = isPosManager(session?.user)
+  const { disconnected, recovered } = useServerConnection()
   const onSettings = location.pathname === '/settings'
   const shellSub = onSettings ? 'Settings' : 'Register'
   const settingsToggleLabel = onSettings ? 'Close settings' : 'Settings'
+  const userLabel = session?.user.displayName?.trim() || session?.user.email
+
+  function handleSignOut() {
+    if (beforeSignOut && !beforeSignOut()) return
+    void logout()
+  }
 
   return (
     <div className="shell">
@@ -51,14 +69,27 @@ export function PosShell({ children }: { children: ReactNode }) {
                   <CogIcon />
                 </Link>
               )}
-              <span className="shell-user">{session.user.email}</span>
-              <button type="button" className="btn ghost" onClick={() => void logout()}>
+              <span className="shell-till-badge" title="POS till code">
+                Till {POS_TILL_CODE}
+              </span>
+              <span className="shell-user">{userLabel}</span>
+              <button type="button" className="btn ghost" onClick={handleSignOut}>
                 Sign out
               </button>
             </>
           )}
         </div>
       </header>
+      {disconnected ? (
+        <div className="server-connection-banner server-connection-banner--offline" role="status" aria-live="polite">
+          OFFLINE: Cannot reach server. Trying to reconnect...
+        </div>
+      ) : null}
+      {!disconnected && recovered ? (
+        <div className="server-connection-banner server-connection-banner--online" role="status" aria-live="polite">
+          Connected to server again.
+        </div>
+      ) : null}
       <main className="shell-main">{children}</main>
     </div>
   )

@@ -1,9 +1,9 @@
-export type UserRole = 'admin' | 'cashier'
-
 export interface AuthUser {
   id: string
   email: string
-  role: UserRole
+  displayName?: string
+  role: string
+  permissions?: string[]
 }
 
 export interface SessionBundle {

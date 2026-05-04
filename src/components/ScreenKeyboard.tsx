@@ -1,4 +1,4 @@
-import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react'
+import { useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 
 /**
  * Actions emitted by {@link ScreenKeyboard}. Parent owns all text state — map these
@@ -15,6 +15,7 @@ export type ScreenKeyboardProps = {
   visible: boolean
   onAction: (action: ScreenKeyboardAction) => void
   className?: string
+  layout?: 'full' | 'numeric' | 'decimal' | 'tel'
 }
 
 /** Keeps focus in a paired `<input>` when tapping keys (call on pointerdown). */
@@ -79,10 +80,62 @@ function KeyAction({
  * Touch-friendly on-screen keyboard (letters, digits, SKU punctuation).
  * Reusable: wire `onAction` to any string state or future flows.
  */
-export function ScreenKeyboard({ visible, onAction, className }: ScreenKeyboardProps) {
+export function ScreenKeyboard({ visible, onAction, className, layout = 'full' }: ScreenKeyboardProps) {
+  const [capsLock, setCapsLock] = useState(false)
+
   if (!visible) return null
 
   const rootClass = className ? `screen-keyboard ${className}` : 'screen-keyboard'
+  const emitChar = (c: string) => (capsLock ? c.toUpperCase() : c.toLowerCase())
+
+  if (layout !== 'full') {
+    const extraKeys = layout === 'decimal' ? ['.'] : layout === 'tel' ? ['+'] : []
+    return (
+      <div className={rootClass} role="group" aria-label="On-screen keyboard">
+        <div className="screen-keyboard-row">
+          {['1', '2', '3'].map((k) => (
+            <KeyChar key={k} label={k} emit={k} onAction={onAction} />
+          ))}
+        </div>
+        <div className="screen-keyboard-row">
+          {['4', '5', '6'].map((k) => (
+            <KeyChar key={k} label={k} emit={k} onAction={onAction} />
+          ))}
+        </div>
+        <div className="screen-keyboard-row">
+          {['7', '8', '9'].map((k) => (
+            <KeyChar key={k} label={k} emit={k} onAction={onAction} />
+          ))}
+        </div>
+        <div className="screen-keyboard-row">
+          {extraKeys.map((k) => (
+            <KeyChar key={k} label={k} emit={k} onAction={onAction} />
+          ))}
+          <KeyChar label="0" emit="0" onAction={onAction} />
+          <KeyAction
+            ariaLabel="Backspace"
+            action={{ type: 'backspace' }}
+            onAction={onAction}
+          >
+            ⌫
+          </KeyAction>
+        </div>
+        <div className="screen-keyboard-row screen-keyboard-row-actions">
+          <KeyAction ariaLabel="Enter" action={{ type: 'enter' }} onAction={onAction}>
+            ↵
+          </KeyAction>
+          <KeyAction
+            className="screen-keyboard-key-done"
+            ariaLabel="Done"
+            action={{ type: 'done' }}
+            onAction={onAction}
+          >
+            Done
+          </KeyAction>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className={rootClass} role="group" aria-label="On-screen keyboard">
@@ -93,12 +146,12 @@ export function ScreenKeyboard({ visible, onAction, className }: ScreenKeyboardP
       </div>
       <div className="screen-keyboard-row">
         {ROW_Q.map((c) => (
-          <KeyChar key={c} label={c} emit={c.toLowerCase()} onAction={onAction} />
+          <KeyChar key={c} label={c} emit={emitChar(c)} onAction={onAction} />
         ))}
       </div>
       <div className="screen-keyboard-row">
         {ROW_A.map((c) => (
-          <KeyChar key={c} label={c} emit={c.toLowerCase()} onAction={onAction} />
+          <KeyChar key={c} label={c} emit={emitChar(c)} onAction={onAction} />
         ))}
         <KeyAction
           className="screen-keyboard-key-wide"
@@ -111,10 +164,19 @@ export function ScreenKeyboard({ visible, onAction, className }: ScreenKeyboardP
       </div>
       <div className="screen-keyboard-row">
         {ROW_Z.map((c) => (
-          <KeyChar key={c} label={c} emit={c} onAction={onAction} />
+          <KeyChar key={c} label={c} emit={/[a-z]/i.test(c) ? emitChar(c) : c} onAction={onAction} />
         ))}
       </div>
       <div className="screen-keyboard-row screen-keyboard-row-actions">
+        <button
+          type="button"
+          className={capsLock ? 'screen-keyboard-key screen-keyboard-key-active' : 'screen-keyboard-key'}
+          aria-label="Shift / Caps lock"
+          onPointerDown={retainInputFocusOnKeyPointerDown}
+          onClick={() => setCapsLock((v) => !v)}
+        >
+          {capsLock ? 'Caps ON' : 'Shift'}
+        </button>
         <KeyAction
           className="screen-keyboard-key-space"
           ariaLabel="Space"

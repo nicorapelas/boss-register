@@ -4,6 +4,8 @@ import App from './App.tsx'
 import './index.css'
 import { applyPosThemeToDocument, readStoredPosTheme } from './theme/posTheme'
 import './pos-theme-light.css'
+import './pos-theme-ubuntu.css'
+import './pos-theme-elon.css'
 
 applyPosThemeToDocument(readStoredPosTheme())
 

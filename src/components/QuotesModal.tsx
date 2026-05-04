@@ -41,6 +41,10 @@ export function QuotesModal({
   const [quotesScreenKbOpen, setQuotesScreenKbOpen] = useState(false)
   const quotesKbFieldRef = useRef<QuotesKbField>('searchQ')
   const quotesKbBlurTimerRef = useRef<number | null>(null)
+  const searchQInputRef = useRef<HTMLInputElement | null>(null)
+  const searchPhoneInputRef = useRef<HTMLInputElement | null>(null)
+  const saveNameInputRef = useRef<HTMLInputElement | null>(null)
+  const savePhoneInputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
     return () => {
@@ -91,6 +95,26 @@ export function QuotesModal({
     }
   }
 
+  function scrollQuotesFieldIntoView(which: QuotesKbField) {
+    const target =
+      which === 'searchQ'
+        ? searchQInputRef.current
+        : which === 'searchPhone'
+          ? searchPhoneInputRef.current
+          : which === 'saveCustomerName'
+            ? saveNameInputRef.current
+            : savePhoneInputRef.current
+    target?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' })
+  }
+
+  useEffect(() => {
+    if (!open || !quotesScreenKbOpen) return
+    const t = window.setTimeout(() => {
+      scrollQuotesFieldIntoView(quotesKbFieldRef.current)
+    }, 40)
+    return () => window.clearTimeout(t)
+  }, [open, quotesScreenKbOpen, showSaveForm])
+
   function handleQuotesScreenKeyboardAction(action: ScreenKeyboardAction) {
     const field = quotesKbFieldRef.current
     const patch = (updater: (s: string) => string) => {
@@ -122,6 +146,7 @@ export function QuotesModal({
         quotesKbFieldRef.current = which
         cancelQuotesKbBlurHide()
         setQuotesScreenKbOpen(true)
+        window.setTimeout(() => scrollQuotesFieldIntoView(which), 20)
       },
       onBlur: () => {
         cancelQuotesKbBlurHide()
@@ -222,6 +247,7 @@ export function QuotesModal({
               <label className="open-tabs-field">
                 <span>Customer name</span>
                 <input
+                  ref={saveNameInputRef}
                   className="open-tabs-input"
                   value={customerName}
                   onChange={(e) => setCustomerName(e.target.value)}
@@ -234,6 +260,7 @@ export function QuotesModal({
               <label className="open-tabs-field">
                 <span>Phone</span>
                 <input
+                  ref={savePhoneInputRef}
                   className="open-tabs-input"
                   type="tel"
                   value={savePhone}
@@ -271,6 +298,7 @@ export function QuotesModal({
             <>
               <div className="quotes-modal-filters">
                 <input
+                  ref={searchQInputRef}
                   className="open-tabs-input"
                   value={q}
                   onChange={(e) => setQ(e.target.value)}
@@ -280,6 +308,7 @@ export function QuotesModal({
                   {...quotesFieldKbHandlers('searchQ')}
                 />
                 <input
+                  ref={searchPhoneInputRef}
                   className="open-tabs-input"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}

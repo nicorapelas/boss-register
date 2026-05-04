@@ -3,9 +3,54 @@ import type { AuthResponse } from '../auth/types'
 const base = () => import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') ?? ''
 
 export type ApiErrorBody = { message?: string; error?: string }
+type ReachabilityListener = (reachable: boolean) => void
 
 let getAccessToken: () => string | null = () => null
 let runRefresh: () => Promise<boolean> = async () => false
+const reachabilityListeners = new Set<ReachabilityListener>()
+let serverReachable = true
+
+function setServerReachable(next: boolean) {
+  if (serverReachable === next) return
+  serverReachable = next
+  for (const listener of reachabilityListeners) listener(next)
+}
+
+function isNetworkError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false
+  const msg = err.message.toLowerCase()
+  return msg.includes('failed to fetch') || msg.includes('networkerror') || msg.includes('load failed')
+}
+
+export function subscribeServerReachability(listener: ReachabilityListener): () => void {
+  reachabilityListeners.add(listener)
+  listener(serverReachable)
+  return () => {
+    reachabilityListeners.delete(listener)
+  }
+}
+
+export function markServerReachable() {
+  setServerReachable(true)
+}
+
+export function markServerUnreachable() {
+  setServerReachable(false)
+}
+
+export function getServerHealthUrl(): string | null {
+  const b = base()
+  if (!b) return null
+  try {
+    const u = new URL(b)
+    u.pathname = '/health'
+    u.search = ''
+    u.hash = ''
+    return u.toString()
+  } catch {
+    return null
+  }
+}
 
 /** Called from AuthProvider so apiFetch can attach tokens and refresh on 401. */
 export function configureApiAuth(handlers: {
@@ -42,7 +87,14 @@ export async function apiFetch<T>(
   const token = isPublicAuthPath(path) ? null : getAccessToken()
   if (token) headers.set('Authorization', `Bearer ${token}`)
 
-  const res = await fetch(url, { ...init, headers })
+  let res: Response
+  try {
+    res = await fetch(url, { ...init, headers })
+  } catch (err) {
+    if (isNetworkError(err)) setServerReachable(false)
+    throw err
+  }
+  setServerReachable(true)
   const text = await res.text()
   const data = text ? (JSON.parse(text) as unknown) : null
 

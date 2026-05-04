@@ -13,6 +13,8 @@ import {
 const THEMES: { id: PosTheme; label: string; hint: string }[] = [
   { id: 'dark', label: 'Dark', hint: 'Default register look' },
   { id: 'light', label: 'Light', hint: 'Softer, brighter colours' },
+  { id: 'ubuntu', label: 'Ubuntu', hint: 'Violet, teal, and coral accents' },
+  { id: 'elon', label: 'Elon', hint: 'Old Glory blue & red — bold, minimal white' },
 ]
 
 export function PosSettings() {
@@ -102,17 +104,20 @@ export function PosSettings() {
                 className="pos-settings-select"
                 value={printer.transport.kind}
                 onChange={(e) => {
-                  const kind = e.target.value === 'lan' ? 'lan' : 'usb'
+                  const kind = e.target.value === 'lan' ? 'lan' : e.target.value === 'serial' ? 'serial' : 'usb'
                   updatePrinter({
                     transport:
                       kind === 'lan'
                         ? { kind: 'lan', host: '192.168.1.50', port: 9100 }
+                        : kind === 'serial'
+                          ? { kind: 'serial', path: '/dev/ttyS0', baudRate: 38400 }
                         : { kind: 'usb', path: '/dev/usb/lp0' },
                   })
                 }}
               >
                 <option value="usb">USB</option>
                 <option value="lan">LAN (TCP 9100)</option>
+                <option value="serial">Serial (ESC/POS)</option>
               </select>
             </label>
           </div>
@@ -131,7 +136,7 @@ export function PosSettings() {
                 On Linux you may need permissions for this device (usually group <code>lp</code>).
               </p>
             </div>
-          ) : (
+          ) : printer.transport.kind === 'lan' ? (
             <div className="pos-settings-row pos-settings-row-grid">
               <label className="pos-settings-field">
                 <span className="pos-settings-field-label">Host</span>
@@ -169,6 +174,46 @@ export function PosSettings() {
               </label>
               <p className="muted pos-settings-hint pos-settings-hint-span">
                 Most ESC/POS printers listen on TCP port <code>9100</code>.
+              </p>
+            </div>
+          ) : (
+            <div className="pos-settings-row pos-settings-row-grid">
+              <label className="pos-settings-field">
+                <span className="pos-settings-field-label">Serial device</span>
+                <input
+                  className="pos-settings-input"
+                  value={printer.transport.path}
+                  onChange={(e) =>
+                    updatePrinter({
+                      transport: {
+                        kind: 'serial',
+                        path: e.target.value,
+                        baudRate: printer.transport.kind === 'serial' ? printer.transport.baudRate : 38400,
+                      },
+                    })
+                  }
+                />
+              </label>
+              <label className="pos-settings-field">
+                <span className="pos-settings-field-label">Baud rate</span>
+                <input
+                  className="pos-settings-input"
+                  inputMode="numeric"
+                  value={String(printer.transport.baudRate)}
+                  onChange={(e) => {
+                    const n = Number(e.target.value)
+                    updatePrinter({
+                      transport: {
+                        kind: 'serial',
+                        path: printer.transport.kind === 'serial' ? printer.transport.path : '/dev/ttyS0',
+                        baudRate: Number.isFinite(n) && n > 0 ? n : 38400,
+                      },
+                    })
+                  }}
+                />
+              </label>
+              <p className="muted pos-settings-hint pos-settings-hint-span">
+                Posiflex serial adapters commonly use <code>/dev/ttyS0</code> at <code>38400</code> baud.
               </p>
             </div>
           )}

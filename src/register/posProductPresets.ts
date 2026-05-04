@@ -1,7 +1,7 @@
 import type { Product } from '../api/types'
 
 /** Maximum number of preset products (leaves) per till. */
-export const PRESET_ENTRY_MAX = 16
+export const PRESET_ENTRY_MAX = 200
 
 /** @deprecated use PRESET_ENTRY_MAX */
 export const PRESET_SLOT_COUNT = PRESET_ENTRY_MAX
@@ -62,7 +62,7 @@ function normalizeEntriesArray(raw: unknown): PresetEntry[] {
   return out
 }
 
-/** Migrate legacy fixed 16-slot array to compact entries list. */
+/** Migrate legacy fixed-slot array to compact entries list. */
 function migrateSlotsToEntries(slots: unknown): PresetEntry[] {
   if (!Array.isArray(slots)) return []
   const out: PresetEntry[] = []
@@ -223,4 +223,77 @@ export function removePresetAt(state: ProductPresetsState, entryIndex: number): 
   if (entryIndex < 0 || entryIndex >= state.entries.length) return state
   const nextEntries = state.entries.filter((_, i) => i !== entryIndex)
   return { ...state, entries: nextEntries }
+}
+
+/**
+ * Ranked preset category names for datalist quick-pick (same behaviour as BackOffice → Products category field).
+ * Dedupes case-insensitively; when `typed` is empty, shows the first `limit` names; otherwise prefix matches first,
+ * then substring matches.
+ */
+/**
+ * Sub-category pool for a preset category: catalog products with that `category`, plus preset map and entries.
+ * Matches BackOffice Products sub-category datalist sources.
+ */
+export function mergePresetSubCategoryOptions(
+  products: readonly Product[],
+  presets: Pick<ProductPresetsState, 'entries' | 'subCategoriesByCategory'>,
+  cat: string,
+): string[] {
+  const c = cat.trim()
+  const fromProd = new Set<string>()
+  for (const p of products) {
+    if ((p.category?.trim() ?? '') !== c) continue
+    const s = p.subCategory?.trim()
+    if (s) fromProd.add(s)
+  }
+  const fromMap = presets.subCategoriesByCategory[c] ?? []
+  const fromEntries = presets.entries.filter((e) => e.category === c).map((e) => e.subCategory)
+  return [...new Set([...fromProd, ...fromMap, ...fromEntries].filter(Boolean))].sort((a, b) =>
+    a.localeCompare(b, undefined, { sensitivity: 'base' }),
+  )
+}
+
+/**
+ * Ranked sub-category names for datalist (same ranking rules as {@link quickPresetCategorySuggestions}).
+ */
+export function quickPresetSubCategorySuggestions(
+  mergedSorted: readonly string[],
+  typed: string,
+  limit = 12,
+): string[] {
+  const q = typed.trim().toLowerCase()
+  if (!q) return [...mergedSorted].slice(0, limit)
+
+  const starts = mergedSorted.filter((name) => name.toLowerCase().startsWith(q))
+  const contains = mergedSorted.filter(
+    (name) => !name.toLowerCase().startsWith(q) && name.toLowerCase().includes(q),
+  )
+  return [...starts, ...contains].slice(0, limit)
+}
+
+export function quickPresetCategorySuggestions(
+  categoryNames: readonly string[],
+  typed: string,
+  limit = 12,
+): string[] {
+  const seen = new Set<string>()
+  const merged: string[] = []
+  for (const raw of categoryNames) {
+    const name = raw.trim()
+    if (!name) continue
+    if (name.toLowerCase() === 'uncategorized') continue
+    const key = name.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    merged.push(name)
+  }
+
+  const q = typed.trim().toLowerCase()
+  if (!q) return merged.slice(0, limit)
+
+  const starts = merged.filter((name) => name.toLowerCase().startsWith(q))
+  const contains = merged.filter(
+    (name) => !name.toLowerCase().startsWith(q) && name.toLowerCase().includes(q),
+  )
+  return [...starts, ...contains].slice(0, limit)
 }

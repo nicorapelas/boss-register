@@ -1,20 +1,32 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiFetch } from '../api/client'
 import type { HouseAccountRow } from '../api/types'
+import { ScreenKeyboard, type ScreenKeyboardAction } from './ScreenKeyboard'
 
 export type HouseAccountsModalProps = {
   open: boolean
   onClose: () => void
-  /** Called when user confirms selection for checkout */
-  onSelectForCheckout: (account: HouseAccountRow) => void
+  /** Called when user confirms account selection. */
+  onSelectAccount: (account: HouseAccountRow) => void
+  actionLabel?: string
+  helperText?: string
 }
 
-export function HouseAccountsModal({ open, onClose, onSelectForCheckout }: HouseAccountsModalProps) {
+export function HouseAccountsModal({
+  open,
+  onClose,
+  onSelectAccount,
+  actionLabel = 'Use for checkout',
+  helperText = 'Select an account to charge the current sale (on account). Create or edit accounts in Back Office.',
+}: HouseAccountsModalProps) {
   const [q, setQ] = useState('')
   const [list, setList] = useState<HouseAccountRow[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [searchKeyboardOpen, setSearchKeyboardOpen] = useState(false)
   const requestSeqRef = useRef(0)
+  const searchInputRef = useRef<HTMLInputElement | null>(null)
+  const keyboardBlurTimerRef = useRef<number | null>(null)
 
   const load = useCallback(async (search: string) => {
     const seq = ++requestSeqRef.current
@@ -39,8 +51,49 @@ export function HouseAccountsModal({ open, onClose, onSelectForCheckout }: House
   useEffect(() => {
     if (!open) return
     setQ('')
+    setSearchKeyboardOpen(false)
     void load('')
   }, [open, load])
+
+  useEffect(() => {
+    return () => {
+      if (keyboardBlurTimerRef.current) clearTimeout(keyboardBlurTimerRef.current)
+    }
+  }, [])
+
+  function cancelKeyboardBlurHide() {
+    if (keyboardBlurTimerRef.current) {
+      clearTimeout(keyboardBlurTimerRef.current)
+      keyboardBlurTimerRef.current = null
+    }
+  }
+
+  function scrollSearchFieldIntoView() {
+    searchInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' })
+  }
+
+  function handleSearchKeyboardAction(action: ScreenKeyboardAction) {
+    if (action.type === 'char') {
+      setQ((s) => s + action.char)
+      return
+    }
+    if (action.type === 'backspace') {
+      setQ((s) => s.slice(0, -1))
+      return
+    }
+    if (action.type === 'space') {
+      setQ((s) => s + ' ')
+      return
+    }
+    if (action.type === 'enter') {
+      void load(q)
+      setSearchKeyboardOpen(false)
+      return
+    }
+    if (action.type === 'done') {
+      setSearchKeyboardOpen(false)
+    }
+  }
 
   if (!open) return null
 
@@ -61,12 +114,13 @@ export function HouseAccountsModal({ open, onClose, onSelectForCheckout }: House
             Close
           </button>
         </div>
-        <div className="quotes-modal-body">
+        <div className={searchKeyboardOpen ? 'quotes-modal-body quotes-modal-body--with-keyboard' : 'quotes-modal-body'}>
           <p className="muted" style={{ marginBottom: '0.5rem' }}>
-            Select an account to charge the current sale (on account). Create or edit accounts in Back Office.
+            {helperText}
           </p>
           <div className="quotes-modal-filters">
             <input
+              ref={searchInputRef}
               className="open-tabs-input"
               value={q}
               onChange={(e) => setQ(e.target.value)}
@@ -78,6 +132,18 @@ export function HouseAccountsModal({ open, onClose, onSelectForCheckout }: House
               }}
               placeholder="Search number, name, phone"
               aria-label="Search house accounts"
+              inputMode={searchKeyboardOpen ? 'none' : 'search'}
+              onFocus={() => {
+                cancelKeyboardBlurHide()
+                setSearchKeyboardOpen(true)
+                window.setTimeout(() => scrollSearchFieldIntoView(), 20)
+              }}
+              onBlur={() => {
+                cancelKeyboardBlurHide()
+                keyboardBlurTimerRef.current = window.setTimeout(() => {
+                  setSearchKeyboardOpen(false)
+                }, 200)
+              }}
             />
             <button type="button" className="btn small" disabled={loading} onClick={() => void load(q)}>
               {loading ? '…' : 'Search'}
@@ -109,11 +175,11 @@ export function HouseAccountsModal({ open, onClose, onSelectForCheckout }: House
                         type="button"
                         className="btn small primary"
                         onClick={() => {
-                          onSelectForCheckout(row)
+                          onSelectAccount(row)
                           onClose()
                         }}
                       >
-                        Use for checkout
+                        {actionLabel}
                       </button>
                     </div>
                   </li>
@@ -121,6 +187,11 @@ export function HouseAccountsModal({ open, onClose, onSelectForCheckout }: House
               </ul>
             )}
           </div>
+          <ScreenKeyboard
+            visible={searchKeyboardOpen}
+            onAction={handleSearchKeyboardAction}
+            className="open-tabs-screen-keyboard quotes-modal-screen-keyboard"
+          />
         </div>
       </div>
     </div>

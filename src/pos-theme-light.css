@@ -177,11 +177,43 @@ html[data-pos-theme='light'] .pos-touch {
   -webkit-tap-highlight-color: rgba(28, 22, 16, 0.09);
 }
 
-html[data-pos-theme='light'] .panel-cart .cart-lines::-webkit-scrollbar-thumb {
+html[data-pos-theme='light'] .panel-cart .cart-lines::-webkit-scrollbar-thumb,
+html[data-pos-theme='light'] .panel-products .product-list::-webkit-scrollbar-thumb,
+html[data-pos-theme='light'] .presets-screen::-webkit-scrollbar-thumb,
+html[data-pos-theme='light'] .screen-keyboard::-webkit-scrollbar-thumb,
+html[data-pos-theme='light'] .panel-products .keys-buttons-wrap::-webkit-scrollbar-thumb,
+html[data-pos-theme='light'] .panel-products .keys-function-pad::-webkit-scrollbar-thumb,
+html[data-pos-theme='light'] .panel-products .keys-layout::-webkit-scrollbar-thumb,
+html[data-pos-theme='light'] .cart-change-view::-webkit-scrollbar-thumb,
+html[data-pos-theme='light'] .cart-change-scroll::-webkit-scrollbar-thumb,
+html[data-pos-theme='light'] .register-voucher-screen-kb::-webkit-scrollbar-thumb,
+html[data-pos-theme='light'] .open-tabs-dialog::-webkit-scrollbar-thumb,
+html[data-pos-theme='light'] .quotes-modal-scroll::-webkit-scrollbar-thumb,
+html[data-pos-theme='light'] .quotes-modal-form::-webkit-scrollbar-thumb,
+html[data-pos-theme='light'] .layby-modal-scroll::-webkit-scrollbar-thumb,
+html[data-pos-theme='light'] .assign-preset-modal-scroll::-webkit-scrollbar-thumb,
+html[data-pos-theme='light'] .assign-preset-screen-keyboard::-webkit-scrollbar-thumb,
+html[data-pos-theme='light'] .pos-settings-page::-webkit-scrollbar-thumb {
   background: rgba(28, 22, 16, 0.28);
 }
 
-html[data-pos-theme='light'] .panel-cart .cart-lines::-webkit-scrollbar-thumb:hover {
+html[data-pos-theme='light'] .panel-cart .cart-lines::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='light'] .panel-products .product-list::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='light'] .presets-screen::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='light'] .screen-keyboard::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='light'] .panel-products .keys-buttons-wrap::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='light'] .panel-products .keys-function-pad::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='light'] .panel-products .keys-layout::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='light'] .cart-change-view::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='light'] .cart-change-scroll::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='light'] .register-voucher-screen-kb::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='light'] .open-tabs-dialog::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='light'] .quotes-modal-scroll::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='light'] .quotes-modal-form::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='light'] .layby-modal-scroll::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='light'] .assign-preset-modal-scroll::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='light'] .assign-preset-screen-keyboard::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='light'] .pos-settings-page::-webkit-scrollbar-thumb:hover {
   background: rgba(28, 22, 16, 0.42);
 }
 

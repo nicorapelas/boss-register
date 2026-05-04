@@ -76,3 +76,31 @@ html[data-pos-theme='light'] a {
 html[data-pos-theme='light'] a:hover {
   color: #1e3a8a;
 }
+
+html[data-pos-theme='ubuntu'] {
+  color: #f5f3ff;
+  background-color: #1e1b4b;
+  --muted: #c4b5fd;
+}
+
+html[data-pos-theme='ubuntu'] a {
+  color: #7dd3fc;
+}
+
+html[data-pos-theme='ubuntu'] a:hover {
+  color: #bae6fd;
+}
+
+html[data-pos-theme='elon'] {
+  color: #e2e8f0;
+  background-color: #0a1628;
+  --muted: #94a3b8;
+}
+
+html[data-pos-theme='elon'] a {
+  color: #93c5fd;
+}
+
+html[data-pos-theme='elon'] a:hover {
+  color: #bfdbfe;
+}

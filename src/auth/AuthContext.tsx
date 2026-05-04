@@ -62,11 +62,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [runRefresh])
 
   useEffect(() => {
+    let cancelled = false
     void (async () => {
       const stored = await loadStoredSession()
-      setSession(stored)
+      if (cancelled) return
+      // Avoid race: if user logs in before storage bootstrap resolves,
+      // never overwrite the fresh in-memory session with stale/null stored data.
+      setSession((prev) => prev ?? stored)
       setLoading(false)
     })()
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   const login = useCallback(async (email: string, password: string) => {

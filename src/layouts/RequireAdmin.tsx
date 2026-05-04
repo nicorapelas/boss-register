@@ -1,5 +1,6 @@
 import { Navigate, Outlet } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
+import { isPosManager } from '../auth/permissions'
 
 export function RequireAdmin() {
   const { session, loading } = useAuth()
@@ -10,7 +11,7 @@ export function RequireAdmin() {
       </div>
     )
   }
-  if (!session || session.user.role !== 'admin') {
+  if (!session || !isPosManager(session.user)) {
     return <Navigate to="/" replace />
   }
   return <Outlet />

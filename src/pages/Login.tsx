@@ -1,7 +1,8 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { registerRequest } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
+import { ScreenKeyboard, retainInputFocusOnKeyPointerDown, type ScreenKeyboardAction } from '../components'
 
 export function Login() {
   const { session, loading, login, loginWithBadge } = useAuth()
@@ -13,10 +14,13 @@ export function Login() {
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-
-  if (!loading && session) {
-    return <Navigate to="/" replace />
-  }
+  const [screenKeyboardOpen, setScreenKeyboardOpen] = useState(false)
+  const [activeInput, setActiveInput] = useState<'badge' | 'email' | 'password'>('badge')
+  const formRef = useRef<HTMLFormElement | null>(null)
+  const badgeInputRef = useRef<HTMLInputElement | null>(null)
+  const emailInputRef = useRef<HTMLInputElement | null>(null)
+  const passwordInputRef = useRef<HTMLInputElement | null>(null)
+  const shouldRedirect = !loading && !!session
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
@@ -42,6 +46,61 @@ export function Login() {
     }
   }
 
+  function applyKeyboardAction(value: string, action: ScreenKeyboardAction): string {
+    if (action.type === 'char') return value + action.char
+    if (action.type === 'space') return value + ' '
+    if (action.type === 'backspace') return value.slice(0, -1)
+    return value
+  }
+
+  function focusActiveInput(next: 'badge' | 'email' | 'password') {
+    if (next === 'badge') badgeInputRef.current?.focus()
+    if (next === 'email') emailInputRef.current?.focus()
+    if (next === 'password') passwordInputRef.current?.focus()
+  }
+
+  function scrollActiveInputIntoView(next: 'badge' | 'email' | 'password') {
+    const target = next === 'badge' ? badgeInputRef.current : next === 'email' ? emailInputRef.current : passwordInputRef.current
+    target?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' })
+  }
+
+  useEffect(() => {
+    if (!screenKeyboardOpen) return
+    const t = window.setTimeout(() => scrollActiveInputIntoView(activeInput), 40)
+    return () => window.clearTimeout(t)
+  }, [screenKeyboardOpen, activeInput])
+
+  function appendActiveInput(extra: string) {
+    if (!extra) return
+    if (activeInput === 'badge') setBadgeCode((v) => v + extra)
+    if (activeInput === 'email') setEmail((v) => v + extra)
+    if (activeInput === 'password') setPassword((v) => v + extra)
+  }
+
+  function handleLoginKeyboardAction(action: ScreenKeyboardAction) {
+    if (action.type === 'enter') {
+      formRef.current?.requestSubmit()
+      return
+    }
+    if (action.type === 'done') {
+      setScreenKeyboardOpen(false)
+      return
+    }
+    if (activeInput === 'badge') {
+      setBadgeCode((v) => applyKeyboardAction(v, action))
+      return
+    }
+    if (activeInput === 'email') {
+      setEmail((v) => applyKeyboardAction(v, action))
+      return
+    }
+    setPassword((v) => applyKeyboardAction(v, action))
+  }
+
+  if (shouldRedirect) {
+    return <Navigate to="/" replace />
+  }
+
   return (
     <div className="screen auth-screen">
       <div className="panel">
@@ -61,17 +120,22 @@ export function Login() {
             </>
           )}
         </p>
-        <form onSubmit={(e) => void onSubmit(e)} className="form">
+        <form ref={formRef} onSubmit={(e) => void onSubmit(e)} className="form">
           {mode === 'badge' ? (
             <label>
               QR badge code
               <input
+                ref={badgeInputRef}
                 type="text"
                 autoComplete="off"
                 autoFocus
                 placeholder="Scan badge or type code"
                 value={badgeCode}
                 onChange={(e) => setBadgeCode(e.target.value)}
+                onFocus={() => {
+                  setActiveInput('badge')
+                  if (screenKeyboardOpen) window.setTimeout(() => scrollActiveInputIntoView('badge'), 20)
+                }}
                 required
               />
             </label>
@@ -80,25 +144,76 @@ export function Login() {
               <label>
                 Email
                 <input
+                  ref={emailInputRef}
                   type="email"
                   autoComplete="username"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
+                  onFocus={() => {
+                    setActiveInput('email')
+                    if (screenKeyboardOpen) window.setTimeout(() => scrollActiveInputIntoView('email'), 20)
+                  }}
                   required
                 />
               </label>
               <label>
                 Password
                 <input
+                  ref={passwordInputRef}
                   type="password"
                   autoComplete="current-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                  onFocus={() => {
+                    setActiveInput('password')
+                    if (screenKeyboardOpen) window.setTimeout(() => scrollActiveInputIntoView('password'), 20)
+                  }}
                   required
                 />
               </label>
             </>
           )}
+          <div className="login-kb-toolbar">
+            <button
+              type="button"
+              className="btn ghost btn small"
+              onClick={() => {
+                setScreenKeyboardOpen((v) => !v)
+                focusActiveInput(activeInput)
+              }}
+            >
+              {screenKeyboardOpen ? 'Hide keyboard' : 'Show keyboard'}
+            </button>
+            {screenKeyboardOpen && mode !== 'badge' ? (
+              <div className="login-kb-shortcuts">
+                <button
+                  type="button"
+                  className="btn ghost btn small"
+                  onPointerDown={retainInputFocusOnKeyPointerDown}
+                  onClick={() => appendActiveInput('@')}
+                >
+                  @
+                </button>
+                <button
+                  type="button"
+                  className="btn ghost btn small"
+                  onPointerDown={retainInputFocusOnKeyPointerDown}
+                  onClick={() => appendActiveInput('.')}
+                >
+                  .
+                </button>
+                <button
+                  type="button"
+                  className="btn ghost btn small"
+                  onPointerDown={retainInputFocusOnKeyPointerDown}
+                  onClick={() => appendActiveInput('_')}
+                >
+                  _
+                </button>
+              </div>
+            ) : null}
+          </div>
+          <ScreenKeyboard visible={screenKeyboardOpen} onAction={handleLoginKeyboardAction} className="open-tabs-screen-keyboard" />
           {notice && <p className="success">{notice}</p>}
           {error && <p className="error">{error}</p>}
           <button type="submit" className="btn primary" disabled={busy}>
@@ -119,6 +234,7 @@ export function Login() {
             className="btn ghost"
             onClick={() => {
               setMode(mode === 'badge' ? 'login' : mode === 'login' ? 'register' : 'badge')
+              setActiveInput(mode === 'badge' ? 'email' : 'badge')
               setError(null)
               setNotice(null)
             }}
