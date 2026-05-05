@@ -5,6 +5,7 @@ import { isPosManager } from '../auth/permissions'
 import { useServerConnection } from '../network/useServerConnection'
 
 const POS_TILL_CODE = (import.meta.env.VITE_POS_TILL_CODE?.trim().toUpperCase() || 'T1').slice(0, 24)
+const APP_VERSION = import.meta.env.VITE_APP_VERSION || '0.0.0'
 
 function CogIcon() {
   return (
@@ -55,6 +56,9 @@ export function PosShell({
         <div className="shell-brand">
           <Link to="/">ElectroPOS</Link>
           <span className="shell-sub">{shellSub}</span>
+          <span className="shell-version" title="App version">
+            v{APP_VERSION}
+          </span>
         </div>
         <div className="shell-actions">
           {session && (

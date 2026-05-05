@@ -71,6 +71,13 @@
   color: #a8a8a8;
 }
 
+.shell-version {
+  font-size: 0.68rem;
+  color: #8d8d8d;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
 .shell-actions {
   display: flex;
   align-items: center;
@@ -1288,6 +1295,10 @@
   overflow: hidden;
 }
 
+.cart-body--refund-kb-open {
+  overflow-y: auto;
+}
+
 .cart-empty-msg {
   flex: 1;
   display: flex;
@@ -1640,8 +1651,23 @@
   margin-bottom: 0.85rem;
 }
 
+.cash-footer.refund-cart-checkout-footer {
+  padding-bottom: 0.45rem;
+}
+
+.cash-footer.refund-cart-checkout-footer .checkout-btn {
+  min-height: 50px !important;
+  font-size: 1.08rem !important;
+}
+
 .register-refund-cart-screen-kb {
   margin-top: 0.5rem;
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  background: #242424;
+  border-top: 1px solid #4a4a4a;
+  padding-top: 0.35rem;
 }
 
 .cart-line {

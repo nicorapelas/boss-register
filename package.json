@@ -1,7 +1,7 @@
 {
   "name": "electropos-pos",
   "private": true,
-  "version": "0.0.1",
+  "version": "0.0.2",
   "type": "module",
   "main": "dist-electron/main.js",
   "scripts": {
@@ -9,6 +9,7 @@
     "dev:clean": "rm -rf node_modules/.vite && env -u ELECTRON_RUN_AS_NODE vite",
     "build": "tsc && vite build",
     "release": "npm run build && electron-builder",
+    "deploy:posiflex": "./scripts/deploy-posiflex.sh",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview"
   },

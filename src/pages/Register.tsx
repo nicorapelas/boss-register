@@ -544,23 +544,28 @@ export function Register() {
     target?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' })
   }
 
+  function openRefundCartKeyboard(which: 'note' | 'phone') {
+    refundCartKbTargetRef.current = which
+    setRefundCartKbTarget(which)
+    cancelRefundCartKbBlurHide()
+    cancelVoucherKbBlurHide()
+    setVoucherScreenKbOpen(false)
+    setRefundCartScreenKbOpen(true)
+    window.setTimeout(() => scrollRefundCartFieldIntoView(which), 20)
+  }
+
   function refundCartKbHandlers(which: 'note' | 'phone') {
     return {
-      onFocus: () => {
-        refundCartKbTargetRef.current = which
-        setRefundCartKbTarget(which)
-        cancelRefundCartKbBlurHide()
-        cancelVoucherKbBlurHide()
-        setVoucherScreenKbOpen(false)
-        setRefundCartScreenKbOpen(true)
-        window.setTimeout(() => scrollRefundCartFieldIntoView(which), 20)
-      },
-      onBlur: () => {
-        cancelRefundCartKbBlurHide()
-        refundCartKbBlurTimerRef.current = window.setTimeout(() => {
-          setRefundCartScreenKbOpen(false)
-        }, 200)
-      },
+      onFocus: () => openRefundCartKeyboard(which),
+      // Some touchscreen kiosk sessions don't fire focus consistently.
+      // Open keyboard on pointer/tap as a fallback.
+      onPointerDown: () => openRefundCartKeyboard(which),
+      onTouchStart: () => openRefundCartKeyboard(which),
+      onClick: () => openRefundCartKeyboard(which),
+      // Keep refund keyboard sticky on kiosk touch sessions.
+      // Blur can fire spuriously while tapping between fields and was
+      // immediately closing the keyboard on some Posiflex runs.
+      onBlur: () => {},
     }
   }
 
@@ -3749,7 +3754,9 @@ export function Register() {
             ) : (
               <>
                 <h2>{refundSession ? 'Refund cart' : 'Cart'}</h2>
-                <div className="cart-body">
+                <div
+                  className={`cart-body${refundSession && refundCartScreenKbOpen ? ' cart-body--refund-kb-open' : ''}`}
+                >
                   {cart.length === 0 ? (
                     <p className="muted empty-hint cart-empty-msg">
                       {refundSession ? 'No refundable lines left on this sale.' : 'Tap a product to add.'}
