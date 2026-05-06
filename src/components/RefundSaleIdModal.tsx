@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { apiFetch } from '../api/client'
 import type { SaleRefundPreview } from '../api/types'
+import { resolveSyncedSaleLookupId } from '../offline/offlineSalesQueue'
 import { ScreenKeyboard, type ScreenKeyboardAction } from './ScreenKeyboard'
 
 export type RefundSaleIdModalProps = {
@@ -40,8 +41,9 @@ export function RefundSaleIdModal({ open, onClose, onSaleLoaded }: RefundSaleIdM
     setLoading(true)
     setError(null)
     try {
-      const data = await apiFetch<SaleRefundPreview>(`/sales/${encodeURIComponent(id)}/refund-preview`)
-      onSaleLoaded(data, id)
+      const lookupId = resolveSyncedSaleLookupId(id)
+      const data = await apiFetch<SaleRefundPreview>(`/sales/${encodeURIComponent(lookupId)}/refund-preview`)
+      onSaleLoaded(data, lookupId)
       onClose()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load sale')

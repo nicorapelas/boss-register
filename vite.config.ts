@@ -29,6 +29,13 @@ export default defineConfig(({ mode }) => {
       electron({
         main: {
           entry: 'electron/main.ts',
+          vite: {
+            build: {
+              rollupOptions: {
+                external: ['better-sqlite3'],
+              },
+            },
+          },
         },
         preload: {
           input: path.join(__dirname, 'electron/preload.ts'),

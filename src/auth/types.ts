@@ -4,6 +4,7 @@ export interface AuthUser {
   displayName?: string
   role: string
   permissions?: string[]
+  allowOfflineLogin?: boolean
 }
 
 export interface SessionBundle {

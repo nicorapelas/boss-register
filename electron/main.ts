@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain } from 'electron'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { registerAuthIpc } from './auth-storage'
+import { registerOfflineIpc } from './offline-storage'
 import { buildReceiptEscPos, drawerKick, sendEscPosToPrinter, type PrinterTransport, type ReceiptPayload } from './pos-printer'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -17,6 +18,7 @@ process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL
   : RENDERER_DIST
 
 registerAuthIpc()
+registerOfflineIpc()
 
 function parseTransport(raw: unknown): PrinterTransport | null {
   if (!raw || typeof raw !== 'object') return null

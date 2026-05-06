@@ -42,6 +42,14 @@ import {
 import { PosShell } from '../layouts/PosShell'
 import { readPosPrinterSettings, type PosPrinterSettings } from '../printer/posPrinterSettings'
 import {
+  createClientLocalId,
+  enqueueOfflineSale,
+  flushOfflineSales,
+  getOfflineSalesSyncStatus,
+  getOfflinePendingSalesCount,
+  isLikelyNetworkError,
+} from '../offline/offlineSalesQueue'
+import {
   productAvailabilityCaption,
   productAvailableUnits,
   productHasSellableStock,
@@ -279,6 +287,12 @@ export function Register() {
   const [houseAccountFormOpen, setHouseAccountFormOpen] = useState(false)
   const [altPaymentExpanded, setAltPaymentExpanded] = useState(false)
   const [lastOnAccount, setLastOnAccount] = useState<number | null>(null)
+  const [offlinePendingCount, setOfflinePendingCount] = useState(0)
+  const [offlineSyncStatus, setOfflineSyncStatus] = useState<{
+    lastAttemptAt?: string
+    lastSuccessAt?: string
+    lastError?: string
+  }>({})
 
   useEffect(() => {
     // Keep an up-to-date copy for actions (print / drawer).
@@ -338,6 +352,29 @@ export function Register() {
   useEffect(() => {
     if (!voucherFormOpen) setVoucherScreenKbOpen(false)
   }, [voucherFormOpen])
+
+  useEffect(() => {
+    let cancelled = false
+    const tick = async () => {
+      const result = await flushOfflineSales(20)
+      const pending = await getOfflinePendingSalesCount()
+      const syncStatus = getOfflineSalesSyncStatus()
+      if (cancelled) return
+      setOfflinePendingCount(pending)
+      setOfflineSyncStatus(syncStatus)
+      if (result.synced > 0) {
+        setNotice(`Synced ${result.synced} offline sale${result.synced === 1 ? '' : 's'}.`)
+      }
+    }
+    void tick()
+    const timer = window.setInterval(() => {
+      void tick()
+    }, 10000)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [])
 
   function parseTenderedInput(raw: string, fallback: number): number {
     const tenderedRaw = raw.trim()
@@ -1338,6 +1375,7 @@ export function Register() {
     setLastTotal(null)
     setPendingSplit(null)
     const tabIdForSale = activeOpenTabId
+    const clientLocalId = createClientLocalId()
     try {
       const body: Record<string, unknown> = {
         items: cart.map((l) => ({
@@ -1347,6 +1385,7 @@ export function Register() {
         })),
         paymentMethod,
         payment,
+        clientLocalId,
         tillCode: POS_TILL_CODE,
         ...(tabIdForSale ? { openTabId: tabIdForSale } : {}),
         ...(activeQuoteId ? { quoteId: activeQuoteId } : {}),
@@ -1377,6 +1416,80 @@ export function Register() {
       await loadProducts()
       return sale
     } catch (e) {
+      if (!navigator.onLine || isLikelyNetworkError(e)) {
+        const body: Record<string, unknown> = {
+          items: cart.map((l) => ({
+            productId: l.productId,
+            quantity: l.quantity,
+            unitPrice: l.unitPrice,
+          })),
+          paymentMethod,
+          payment,
+          clientLocalId,
+          tillCode: POS_TILL_CODE,
+          ...(tabIdForSale ? { openTabId: tabIdForSale } : {}),
+          ...(activeQuoteId ? { quoteId: activeQuoteId } : {}),
+        }
+        if (storeCredit && storeCredit.amount > 0.005) {
+          body.storeCreditAmount = round2(storeCredit.amount)
+          body.storeCreditPhone = normalizePhone(storeCredit.phone)
+        }
+        if (houseAccount && houseAccount.amount > 0.005) {
+          body.onAccountAmount = round2(houseAccount.amount)
+          body.houseAccountId = houseAccount.id
+          body.purchaseOrderNumber = houseAccount.purchaseOrderNumber?.trim()
+        }
+        try {
+          await enqueueOfflineSale(clientLocalId, body)
+          const pending = await getOfflinePendingSalesCount()
+          setOfflinePendingCount(pending)
+          const queuedSale: Sale = {
+            _id: `offline-${clientLocalId}`,
+            saleId: clientLocalId.slice(-10),
+            tillCode: POS_TILL_CODE,
+            cashier: String(session?.user?.id ?? ''),
+            items: cart.map((l) => ({
+              product: l.productId,
+              name: l.name,
+              quantity: l.quantity,
+              unitPrice: l.unitPrice,
+              listUnitPrice: l.listUnitPrice,
+              lineTotal: cartLineSubtotal(l),
+            })),
+            total: roundCartMoney(cart.reduce((s, l) => s + cartLineSubtotal(l), 0)),
+            paymentMethod,
+            payment,
+            ...(storeCredit && storeCredit.amount > 0.005
+              ? {
+                  storeCreditAmount: round2(storeCredit.amount),
+                  storeCreditPhone: normalizePhone(storeCredit.phone),
+                }
+              : {}),
+            ...(houseAccount && houseAccount.amount > 0.005
+              ? {
+                  onAccountAmount: round2(houseAccount.amount),
+                  houseAccountId: houseAccount.id,
+                }
+              : {}),
+            createdAt: new Date().toISOString(),
+          }
+          setLastSale(queuedSale)
+          setLastReceiptForReprint({ kind: 'sale', sale: queuedSale })
+          persistLastReceiptSale(queuedSale)
+          if (tabIdForSale) {
+            setActiveOpenTabId(null)
+            setActiveTabBanner(null)
+          }
+          clearActiveQuote()
+          setCart([])
+          resetVoucherForm()
+          setNotice(`Sale saved offline and queued for sync (${pending} pending).`)
+          return queuedSale
+        } catch (offlineErr) {
+          setError(offlineErr instanceof Error ? offlineErr.message : 'Failed to queue offline sale')
+          return
+        }
+      }
       setError(e instanceof Error ? e.message : 'Checkout failed')
     } finally {
       setBusy(false)
@@ -4086,10 +4199,24 @@ export function Register() {
                     />
                   ) : null}
                 </div>
-                {(error || notice || lastSale) && (
+                {(error || notice || lastSale || offlinePendingCount > 0) && (
                   <div className="cart-messages">
                     {error && <p className="error">{error}</p>}
                     {notice && <p className="success">{notice}</p>}
+                    {offlinePendingCount > 0 && (
+                      <p className="success" role="status">
+                        Offline sync queue: {offlinePendingCount} pending sale{offlinePendingCount === 1 ? '' : 's'}
+                      </p>
+                    )}
+                    {(offlineSyncStatus.lastSuccessAt || offlineSyncStatus.lastError) && (
+                      <p className={offlineSyncStatus.lastError ? 'error' : 'muted'} role="status">
+                        Offline sync:{' '}
+                        {offlineSyncStatus.lastSuccessAt
+                          ? `last success ${new Date(offlineSyncStatus.lastSuccessAt).toLocaleString()}`
+                          : 'no successful sync yet'}
+                        {offlineSyncStatus.lastError ? ` · last error: ${offlineSyncStatus.lastError}` : ''}
+                      </p>
+                    )}
                     {lastSale && (
                       <p className="success" role="status">
                         Sale recorded · total {lastSale.total.toFixed(2)} · thank you

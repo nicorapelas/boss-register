@@ -25,4 +25,22 @@ interface Window {
       opts?: { columns?: number; cut?: boolean },
     ) => Promise<{ ok: boolean; error?: string }>
   }
+  electronOffline?: {
+    enqueueSale: (clientLocalId: string, payload: unknown) => Promise<{ ok: boolean; error?: string }>
+    listPendingSales: (limit?: number) => Promise<{
+      ok: boolean
+      error?: string
+      items: Array<{
+        clientLocalId: string
+        payloadJson: string
+        createdAt: string
+        updatedAt: string
+        retryCount: number
+        lastError: string | null
+      }>
+    }>
+    markSaleSynced: (clientLocalId: string) => Promise<{ ok: boolean; error?: string }>
+    markSaleFailed: (clientLocalId: string, error: string) => Promise<{ ok: boolean; error?: string }>
+    getPendingCount: () => Promise<{ ok: boolean; error?: string; count: number }>
+  }
 }

@@ -9,12 +9,20 @@ import {
   type ReactNode,
 } from 'react'
 import {
+  apiFetch,
   configureApiAuth,
   loginBadgeRequest,
   loginRequest,
   logoutRequest,
   refreshRequest,
 } from '../api/client'
+import {
+  cacheOfflineLoginPack,
+  rememberBadgeLogin,
+  rememberPasswordLogin,
+  tryOfflineBadgeLogin,
+  tryOfflinePasswordLogin,
+} from './offlineAuth'
 import { loadStoredSession, persistSession } from './session'
 import type { SessionBundle } from './types'
 
@@ -27,6 +35,41 @@ type AuthContextValue = {
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
+
+function isLikelyNetworkError(err: unknown): boolean {
+  const text =
+    typeof err === 'string'
+      ? err
+      : err && typeof err === 'object' && 'message' in err
+        ? String((err as { message?: unknown }).message ?? '')
+        : String(err ?? '')
+  const msg = text.toLowerCase()
+  return msg.includes('failed to fetch') || msg.includes('networkerror') || msg.includes('load failed')
+}
+
+type OfflineLoginPackResponse = {
+  users: Array<{
+    user: SessionBundle['user']
+    email: string
+    badgeCode: string | null
+    passwordHash: string
+    updatedAt?: string
+  }>
+}
+
+async function syncOfflineLoginPack(accessToken: string): Promise<void> {
+  if (!accessToken) return
+  try {
+    const pack = await apiFetch<OfflineLoginPackResponse>('/auth/offline-login-pack', {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    })
+    cacheOfflineLoginPack(pack.users ?? [])
+  } catch {
+    // Non-blocking: auth flow must continue even if pack sync fails.
+  }
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<SessionBundle | null>(null)
@@ -44,6 +87,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         refreshToken: data.refreshToken,
         user: data.user,
       }
+      await syncOfflineLoginPack(next.accessToken)
       setSession(next)
       await persistSession(next)
       return true
@@ -77,25 +121,57 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const login = useCallback(async (email: string, password: string) => {
-    const data = await loginRequest(email, password)
-    const bundle: SessionBundle = {
-      accessToken: data.accessToken,
-      refreshToken: data.refreshToken,
-      user: data.user,
+    try {
+      const data = await loginRequest(email, password)
+      const bundle: SessionBundle = {
+        accessToken: data.accessToken,
+        refreshToken: data.refreshToken,
+        user: data.user,
+      }
+      await rememberPasswordLogin(email, password, data.user)
+      await syncOfflineLoginPack(bundle.accessToken)
+      setSession(bundle)
+      await persistSession(bundle)
+      return
+    } catch (err) {
+      if (!navigator.onLine || isLikelyNetworkError(err)) {
+        const offlineBundle = await tryOfflinePasswordLogin(email, password)
+        if (offlineBundle) {
+          setSession(offlineBundle)
+          await persistSession(offlineBundle)
+          return
+        }
+        throw new Error('Offline login unavailable for these credentials. Login online once first.')
+      }
+      throw err
     }
-    setSession(bundle)
-    await persistSession(bundle)
   }, [])
 
   const loginWithBadge = useCallback(async (badgeCode: string) => {
-    const data = await loginBadgeRequest(badgeCode)
-    const bundle: SessionBundle = {
-      accessToken: data.accessToken,
-      refreshToken: data.refreshToken,
-      user: data.user,
+    try {
+      const data = await loginBadgeRequest(badgeCode)
+      const bundle: SessionBundle = {
+        accessToken: data.accessToken,
+        refreshToken: data.refreshToken,
+        user: data.user,
+      }
+      await rememberBadgeLogin(badgeCode, data.user)
+      await syncOfflineLoginPack(bundle.accessToken)
+      setSession(bundle)
+      await persistSession(bundle)
+      return
+    } catch (err) {
+      if (!navigator.onLine || isLikelyNetworkError(err)) {
+        const offlineBundle = await tryOfflineBadgeLogin(badgeCode)
+        if (offlineBundle) {
+          setSession(offlineBundle)
+          await persistSession(offlineBundle)
+          return
+        }
+        throw new Error('Offline badge login unavailable for this badge. Scan online once first.')
+      }
+      throw err
     }
-    setSession(bundle)
-    await persistSession(bundle)
   }, [])
 
   const logout = useCallback(async () => {

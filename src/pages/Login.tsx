@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { registerRequest } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
+import { getOfflineLoginCacheStatus } from '../auth/offlineAuth'
 import { ScreenKeyboard, retainInputFocusOnKeyPointerDown, type ScreenKeyboardAction } from '../components'
 
 export function Login() {
@@ -14,6 +15,12 @@ export function Login() {
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [offlineCacheStatus, setOfflineCacheStatus] = useState<{
+    ready: boolean
+    userCount: number
+    fetchedAt?: string
+    stale: boolean
+  }>(() => getOfflineLoginCacheStatus())
   const [screenKeyboardOpen, setScreenKeyboardOpen] = useState(false)
   const [activeInput, setActiveInput] = useState<'badge' | 'email' | 'password'>('badge')
   const formRef = useRef<HTMLFormElement | null>(null)
@@ -40,7 +47,7 @@ export function Login() {
         navigate('/', { replace: true })
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Request failed')
+      setError(err instanceof Error ? err.message : 'Login failed')
     } finally {
       setBusy(false)
     }
@@ -69,6 +76,13 @@ export function Login() {
     const t = window.setTimeout(() => scrollActiveInputIntoView(activeInput), 40)
     return () => window.clearTimeout(t)
   }, [screenKeyboardOpen, activeInput])
+
+  useEffect(() => {
+    const refresh = () => setOfflineCacheStatus(getOfflineLoginCacheStatus())
+    refresh()
+    const timer = window.setInterval(refresh, 3000)
+    return () => window.clearInterval(timer)
+  }, [])
 
   function appendActiveInput(extra: string) {
     if (!extra) return
@@ -119,6 +133,14 @@ export function Login() {
               Scan QR badge to unlock this register for your shift.
             </>
           )}
+        </p>
+        <p className="muted" style={{ marginTop: '-0.25rem' }}>
+          Offline login cache:{' '}
+          {offlineCacheStatus.ready
+            ? `ready (${offlineCacheStatus.userCount} allowed user${offlineCacheStatus.userCount === 1 ? '' : 's'})`
+            : 'not ready'}
+          {offlineCacheStatus.fetchedAt ? ` · last sync ${new Date(offlineCacheStatus.fetchedAt).toLocaleString()}` : ''}
+          {offlineCacheStatus.stale ? ' · stale (>24h)' : ''}
         </p>
         <form ref={formRef} onSubmit={(e) => void onSubmit(e)} className="form">
           {mode === 'badge' ? (
