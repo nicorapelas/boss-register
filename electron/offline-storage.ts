@@ -33,6 +33,12 @@ function getDb(): Database.Database {
       last_error TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_queued_sales_created_at ON queued_sales(created_at);
+
+    CREATE TABLE IF NOT EXISTS local_cache (
+      key TEXT PRIMARY KEY,
+      payload_json TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
   `)
   db = instance
   return instance
@@ -144,6 +150,54 @@ export function registerOfflineIpc() {
       return { ok: true, count: Number(row.count ?? 0) }
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : 'Failed to fetch pending count', count: 0 }
+    }
+  })
+
+  ipcMain.handle('offline:catalog:set', async (_evt, args: { products?: unknown; syncedAt?: unknown } | undefined) => {
+    const products = args?.products
+    if (!Array.isArray(products)) return { ok: false, error: 'Invalid products payload' }
+    const syncedAt = typeof args?.syncedAt === 'string' ? args.syncedAt : nowIso()
+    try {
+      const conn = getDb()
+      conn
+        .prepare(
+          `
+          INSERT INTO local_cache (key, payload_json, updated_at)
+          VALUES ('products', ?, ?)
+          ON CONFLICT(key) DO UPDATE SET
+            payload_json = excluded.payload_json,
+            updated_at = excluded.updated_at
+        `,
+        )
+        .run(JSON.stringify(products), syncedAt)
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : 'Failed to cache catalog' }
+    }
+  })
+
+  ipcMain.handle('offline:catalog:get', async () => {
+    try {
+      const conn = getDb()
+      const row = conn
+        .prepare(
+          `
+          SELECT payload_json, updated_at
+          FROM local_cache
+          WHERE key = 'products'
+        `,
+        )
+        .get() as { payload_json: string; updated_at: string } | undefined
+      if (!row) return { ok: true, products: [], syncedAt: null }
+      let products: unknown[] = []
+      try {
+        products = JSON.parse(row.payload_json) as unknown[]
+      } catch {
+        products = []
+      }
+      return { ok: true, products, syncedAt: row.updated_at }
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : 'Failed to read cached catalog', products: [], syncedAt: null }
     }
   })
 }

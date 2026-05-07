@@ -42,5 +42,7 @@ interface Window {
     markSaleSynced: (clientLocalId: string) => Promise<{ ok: boolean; error?: string }>
     markSaleFailed: (clientLocalId: string, error: string) => Promise<{ ok: boolean; error?: string }>
     getPendingCount: () => Promise<{ ok: boolean; error?: string; count: number }>
+    setCatalog: (products: unknown[], syncedAt?: string) => Promise<{ ok: boolean; error?: string }>
+    getCatalog: () => Promise<{ ok: boolean; error?: string; products: unknown[]; syncedAt: string | null }>
   }
 }

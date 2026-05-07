@@ -49,16 +49,19 @@ import {
   getOfflinePendingSalesCount,
   isLikelyNetworkError,
 } from '../offline/offlineSalesQueue'
+import { isCatalogSnapshotStale, loadCatalogCache, saveCatalogCache } from '../offline/catalogCache'
 import {
-  productAvailabilityCaption,
+  productAvailabilityCaptionWithMode,
   productAvailableUnits,
   productHasSellableStock,
+  productTracksInventory,
 } from '../utils/productInventory'
 import { formatDateDdMmYyyy } from '../utils/dateFormat'
 import { hasVolumeTiering, lineTotalsForProduct, type ProductForVolume } from '../utils/volumePrice'
 
 const LAST_RECEIPT_STORAGE_KEY = 'electropos-pos-last-receipt-sale'
 const POS_TILL_CODE = (import.meta.env.VITE_POS_TILL_CODE?.trim().toUpperCase() || 'T1').slice(0, 24)
+const OFFLINE_OVERSALE_MAX_UNITS = 3
 
 type ReceiptPrintPayload = {
   transport: unknown
@@ -288,6 +291,9 @@ export function Register() {
   const [altPaymentExpanded, setAltPaymentExpanded] = useState(false)
   const [lastOnAccount, setLastOnAccount] = useState<number | null>(null)
   const [offlinePendingCount, setOfflinePendingCount] = useState(0)
+  const [catalogSnapshotSyncedAt, setCatalogSnapshotSyncedAt] = useState<string | null>(null)
+  const [catalogSnapshotStale, setCatalogSnapshotStale] = useState(false)
+  const [offlineCatalogMode, setOfflineCatalogMode] = useState(false)
   const [offlineSyncStatus, setOfflineSyncStatus] = useState<{
     lastAttemptAt?: string
     lastSuccessAt?: string
@@ -364,6 +370,7 @@ export function Register() {
       setOfflineSyncStatus(syncStatus)
       if (result.synced > 0) {
         setNotice(`Synced ${result.synced} offline sale${result.synced === 1 ? '' : 's'}.`)
+        void loadProducts({ hydrateFromCache: false })
       }
     }
     void tick()
@@ -631,13 +638,86 @@ export function Register() {
     }
   }
 
-  const loadProducts = useCallback(async () => {
+  const loadProducts = useCallback(async (opts?: { hydrateFromCache?: boolean }) => {
     setError(null)
+    const hydrateFromCache = opts?.hydrateFromCache !== false
+    const shouldHydrateFromCache = hydrateFromCache && productsRef.current.length === 0
+    const cached = shouldHydrateFromCache ? await loadCatalogCache() : { products: [], syncedAt: null as string | null }
+    if (cached.products.length > 0) {
+      setProducts(cached.products)
+      setCatalogSnapshotSyncedAt(cached.syncedAt)
+      setCatalogSnapshotStale(isCatalogSnapshotStale(cached.syncedAt))
+    }
+
     try {
       const list = await apiFetch<Product[]>('/products')
       setProducts(list)
+      const syncedAt = new Date().toISOString()
+      setCatalogSnapshotSyncedAt(syncedAt)
+      setCatalogSnapshotStale(false)
+      setOfflineCatalogMode(false)
+      try {
+        await saveCatalogCache(list)
+      } catch {
+        // Non-blocking: UI still uses fresh online list.
+      }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load products')
+      if (cached.products.length > 0 && isLikelyNetworkError(e)) {
+        setOfflineCatalogMode(true)
+        setNotice(
+          `Server unavailable. Using offline catalog snapshot${cached.syncedAt ? ` from ${new Date(cached.syncedAt).toLocaleString()}` : ''
+          }.`,
+        )
+        return
+      }
+      if (!isLikelyNetworkError(e)) setOfflineCatalogMode(false)
+      const message = e instanceof Error ? e.message : 'Failed to load products'
+      if (productsRef.current.length > 0) {
+        const lower = message.toLowerCase()
+        if (
+          lower.includes('unauthorized') ||
+          lower.includes('session expired') ||
+          lower.includes('invalid refresh token')
+        ) {
+          setError(`Catalog refresh failed: ${message}. Please sign out and sign in again.`)
+        } else {
+          setError(`Catalog refresh failed: ${message}. Displayed stock may be stale.`)
+        }
+        return
+      }
+      setError(message)
+    }
+  }, [])
+
+  const applyOfflineStockDeduction = useCallback(async (lines: CartLine[]) => {
+    const qtyByProduct = new Map<string, number>()
+    for (const line of lines) {
+      const next = (qtyByProduct.get(line.productId) ?? 0) + Math.max(0, Number(line.quantity) || 0)
+      qtyByProduct.set(line.productId, next)
+    }
+    if (qtyByProduct.size === 0) return
+
+    const updatedProducts = productsRef.current.map((p) => {
+      const qty = qtyByProduct.get(p._id)
+      if (!qty || !productTracksInventory(p)) return p
+
+      const nextStock = Math.max(0, Math.round((Number(p.stock ?? 0) - qty) * 1000) / 1000)
+      const nextAvailableRaw =
+        p.availableQty == null ? null : Math.round((Number(p.availableQty ?? 0) - qty) * 1000) / 1000
+      const nextAvailable = nextAvailableRaw == null ? null : Math.max(0, nextAvailableRaw)
+
+      return {
+        ...p,
+        stock: nextStock,
+        availableQty: nextAvailable,
+      }
+    })
+
+    setProducts(updatedProducts)
+    try {
+      await saveCatalogCache(updatedProducts)
+    } catch {
+      // Non-blocking: in-memory stock is already updated for this session.
     }
   }, [])
 
@@ -925,13 +1005,49 @@ export function Register() {
       return
     }
     const avail = productAvailableUnits(p)
-    if (avail < 1) {
-      setError(`Out of stock: ${p.name}`)
-      return
-    }
+    const offlineStockGuard = offlineCatalogMode && productTracksInventory(p)
+    const strictOfflineStock = (p as Product & { strictOfflineStock?: boolean }).strictOfflineStock === true
     setError(null)
     let partialNotice: string | null = null
     let atStockLimit = false
+    let blockedByPolicy = false
+    const currentLineQty = cart.find((l) => l.productId === p._id)?.quantity ?? 0
+    let overrideApproved = false
+    let overrideMaxAdd = 0
+    const approveOfflineOverride = () => {
+      if (!offlineStockGuard) return false
+      if (strictOfflineStock) {
+        blockedByPolicy = true
+        setError(`Offline strict-stock item blocked: ${p.name}`)
+        return false
+      }
+      if (!isAdmin) {
+        blockedByPolicy = true
+        setError(`Insufficient cached stock for ${p.name}. Manager override required while offline.`)
+        return false
+      }
+      const allowedTotalQty = Math.max(0, avail) + OFFLINE_OVERSALE_MAX_UNITS
+      overrideMaxAdd = Math.max(0, allowedTotalQty - currentLineQty)
+      if (overrideMaxAdd <= 0) {
+        blockedByPolicy = true
+        setError(`Offline override limit reached for ${p.name} (max +${OFFLINE_OVERSALE_MAX_UNITS}).`)
+        return false
+      }
+      const ok = window.confirm(
+        `Offline stock override for ${p.name}?\nCached available: ${Math.max(0, avail)}\n` +
+          `You can exceed cached stock by up to ${OFFLINE_OVERSALE_MAX_UNITS} units.`,
+      )
+      if (!ok) {
+        blockedByPolicy = true
+        return false
+      }
+      overrideApproved = true
+      return true
+    }
+    if (avail < 1 && !approveOfflineOverride()) {
+      if (!blockedByPolicy) setError(`Out of stock: ${p.name}`)
+      return
+    }
     setCart((prev) => {
       const i = prev.findIndex((l) => l.productId === p._id)
       if (i >= 0) {
@@ -940,10 +1056,34 @@ export function Register() {
         const room = avail - line.quantity
         const toAdd = Math.min(requestedQty, room)
         if (toAdd <= 0) {
-          atStockLimit = true
-          return prev
+          if (!approveOfflineOverride()) {
+            atStockLimit = true
+            return prev
+          }
+          const overrideAdd = Math.min(requestedQty, overrideMaxAdd)
+          if (overrideAdd <= 0) {
+            atStockLimit = true
+            return prev
+          }
+          const merged = { ...line, quantity: line.quantity + overrideAdd }
+          next[i] = enrichCartLine(p, merged)
+          partialNotice =
+            overrideAdd < requestedQty
+              ? `Offline override added ${overrideAdd} of ${requestedQty} (limit +${OFFLINE_OVERSALE_MAX_UNITS})`
+              : `Offline stock override approved for ${p.name}`
+          return next
         }
         if (toAdd < requestedQty) {
+          if (approveOfflineOverride()) {
+            const overrideAdd = Math.min(requestedQty, overrideMaxAdd)
+            const merged = { ...line, quantity: line.quantity + overrideAdd }
+            next[i] = enrichCartLine(p, merged)
+            partialNotice =
+              overrideAdd < requestedQty
+                ? `Offline override added ${overrideAdd} of ${requestedQty} (limit +${OFFLINE_OVERSALE_MAX_UNITS})`
+                : `Offline stock override approved for ${p.name}`
+            return next
+          }
           partialNotice = `Added ${toAdd} of ${requestedQty} (${avail} available)`
         }
         const merged = { ...line, quantity: line.quantity + toAdd }
@@ -951,8 +1091,38 @@ export function Register() {
         return next
       }
       const toAdd = Math.min(requestedQty, avail)
-      if (toAdd < 1) return prev
+      if (toAdd < 1) {
+        if (!approveOfflineOverride()) return prev
+        const overrideAdd = Math.min(requestedQty, overrideMaxAdd)
+        if (overrideAdd < 1) return prev
+        const newLine: CartLine = {
+          productId: p._id,
+          name: p.name,
+          quantity: overrideAdd,
+          unitPrice: p.price,
+        }
+        partialNotice =
+          overrideAdd < requestedQty
+            ? `Offline override added ${overrideAdd} of ${requestedQty} (limit +${OFFLINE_OVERSALE_MAX_UNITS})`
+            : `Offline stock override approved for ${p.name}`
+        return [...prev, enrichCartLine(p, newLine)]
+      }
       if (toAdd < requestedQty) {
+        if (approveOfflineOverride()) {
+          const overrideAdd = Math.min(requestedQty, overrideMaxAdd)
+          if (overrideAdd < 1) return prev
+          const newLine: CartLine = {
+            productId: p._id,
+            name: p.name,
+            quantity: overrideAdd,
+            unitPrice: p.price,
+          }
+          partialNotice =
+            overrideAdd < requestedQty
+              ? `Offline override added ${overrideAdd} of ${requestedQty} (limit +${OFFLINE_OVERSALE_MAX_UNITS})`
+              : `Offline stock override approved for ${p.name}`
+          return [...prev, enrichCartLine(p, newLine)]
+        }
         partialNotice = `Added ${toAdd} of ${requestedQty} (${avail} available)`
       }
       const newLine: CartLine = {
@@ -964,7 +1134,11 @@ export function Register() {
       return [...prev, enrichCartLine(p, newLine)]
     })
     if (atStockLimit) {
-      setError('This line is already at maximum stock for that product')
+      if (!blockedByPolicy) setError('This line is already at maximum stock for that product')
+      return
+    }
+    if (overrideApproved && !partialNotice) {
+      setNotice(`Offline stock override approved for ${p.name}`)
       return
     }
     if (partialNotice) setNotice(partialNotice)
@@ -1001,6 +1175,8 @@ export function Register() {
     setPendingSplit(null)
     setLastStoreCredit(null)
     setLastOnAccount(null)
+    let blockedByPolicy = false
+    let partialNotice: string | null = null
     setCart((prev) => {
       const line = prev.find((l) => l.productId === productId)
       if (!line) return prev
@@ -1008,13 +1184,44 @@ export function Register() {
       const max = p ? productAvailableUnits(p) : 999
       const nextQty = line.quantity + delta
       if (nextQty <= 0) return prev.filter((l) => l.productId !== productId)
-      if (nextQty > max) return prev
+      if (nextQty > max) {
+        const offlineStockGuard = !!p && offlineCatalogMode && productTracksInventory(p)
+        const strictOfflineStock =
+          !!p && (p as Product & { strictOfflineStock?: boolean }).strictOfflineStock === true
+        if (!offlineStockGuard || delta < 0) return prev
+        if (strictOfflineStock) {
+          blockedByPolicy = true
+          setError(`Offline strict-stock item blocked: ${p.name}`)
+          return prev
+        }
+        if (!isAdmin) {
+          blockedByPolicy = true
+          setError(`Insufficient cached stock for ${p.name}. Manager override required while offline.`)
+          return prev
+        }
+        const allowedTotalQty = Math.max(0, max) + OFFLINE_OVERSALE_MAX_UNITS
+        if (nextQty > allowedTotalQty) {
+          blockedByPolicy = true
+          setError(`Offline override limit reached for ${p.name} (max +${OFFLINE_OVERSALE_MAX_UNITS}).`)
+          return prev
+        }
+        const ok = window.confirm(
+          `Offline stock override for ${p.name}?\nCached available: ${Math.max(0, max)}\n` +
+            `You can exceed cached stock by up to ${OFFLINE_OVERSALE_MAX_UNITS} units.`,
+        )
+        if (!ok) {
+          blockedByPolicy = true
+          return prev
+        }
+        partialNotice = `Offline stock override approved for ${p.name}`
+      }
       return prev.map((l) => {
         if (l.productId !== productId) return l
         const np = p ? enrichCartLine(p, { ...l, quantity: nextQty }) : { ...l, quantity: nextQty }
         return np
       })
     })
+    if (!blockedByPolicy && partialNotice) setNotice(partialNotice)
   }
 
   function bumpCartLineQty(line: CartLine, delta: number) {
@@ -1441,6 +1648,7 @@ export function Register() {
         }
         try {
           await enqueueOfflineSale(clientLocalId, body)
+          await applyOfflineStockDeduction(cart)
           const pending = await getOfflinePendingSalesCount()
           setOfflinePendingCount(pending)
           const queuedSale: Sale = {
@@ -1483,7 +1691,7 @@ export function Register() {
           clearActiveQuote()
           setCart([])
           resetVoucherForm()
-          setNotice(`Sale saved offline and queued for sync (${pending} pending).`)
+          setNotice(`Sale saved offline, stock adjusted locally, and queued for sync (${pending} pending).`)
           return queuedSale
         } catch (offlineErr) {
           setError(offlineErr instanceof Error ? offlineErr.message : 'Failed to queue offline sale')
@@ -2336,7 +2544,8 @@ export function Register() {
   }
 
   function onProductRowPointerDown(e: React.PointerEvent<HTMLButtonElement>, p: Product) {
-    if (!e.isPrimary || !productHasSellableStock(p)) return
+    const canTapProduct = productHasSellableStock(p) || (offlineCatalogMode && productTracksInventory(p))
+    if (!e.isPrimary || !canTapProduct) return
     const h = productPresetHoldRef.current
     if (h.timer) clearTimeout(h.timer)
     h.longPressDone = false
@@ -3577,11 +3786,15 @@ export function Register() {
                   <ul className="product-list">
                     {filtered.map((p) => (
                       <li key={p._id}>
+                        {(() => {
+                          const canTapProduct =
+                            productHasSellableStock(p) || (offlineCatalogMode && productTracksInventory(p))
+                          return (
                         <button
                           type="button"
                           className="product-row"
                           aria-label={
-                            productHasSellableStock(p)
+                            canTapProduct
                               ? `Add ${p.name} to cart`
                               : `${p.name} — out of stock`
                           }
@@ -3592,20 +3805,22 @@ export function Register() {
                           onPointerCancel={onProductRowPointerCancel}
                           onContextMenu={(e) => {
                             e.preventDefault()
-                            if (!productHasSellableStock(p)) return
+                            if (!canTapProduct) return
                             setAssignPresetProduct(p)
                           }}
                           title="Tap to add · Long-press or right-click to assign to preset"
-                          disabled={!productHasSellableStock(p)}
+                          disabled={!canTapProduct}
                         >
                           <span className="product-name">{p.name}</span>
                           <span className="product-meta">
                             <span className="muted">{p.sku}</span>
                             <span className="product-price">
-                              {p.price.toFixed(2)} · {productAvailabilityCaption(p)}
+                              {p.price.toFixed(2)} · {productAvailabilityCaptionWithMode(p, offlineCatalogMode)}
                             </span>
                           </span>
                         </button>
+                          )
+                        })()}
                       </li>
                     ))}
                   </ul>
@@ -4215,6 +4430,13 @@ export function Register() {
                           ? `last success ${new Date(offlineSyncStatus.lastSuccessAt).toLocaleString()}`
                           : 'no successful sync yet'}
                         {offlineSyncStatus.lastError ? ` · last error: ${offlineSyncStatus.lastError}` : ''}
+                      </p>
+                    )}
+                    {catalogSnapshotSyncedAt && (
+                      <p className={catalogSnapshotStale ? 'error' : 'muted'} role="status">
+                        Catalog snapshot:{' '}
+                        {catalogSnapshotStale ? 'stale' : 'fresh'} · last sync{' '}
+                        {new Date(catalogSnapshotSyncedAt).toLocaleString()}
                       </p>
                     )}
                     {lastSale && (

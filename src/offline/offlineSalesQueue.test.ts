@@ -37,6 +37,8 @@ function mockElectronOffline() {
     },
     markSaleFailed: async () => ({ ok: true }),
     getPendingCount: async () => ({ ok: true, count: pendingRows.size }),
+    setCatalog: async () => ({ ok: true }),
+    getCatalog: async () => ({ ok: true, products: [], syncedAt: null }),
   }
 }
 

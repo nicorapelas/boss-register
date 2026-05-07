@@ -16,6 +16,8 @@ export interface Product {
   layByReservedQty?: number
   /** stock − reserved; null when trackInventory is false */
   availableQty?: number | null
+  /** Optional policy flag: block offline oversell even with manager override. */
+  strictOfflineStock?: boolean
 }
 
 export type CartLine = {

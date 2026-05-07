@@ -24,3 +24,9 @@ export function productAvailabilityCaption(p: Product): string {
   if (!productTracksInventory(p)) return 'No stock limit'
   return `${p.availableQty ?? p.stock} available`
 }
+
+/** Product availability with offline context marker for cashier awareness. */
+export function productAvailabilityCaptionWithMode(p: Product, offlineCatalogMode: boolean): string {
+  const base = productAvailabilityCaption(p)
+  return offlineCatalogMode ? `${base} (cached/offline adjusted)` : base
+}
