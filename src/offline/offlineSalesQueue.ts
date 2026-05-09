@@ -10,6 +10,12 @@ type QueuedSaleRow = {
   lastError: string | null
 }
 
+export type OfflineSyncedItemSummary = {
+  productId: string
+  name: string
+  qty: number
+}
+
 const OFFLINE_SALE_ID_MAP_KEY = 'electropos-offline-sale-id-map-v1'
 const OFFLINE_SYNC_STATUS_KEY = 'electropos-offline-sync-status-v1'
 
@@ -25,6 +31,12 @@ type OfflineSyncStatus = {
   lastAttemptAt?: string
   lastSuccessAt?: string
   lastError?: string
+}
+
+type OfflineConflictLine = {
+  productId: string
+  name: string
+  qty: number
 }
 
 function isNetworkError(err: unknown): boolean {
@@ -103,17 +115,44 @@ export async function enqueueOfflineSale(clientLocalId: string, payload: Record<
   safeWriteIdMap(map)
 }
 
-export async function flushOfflineSales(limit = 20): Promise<{ synced: number; skipped: number; failed: number }> {
+export async function flushOfflineSales(limit = 20): Promise<{
+  synced: number
+  skipped: number
+  failed: number
+  syncedItems: OfflineSyncedItemSummary[]
+}> {
   writeSyncStatus({ ...readSyncStatus(), lastAttemptAt: new Date().toISOString() })
-  if (!window.electronOffline || !navigator.onLine) return { synced: 0, skipped: 0, failed: 0 }
-  const pending = await window.electronOffline.listPendingSales(limit)
-  if (!pending.ok) return { synced: 0, skipped: 0, failed: 0 }
+  if (!window.electronOffline || !navigator.onLine) return { synced: 0, skipped: 0, failed: 0, syncedItems: [] }
+  const pending = await window.electronOffline.listPendingSales(Math.max(limit, 100))
+  if (!pending.ok) return { synced: 0, skipped: 0, failed: 0, syncedItems: [] }
+  let rows = pending.items as QueuedSaleRow[]
+  const tillCode = (localStorage.getItem('electropos-pos-till-code') ?? '').trim().toUpperCase()
+  if (tillCode) {
+    try {
+      const requested = await apiFetch<{ clientLocalIds: string[] }>(
+        `/sales/offline-conflicts/retry-requests?tillCode=${encodeURIComponent(tillCode)}`,
+      )
+      const requestedSet = new Set((requested.clientLocalIds ?? []).map((x) => String(x)))
+      if (requestedSet.size > 0) {
+        rows = [...rows].sort((a, b) => {
+          const ap = requestedSet.has(a.clientLocalId) ? 0 : 1
+          const bp = requestedSet.has(b.clientLocalId) ? 0 : 1
+          if (ap !== bp) return ap - bp
+          return a.createdAt.localeCompare(b.createdAt)
+        })
+      }
+    } catch {
+      // Non-blocking: regular queue order still works.
+    }
+  }
+  rows = rows.slice(0, limit)
 
   let synced = 0
   let skipped = 0
   let failed = 0
+  const syncedItemsMap = new Map<string, OfflineSyncedItemSummary>()
 
-  for (const row of pending.items as QueuedSaleRow[]) {
+  for (const row of rows) {
     let payload: Record<string, unknown>
     try {
       payload = JSON.parse(row.payloadJson) as Record<string, unknown>
@@ -128,6 +167,29 @@ export async function flushOfflineSales(limit = 20): Promise<{ synced: number; s
         method: 'POST',
         body: JSON.stringify(payload),
       })
+      try {
+        await apiFetch(`/sales/offline-conflicts/by-client/${encodeURIComponent(row.clientLocalId)}/resolve`, {
+          method: 'POST',
+        })
+      } catch {
+        // Non-blocking: sale already synced.
+      }
+      const rawItems = Array.isArray(payload.items) ? payload.items : []
+      for (const rawItem of rawItems) {
+        if (!rawItem || typeof rawItem !== 'object') continue
+        const item = rawItem as { productId?: unknown; quantity?: unknown; name?: unknown }
+        const productId = typeof item.productId === 'string' ? item.productId : ''
+        if (!productId) continue
+        const qty = Number(item.quantity ?? 0)
+        if (!Number.isFinite(qty) || qty <= 0) continue
+        const name = typeof item.name === 'string' && item.name.trim() ? item.name.trim() : productId
+        const existing = syncedItemsMap.get(productId)
+        if (existing) {
+          existing.qty += qty
+        } else {
+          syncedItemsMap.set(productId, { productId, name, qty })
+        }
+      }
       const map = safeReadIdMap()
       const existing = map[row.clientLocalId] ?? {
         clientLocalId: row.clientLocalId,
@@ -158,10 +220,47 @@ export async function flushOfflineSales(limit = 20): Promise<{ synced: number; s
         row.clientLocalId,
         e instanceof Error ? e.message : 'Failed to sync offline sale',
       )
+      const rawItems = Array.isArray(payload.items) ? payload.items : []
+      const conflictLinesMap = new Map<string, OfflineConflictLine>()
+      for (const rawItem of rawItems) {
+        if (!rawItem || typeof rawItem !== 'object') continue
+        const item = rawItem as { productId?: unknown; quantity?: unknown; name?: unknown }
+        const productId = typeof item.productId === 'string' ? item.productId : ''
+        if (!productId) continue
+        const qty = Number(item.quantity ?? 0)
+        if (!Number.isFinite(qty) || qty <= 0) continue
+        const name = typeof item.name === 'string' && item.name.trim() ? item.name.trim() : productId
+        const existing = conflictLinesMap.get(productId)
+        if (existing) existing.qty += qty
+        else conflictLinesMap.set(productId, { productId, name, qty })
+      }
+      try {
+        await apiFetch('/sales/offline-conflicts', {
+          method: 'POST',
+          body: JSON.stringify({
+            clientLocalId: row.clientLocalId,
+            tillCode: (payload as { tillCode?: unknown }).tillCode,
+            scope: 'offline',
+            errorMessage: e instanceof Error ? e.message : 'Failed to sync offline sale',
+            lines: Array.from(conflictLinesMap.values()),
+          }),
+        })
+      } catch {
+        // Non-blocking: local queue remains source of truth on this till.
+      }
     }
   }
 
-  return { synced, skipped, failed }
+  return { synced, skipped, failed, syncedItems: Array.from(syncedItemsMap.values()) }
+}
+
+export async function flushOfflineSalesWithTillCode(tillCode: string, limit = 20) {
+  try {
+    localStorage.setItem('electropos-pos-till-code', tillCode.trim().toUpperCase())
+  } catch {
+    // Ignore storage failures.
+  }
+  return flushOfflineSales(limit)
 }
 
 export async function getOfflinePendingSalesCount(): Promise<number> {

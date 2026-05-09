@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { apiFetch } from '../api/client'
+import { apiFetch, subscribeServerReachability } from '../api/client'
 import { loadProductPresetsWithMigration, pushProductPresets } from '../api/productPresetsApi'
 import type {
   CartLine,
@@ -44,11 +44,12 @@ import { readPosPrinterSettings, type PosPrinterSettings } from '../printer/posP
 import {
   createClientLocalId,
   enqueueOfflineSale,
-  flushOfflineSales,
+  flushOfflineSalesWithTillCode,
   getOfflineSalesSyncStatus,
   getOfflinePendingSalesCount,
   isLikelyNetworkError,
 } from '../offline/offlineSalesQueue'
+import type { OfflineSyncedItemSummary } from '../offline/offlineSalesQueue'
 import { isCatalogSnapshotStale, loadCatalogCache, saveCatalogCache } from '../offline/catalogCache'
 import {
   productAvailabilityCaptionWithMode,
@@ -62,6 +63,7 @@ import { hasVolumeTiering, lineTotalsForProduct, type ProductForVolume } from '.
 const LAST_RECEIPT_STORAGE_KEY = 'electropos-pos-last-receipt-sale'
 const POS_TILL_CODE = (import.meta.env.VITE_POS_TILL_CODE?.trim().toUpperCase() || 'T1').slice(0, 24)
 const OFFLINE_OVERSALE_MAX_UNITS = 3
+const ONLINE_OVERSALE_MAX_UNITS = 3
 
 type ReceiptPrintPayload = {
   transport: unknown
@@ -73,6 +75,14 @@ type ReceiptPrintPayload = {
 type LastReceiptForReprint =
   | { kind: 'sale'; sale: Sale }
   | { kind: 'raw'; payload: ReceiptPrintPayload; successNotice?: string }
+
+type StockOverridePromptState = {
+  open: boolean
+  scope: 'offline' | 'online'
+  productName: string
+  available: number
+  maxUnits: number
+}
 
 function readStoredLastReceiptSale(): Sale | null {
   try {
@@ -294,11 +304,35 @@ export function Register() {
   const [catalogSnapshotSyncedAt, setCatalogSnapshotSyncedAt] = useState<string | null>(null)
   const [catalogSnapshotStale, setCatalogSnapshotStale] = useState(false)
   const [offlineCatalogMode, setOfflineCatalogMode] = useState(false)
+  const [serverReachable, setServerReachable] = useState(true)
   const [offlineSyncStatus, setOfflineSyncStatus] = useState<{
     lastAttemptAt?: string
     lastSuccessAt?: string
     lastError?: string
   }>({})
+  const [offlineReconcileModalOpen, setOfflineReconcileModalOpen] = useState(false)
+  const [offlineReconcileItems, setOfflineReconcileItems] = useState<OfflineSyncedItemSummary[]>([])
+  const [offlineReconcileSyncedAt, setOfflineReconcileSyncedAt] = useState<string | null>(null)
+  const [stockOverridePrompt, setStockOverridePrompt] = useState<StockOverridePromptState>({
+    open: false,
+    scope: 'offline',
+    productName: '',
+    available: 0,
+    maxUnits: OFFLINE_OVERSALE_MAX_UNITS,
+  })
+  const stockOverrideResolveRef = useRef<((approved: boolean) => void) | null>(null)
+  const altPaymentsOfflineDisabled = offlineCatalogMode
+
+  useEffect(() => subscribeServerReachability(setServerReachable), [])
+
+  useEffect(() => {
+    return () => {
+      if (stockOverrideResolveRef.current) {
+        stockOverrideResolveRef.current(false)
+        stockOverrideResolveRef.current = null
+      }
+    }
+  }, [])
 
   useEffect(() => {
     // Keep an up-to-date copy for actions (print / drawer).
@@ -356,13 +390,27 @@ export function Register() {
   }, [altPaymentExpanded])
 
   useEffect(() => {
+    if (!altPaymentsOfflineDisabled) return
+    setAltPaymentExpanded(false)
+    setVoucherFormOpen(false)
+    setHouseAccountFormOpen(false)
+    setVoucherScreenKbOpen(false)
+    setOnAccountPoKbOpen(false)
+  }, [altPaymentsOfflineDisabled])
+
+  useEffect(() => {
     if (!voucherFormOpen) setVoucherScreenKbOpen(false)
   }, [voucherFormOpen])
 
   useEffect(() => {
+    if (!offlineCatalogMode) return
+    setLayByModalOpen(false)
+  }, [offlineCatalogMode])
+
+  useEffect(() => {
     let cancelled = false
     const tick = async () => {
-      const result = await flushOfflineSales(20)
+      const result = await flushOfflineSalesWithTillCode(POS_TILL_CODE, 20)
       const pending = await getOfflinePendingSalesCount()
       const syncStatus = getOfflineSalesSyncStatus()
       if (cancelled) return
@@ -370,6 +418,18 @@ export function Register() {
       setOfflineSyncStatus(syncStatus)
       if (result.synced > 0) {
         setNotice(`Synced ${result.synced} offline sale${result.synced === 1 ? '' : 's'}.`)
+        if (result.syncedItems.length > 0) {
+          if (isAdmin) {
+            setOfflineReconcileItems(result.syncedItems)
+            setOfflineReconcileSyncedAt(new Date().toISOString())
+            setOfflineReconcileModalOpen(true)
+          } else {
+            const units = result.syncedItems.reduce((sum, item) => sum + item.qty, 0)
+            setNotice(
+              `Synced ${result.synced} offline sale${result.synced === 1 ? '' : 's'} (${units} unit${units === 1 ? '' : 's'}). Ask manager to run stock reconciliation.`,
+            )
+          }
+        }
         void loadProducts({ hydrateFromCache: false })
       }
     }
@@ -462,6 +522,10 @@ export function Register() {
   }
 
   function openHouseAccountsForCheckout() {
+    if (altPaymentsOfflineDisabled) {
+      setError('Alt payment options are unavailable while offline')
+      return
+    }
     setHouseAccountsModalMode('checkout')
     setHouseAccountsModalOpen(true)
   }
@@ -984,7 +1048,33 @@ export function Register() {
     )
   }
 
-  function addToCartQty(p: Product, requestedQty: number) {
+  function requestStockOverrideConfirmation(input: {
+    scope: 'offline' | 'online'
+    productName: string
+    available: number
+    maxUnits: number
+  }) {
+    return new Promise<boolean>((resolve) => {
+      if (stockOverrideResolveRef.current) stockOverrideResolveRef.current(false)
+      stockOverrideResolveRef.current = resolve
+      setStockOverridePrompt({
+        open: true,
+        scope: input.scope,
+        productName: input.productName,
+        available: input.available,
+        maxUnits: input.maxUnits,
+      })
+    })
+  }
+
+  function settleStockOverrideConfirmation(approved: boolean) {
+    setStockOverridePrompt((prev) => ({ ...prev, open: false }))
+    const resolve = stockOverrideResolveRef.current
+    stockOverrideResolveRef.current = null
+    resolve?.(approved)
+  }
+
+  async function addToCartQty(p: Product, requestedQty: number) {
     if (refundSession) {
       setError('Exit refund mode to add items')
       return
@@ -1005,7 +1095,10 @@ export function Register() {
       return
     }
     const avail = productAvailableUnits(p)
-    const offlineStockGuard = offlineCatalogMode && productTracksInventory(p)
+    const hasOfflineSignal = offlineCatalogMode || !serverReachable
+    const stockGuard = productTracksInventory(p)
+    const overrideScope: 'offline' | 'online' = hasOfflineSignal ? 'offline' : 'online'
+    const overrideMaxUnits = overrideScope === 'offline' ? OFFLINE_OVERSALE_MAX_UNITS : ONLINE_OVERSALE_MAX_UNITS
     const strictOfflineStock = (p as Product & { strictOfflineStock?: boolean }).strictOfflineStock === true
     setError(null)
     let partialNotice: string | null = null
@@ -1014,37 +1107,60 @@ export function Register() {
     const currentLineQty = cart.find((l) => l.productId === p._id)?.quantity ?? 0
     let overrideApproved = false
     let overrideMaxAdd = 0
-    const approveOfflineOverride = () => {
-      if (!offlineStockGuard) return false
-      if (strictOfflineStock) {
+
+    const needsOverridePrecheck =
+      requestedQty > Math.max(0, avail - currentLineQty) &&
+      stockGuard &&
+      (currentLineQty > 0 || avail < requestedQty)
+    if (needsOverridePrecheck) {
+      if (overrideScope === 'offline' && strictOfflineStock) {
+        setError(`Offline strict-stock item blocked: ${p.name}`)
+        return
+      }
+      if (!isAdmin) {
+        setError(`Insufficient stock for ${p.name}. Manager override required while ${overrideScope}.`)
+        return
+      }
+      const allowedTotalQty = Math.max(0, avail) + overrideMaxUnits
+      overrideMaxAdd = Math.max(0, allowedTotalQty - currentLineQty)
+      if (overrideMaxAdd <= 0) {
+        setError(`${overrideScope === 'offline' ? 'Offline' : 'Online'} override limit reached for ${p.name} (max +${overrideMaxUnits}).`)
+        return
+      }
+      const ok = await requestStockOverrideConfirmation({
+        scope: overrideScope,
+        productName: p.name,
+        available: Math.max(0, avail),
+        maxUnits: overrideMaxUnits,
+      })
+      if (!ok) return
+      overrideApproved = true
+    }
+
+    const approveStockOverride = () => {
+      if (overrideApproved) return true
+      if (!stockGuard) return false
+      if (overrideScope === 'offline' && strictOfflineStock) {
         blockedByPolicy = true
         setError(`Offline strict-stock item blocked: ${p.name}`)
         return false
       }
       if (!isAdmin) {
         blockedByPolicy = true
-        setError(`Insufficient cached stock for ${p.name}. Manager override required while offline.`)
+        setError(`Insufficient stock for ${p.name}. Manager override required while ${overrideScope}.`)
         return false
       }
-      const allowedTotalQty = Math.max(0, avail) + OFFLINE_OVERSALE_MAX_UNITS
+      const allowedTotalQty = Math.max(0, avail) + overrideMaxUnits
       overrideMaxAdd = Math.max(0, allowedTotalQty - currentLineQty)
       if (overrideMaxAdd <= 0) {
         blockedByPolicy = true
-        setError(`Offline override limit reached for ${p.name} (max +${OFFLINE_OVERSALE_MAX_UNITS}).`)
+        setError(`${overrideScope === 'offline' ? 'Offline' : 'Online'} override limit reached for ${p.name} (max +${overrideMaxUnits}).`)
         return false
       }
-      const ok = window.confirm(
-        `Offline stock override for ${p.name}?\nCached available: ${Math.max(0, avail)}\n` +
-          `You can exceed cached stock by up to ${OFFLINE_OVERSALE_MAX_UNITS} units.`,
-      )
-      if (!ok) {
-        blockedByPolicy = true
-        return false
-      }
-      overrideApproved = true
-      return true
+      blockedByPolicy = true
+      return false
     }
-    if (avail < 1 && !approveOfflineOverride()) {
+    if (avail < 1 && !approveStockOverride()) {
       if (!blockedByPolicy) setError(`Out of stock: ${p.name}`)
       return
     }
@@ -1056,7 +1172,7 @@ export function Register() {
         const room = avail - line.quantity
         const toAdd = Math.min(requestedQty, room)
         if (toAdd <= 0) {
-          if (!approveOfflineOverride()) {
+          if (!approveStockOverride()) {
             atStockLimit = true
             return prev
           }
@@ -1065,23 +1181,35 @@ export function Register() {
             atStockLimit = true
             return prev
           }
-          const merged = { ...line, quantity: line.quantity + overrideAdd }
+          const merged = {
+            ...line,
+            quantity: line.quantity + overrideAdd,
+            stockOverrideApproved: true,
+            stockOverrideScope: overrideScope,
+            stockOverrideAvailableQty: Math.max(0, avail),
+          }
           next[i] = enrichCartLine(p, merged)
           partialNotice =
             overrideAdd < requestedQty
-              ? `Offline override added ${overrideAdd} of ${requestedQty} (limit +${OFFLINE_OVERSALE_MAX_UNITS})`
-              : `Offline stock override approved for ${p.name}`
+              ? `${overrideScope === 'offline' ? 'Offline' : 'Online'} override added ${overrideAdd} of ${requestedQty} (limit +${overrideMaxUnits})`
+              : `${overrideScope === 'offline' ? 'Offline' : 'Online'} stock override approved for ${p.name}`
           return next
         }
         if (toAdd < requestedQty) {
-          if (approveOfflineOverride()) {
+          if (approveStockOverride()) {
             const overrideAdd = Math.min(requestedQty, overrideMaxAdd)
-            const merged = { ...line, quantity: line.quantity + overrideAdd }
+            const merged = {
+              ...line,
+              quantity: line.quantity + overrideAdd,
+              stockOverrideApproved: true,
+              stockOverrideScope: overrideScope,
+              stockOverrideAvailableQty: Math.max(0, avail),
+            }
             next[i] = enrichCartLine(p, merged)
             partialNotice =
               overrideAdd < requestedQty
-                ? `Offline override added ${overrideAdd} of ${requestedQty} (limit +${OFFLINE_OVERSALE_MAX_UNITS})`
-                : `Offline stock override approved for ${p.name}`
+                ? `${overrideScope === 'offline' ? 'Offline' : 'Online'} override added ${overrideAdd} of ${requestedQty} (limit +${overrideMaxUnits})`
+                : `${overrideScope === 'offline' ? 'Offline' : 'Online'} stock override approved for ${p.name}`
             return next
           }
           partialNotice = `Added ${toAdd} of ${requestedQty} (${avail} available)`
@@ -1092,7 +1220,7 @@ export function Register() {
       }
       const toAdd = Math.min(requestedQty, avail)
       if (toAdd < 1) {
-        if (!approveOfflineOverride()) return prev
+        if (!approveStockOverride()) return prev
         const overrideAdd = Math.min(requestedQty, overrideMaxAdd)
         if (overrideAdd < 1) return prev
         const newLine: CartLine = {
@@ -1100,15 +1228,18 @@ export function Register() {
           name: p.name,
           quantity: overrideAdd,
           unitPrice: p.price,
+          stockOverrideApproved: true,
+          stockOverrideScope: overrideScope,
+          stockOverrideAvailableQty: Math.max(0, avail),
         }
         partialNotice =
           overrideAdd < requestedQty
-            ? `Offline override added ${overrideAdd} of ${requestedQty} (limit +${OFFLINE_OVERSALE_MAX_UNITS})`
-            : `Offline stock override approved for ${p.name}`
+            ? `${overrideScope === 'offline' ? 'Offline' : 'Online'} override added ${overrideAdd} of ${requestedQty} (limit +${overrideMaxUnits})`
+            : `${overrideScope === 'offline' ? 'Offline' : 'Online'} stock override approved for ${p.name}`
         return [...prev, enrichCartLine(p, newLine)]
       }
       if (toAdd < requestedQty) {
-        if (approveOfflineOverride()) {
+        if (approveStockOverride()) {
           const overrideAdd = Math.min(requestedQty, overrideMaxAdd)
           if (overrideAdd < 1) return prev
           const newLine: CartLine = {
@@ -1116,11 +1247,14 @@ export function Register() {
             name: p.name,
             quantity: overrideAdd,
             unitPrice: p.price,
+            stockOverrideApproved: true,
+            stockOverrideScope: overrideScope,
+            stockOverrideAvailableQty: Math.max(0, avail),
           }
           partialNotice =
             overrideAdd < requestedQty
-              ? `Offline override added ${overrideAdd} of ${requestedQty} (limit +${OFFLINE_OVERSALE_MAX_UNITS})`
-              : `Offline stock override approved for ${p.name}`
+              ? `${overrideScope === 'offline' ? 'Offline' : 'Online'} override added ${overrideAdd} of ${requestedQty} (limit +${overrideMaxUnits})`
+              : `${overrideScope === 'offline' ? 'Offline' : 'Online'} stock override approved for ${p.name}`
           return [...prev, enrichCartLine(p, newLine)]
         }
         partialNotice = `Added ${toAdd} of ${requestedQty} (${avail} available)`
@@ -1138,14 +1272,14 @@ export function Register() {
       return
     }
     if (overrideApproved && !partialNotice) {
-      setNotice(`Offline stock override approved for ${p.name}`)
+      setNotice(`${overrideScope === 'offline' ? 'Offline' : 'Online'} stock override approved for ${p.name}`)
       return
     }
     if (partialNotice) setNotice(partialNotice)
   }
 
   function addToCart(p: Product) {
-    addToCartQty(p, 1)
+    void addToCartQty(p, 1)
   }
 
   function bumpRefundLineQty(saleLineIndex: number, delta: number) {
@@ -1168,7 +1302,7 @@ export function Register() {
     })
   }
 
-  function bumpQty(productId: string, delta: number) {
+  async function bumpQty(productId: string, delta: number) {
     clearActiveQuote()
     setLastSale(null)
     setNotice(null)
@@ -1177,6 +1311,45 @@ export function Register() {
     setLastOnAccount(null)
     let blockedByPolicy = false
     let partialNotice: string | null = null
+    const line = cart.find((l) => l.productId === productId)
+    const p = products.find((x) => x._id === productId)
+    const max = p ? productAvailableUnits(p) : 999
+    const nextQty = (line?.quantity ?? 0) + delta
+    const hasOfflineSignalForBump = offlineCatalogMode || !serverReachable
+    const overrideScopeForBump: 'offline' | 'online' = hasOfflineSignalForBump ? 'offline' : 'online'
+    let overrideApprovedForBump = false
+    if (line && nextQty > max && delta > 0) {
+      const overrideMaxUnits =
+        overrideScopeForBump === 'offline' ? OFFLINE_OVERSALE_MAX_UNITS : ONLINE_OVERSALE_MAX_UNITS
+      const stockGuard = !!p && productTracksInventory(p)
+      const strictOfflineStock = !!p && (p as Product & { strictOfflineStock?: boolean }).strictOfflineStock === true
+      if (stockGuard) {
+        if (overrideScopeForBump === 'offline' && strictOfflineStock) {
+          setError(`Offline strict-stock item blocked: ${p.name}`)
+          return
+        }
+        if (!isAdmin) {
+          setError(`Insufficient stock for ${p.name}. Manager override required while ${overrideScopeForBump}.`)
+          return
+        }
+        const allowedTotalQty = Math.max(0, max) + overrideMaxUnits
+        if (nextQty > allowedTotalQty) {
+          setError(
+            `${overrideScopeForBump === 'offline' ? 'Offline' : 'Online'} override limit reached for ${p.name} (max +${overrideMaxUnits}).`,
+          )
+          return
+        }
+        const ok = await requestStockOverrideConfirmation({
+          scope: overrideScopeForBump,
+          productName: p.name,
+          available: Math.max(0, max),
+          maxUnits: overrideMaxUnits,
+        })
+        if (!ok) return
+        overrideApprovedForBump = true
+        partialNotice = `${overrideScopeForBump === 'offline' ? 'Offline' : 'Online'} stock override approved for ${p.name}`
+      }
+    }
     setCart((prev) => {
       const line = prev.find((l) => l.productId === productId)
       if (!line) return prev
@@ -1185,39 +1358,59 @@ export function Register() {
       const nextQty = line.quantity + delta
       if (nextQty <= 0) return prev.filter((l) => l.productId !== productId)
       if (nextQty > max) {
-        const offlineStockGuard = !!p && offlineCatalogMode && productTracksInventory(p)
+        const overrideMaxUnits =
+          overrideScopeForBump === 'offline' ? OFFLINE_OVERSALE_MAX_UNITS : ONLINE_OVERSALE_MAX_UNITS
+        const stockGuard = !!p && productTracksInventory(p)
         const strictOfflineStock =
           !!p && (p as Product & { strictOfflineStock?: boolean }).strictOfflineStock === true
-        if (!offlineStockGuard || delta < 0) return prev
-        if (strictOfflineStock) {
+        if (!stockGuard || delta < 0) return prev
+        if (!overrideApprovedForBump) return prev
+        if (overrideScopeForBump === 'offline' && strictOfflineStock) {
           blockedByPolicy = true
           setError(`Offline strict-stock item blocked: ${p.name}`)
           return prev
         }
         if (!isAdmin) {
           blockedByPolicy = true
-          setError(`Insufficient cached stock for ${p.name}. Manager override required while offline.`)
+          setError(`Insufficient stock for ${p.name}. Manager override required while ${overrideScopeForBump}.`)
           return prev
         }
-        const allowedTotalQty = Math.max(0, max) + OFFLINE_OVERSALE_MAX_UNITS
+        const allowedTotalQty = Math.max(0, max) + overrideMaxUnits
         if (nextQty > allowedTotalQty) {
           blockedByPolicy = true
-          setError(`Offline override limit reached for ${p.name} (max +${OFFLINE_OVERSALE_MAX_UNITS}).`)
+          setError(
+            `${overrideScopeForBump === 'offline' ? 'Offline' : 'Online'} override limit reached for ${p.name} (max +${overrideMaxUnits}).`,
+          )
           return prev
         }
-        const ok = window.confirm(
-          `Offline stock override for ${p.name}?\nCached available: ${Math.max(0, max)}\n` +
-            `You can exceed cached stock by up to ${OFFLINE_OVERSALE_MAX_UNITS} units.`,
-        )
-        if (!ok) {
-          blockedByPolicy = true
-          return prev
-        }
-        partialNotice = `Offline stock override approved for ${p.name}`
+        blockedByPolicy = true
+        return prev
       }
       return prev.map((l) => {
         if (l.productId !== productId) return l
-        const np = p ? enrichCartLine(p, { ...l, quantity: nextQty }) : { ...l, quantity: nextQty }
+        const np = p
+          ? enrichCartLine(p, {
+              ...l,
+              quantity: nextQty,
+              ...(overrideApprovedForBump
+                ? {
+                    stockOverrideApproved: true,
+                    stockOverrideScope: overrideScopeForBump,
+                    stockOverrideAvailableQty: Math.max(0, max),
+                  }
+                : {}),
+            })
+          : {
+              ...l,
+              quantity: nextQty,
+              ...(overrideApprovedForBump
+                ? {
+                    stockOverrideApproved: true,
+                    stockOverrideScope: overrideScopeForBump,
+                    stockOverrideAvailableQty: Math.max(0, max),
+                  }
+                : {}),
+            }
         return np
       })
     })
@@ -1229,7 +1422,7 @@ export function Register() {
       bumpRefundLineQty(line.refundSaleLineIndex, delta)
       return
     }
-    bumpQty(line.productId, delta)
+    void bumpQty(line.productId, delta)
   }
 
   const cartTotal = useMemo(
@@ -1587,8 +1780,12 @@ export function Register() {
       const body: Record<string, unknown> = {
         items: cart.map((l) => ({
           productId: l.productId,
+          name: l.name,
           quantity: l.quantity,
           unitPrice: l.unitPrice,
+          stockOverrideApproved: l.stockOverrideApproved === true,
+          stockOverrideScope: l.stockOverrideScope,
+          stockOverrideAvailableQty: l.stockOverrideAvailableQty,
         })),
         paymentMethod,
         payment,
@@ -1627,8 +1824,12 @@ export function Register() {
         const body: Record<string, unknown> = {
           items: cart.map((l) => ({
             productId: l.productId,
+            name: l.name,
             quantity: l.quantity,
             unitPrice: l.unitPrice,
+            stockOverrideApproved: l.stockOverrideApproved === true,
+            stockOverrideScope: l.stockOverrideScope,
+            stockOverrideAvailableQty: l.stockOverrideAvailableQty,
           })),
           paymentMethod,
           payment,
@@ -1887,6 +2088,10 @@ export function Register() {
   }
 
   async function applyVoucherToSale() {
+    if (altPaymentsOfflineDisabled) {
+      setError('Alt payment options are unavailable while offline')
+      return
+    }
     if (refundSession) return
     if (cart.length === 0 || busy) return
     setError(null)
@@ -2007,6 +2212,10 @@ export function Register() {
   }
 
   async function applyOnAccountToSale() {
+    if (altPaymentsOfflineDisabled) {
+      setError('Alt payment options are unavailable while offline')
+      return
+    }
     if (refundSession) return
     if (cart.length === 0 || busy) return
     setError(null)
@@ -2201,7 +2410,7 @@ export function Register() {
         setError(`No item found for "${skuStr}"`)
         return
       }
-      addToCartQty(match, qtyNum)
+      void addToCartQty(match, qtyNum)
       setSkuInput('')
       return
     }
@@ -2544,7 +2753,7 @@ export function Register() {
   }
 
   function onProductRowPointerDown(e: React.PointerEvent<HTMLButtonElement>, p: Product) {
-    const canTapProduct = productHasSellableStock(p) || (offlineCatalogMode && productTracksInventory(p))
+    const canTapProduct = productHasSellableStock(p) || (productTracksInventory(p) && (offlineCatalogMode || !serverReachable || isAdmin))
     if (!e.isPrimary || !canTapProduct) return
     const h = productPresetHoldRef.current
     if (h.timer) clearTimeout(h.timer)
@@ -3033,6 +3242,50 @@ export function Register() {
     return { ok: true, payload: p }
   }
 
+  async function printOfflineReconciliationListToDevice(): Promise<{ ok: boolean; error?: string }> {
+    if (offlineReconcileItems.length === 0) return { ok: true }
+    const cfg = printerSettings.receiptConfig
+    const totalUnits = offlineReconcileItems.reduce((sum, item) => sum + item.qty, 0)
+    const payload = {
+      transport: printerSettings.transport,
+      columns: printerSettings.columns,
+      cut: printerSettings.cut,
+      receipt: {
+        headerLines: [cfg.headerLine1, cfg.headerLine2, cfg.headerLine3].filter((x) => typeof x === 'string' && x.trim()),
+        phone: cfg.phone,
+        vatNumber: cfg.vatNumber,
+        receiptTitle: 'OFFLINE STOCK CHECK',
+        receiptNumberPrefix: 'Till',
+        receiptNumber: POS_TILL_CODE,
+        cashierName: resolveCashierDisplayName(session?.user),
+        tillNumber: POS_TILL_CODE,
+        tillLabel: cfg.tillLabel,
+        slipLabel: cfg.slipLabel,
+        timestampIso: offlineReconcileSyncedAt ?? new Date().toISOString(),
+        paymentLabel: 'Offline sync reconciliation',
+        lines: offlineReconcileItems.map((item) => ({
+          qty: item.qty,
+          name: item.name,
+          unitPrice: 0,
+          lineTotal: 0,
+        })),
+        subtotal: totalUnits,
+        taxTotal: 0,
+        total: totalUnits,
+        totalDueLabel: 'Total units:',
+        thankYouLine: 'Verify on-hand qty and report discrepancies.',
+        compactTopMargin: true,
+      },
+    }
+    if (!window.electronPos) return { ok: true }
+    const r = await window.electronPos.printReceipt(payload.transport, payload.receipt, {
+      columns: payload.columns,
+      cut: payload.cut,
+    })
+    if (!r.ok) return { ok: false, error: r.error ?? 'Failed to print reconciliation list' }
+    return { ok: true }
+  }
+
   async function printShiftReportToDevice(report: ShiftReport): Promise<void> {
     if (!window.electronPos) return
     const cfg = printerSettings.receiptConfig
@@ -3427,6 +3680,16 @@ export function Register() {
                 >
                   {registerLeftPanel === 'list' ? 'Hide list' : 'Item list'}
                 </button>
+                {isAdmin && offlineReconcileItems.length > 0 ? (
+                  <button
+                    type="button"
+                    className="btn ghost key-action"
+                    onClick={() => setOfflineReconcileModalOpen(true)}
+                    title="Reopen latest offline stock reconciliation list"
+                  >
+                    Reconciliation
+                  </button>
+                ) : null}
               </div>
             </div>
 
@@ -3562,15 +3825,23 @@ export function Register() {
                       <button
                         type="button"
                         className="key-btn key-btn-fn"
-                        disabled={!!activeOpenTabId || !!refundSession}
+                        disabled={!!activeOpenTabId || !!refundSession || offlineCatalogMode}
                         title={
-                          refundSession
-                            ? 'Finish refund first'
-                            : activeOpenTabId
-                              ? 'Finish or close tab first'
-                              : undefined
+                          offlineCatalogMode
+                            ? 'Lay-by unavailable while offline'
+                            : refundSession
+                              ? 'Finish refund first'
+                              : activeOpenTabId
+                                ? 'Finish or close tab first'
+                                : undefined
                         }
-                        onClick={() => setLayByModalOpen(true)}
+                        onClick={() => {
+                          if (offlineCatalogMode) {
+                            setError('Lay-by is unavailable while offline')
+                            return
+                          }
+                          setLayByModalOpen(true)
+                        }}
                       >
                         LAY-BY
                       </button>
@@ -3788,7 +4059,7 @@ export function Register() {
                       <li key={p._id}>
                         {(() => {
                           const canTapProduct =
-                            productHasSellableStock(p) || (offlineCatalogMode && productTracksInventory(p))
+                            productHasSellableStock(p) || (productTracksInventory(p) && (offlineCatalogMode || !serverReachable || isAdmin))
                           return (
                         <button
                           type="button"
@@ -3892,10 +4163,16 @@ export function Register() {
                       type="button"
                       className="btn ghost small register-alt-payment-toggle"
                       aria-expanded={altPaymentExpanded}
+                      disabled={altPaymentsOfflineDisabled}
                       onClick={() => setAltPaymentExpanded((v) => !v)}
                     >
                       {altPaymentExpanded ? 'Hide alt payment options' : 'Alt payment options'}
                     </button>
+                    {altPaymentsOfflineDisabled ? (
+                      <p className="muted small" style={{ marginTop: '0.35rem' }}>
+                        Alt payment options unavailable while offline.
+                      </p>
+                    ) : null}
                     {altPaymentExpanded ? (
                       <>
                         <div className="register-voucher-panel">
@@ -4173,10 +4450,16 @@ export function Register() {
                         type="button"
                         className="btn ghost small register-alt-payment-toggle"
                         aria-expanded={altPaymentExpanded}
+                        disabled={altPaymentsOfflineDisabled}
                         onClick={() => setAltPaymentExpanded((v) => !v)}
                       >
                         {altPaymentExpanded ? 'Hide alt payment options' : 'Alt payment options'}
                       </button>
+                      {altPaymentsOfflineDisabled ? (
+                        <p className="muted small" style={{ marginTop: '0.35rem' }}>
+                          Alt payment options unavailable while offline.
+                        </p>
+                      ) : null}
                       {altPaymentExpanded ? (
                         <>
                           <div className="register-voucher-panel">
@@ -4451,6 +4734,51 @@ export function Register() {
           </section>
         </div>
         </div>
+        {stockOverridePrompt.open ? (
+          <div
+            className="open-tabs-backdrop"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="stock-override-title"
+            onMouseDown={(e) => {
+              if (e.target === e.currentTarget) settleStockOverrideConfirmation(false)
+            }}
+          >
+            <div className="open-tabs-dialog quotes-modal-dialog" style={{ maxWidth: 'min(96vw, 28rem)' }}>
+              <div className="open-tabs-header">
+                <h2 id="stock-override-title">
+                  {stockOverridePrompt.scope === 'offline' ? 'Offline' : 'Online'} stock override
+                </h2>
+                <button
+                  type="button"
+                  className="btn ghost open-tabs-close"
+                  onClick={() => settleStockOverrideConfirmation(false)}
+                >
+                  Close
+                </button>
+              </div>
+              <div className="quotes-modal-body">
+                <p>
+                  <strong>{stockOverridePrompt.productName}</strong> has insufficient stock.
+                </p>
+                <p className="muted" style={{ marginBottom: '0.5rem' }}>
+                  Available: {stockOverridePrompt.available}
+                </p>
+                <p className="muted">
+                  Manager can exceed stock by up to <strong>{stockOverridePrompt.maxUnits}</strong> units.
+                </p>
+              </div>
+              <div className="open-tabs-header" style={{ justifyContent: 'flex-end', gap: '0.5rem' }}>
+                <button type="button" className="btn ghost" onClick={() => settleStockOverrideConfirmation(false)}>
+                  Cancel
+                </button>
+                <button type="button" className="btn primary" onClick={() => settleStockOverrideConfirmation(true)}>
+                  Approve override
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
         <AssignPresetModal
           open={assignPresetProduct != null}
           product={assignPresetProduct}
@@ -4548,6 +4876,72 @@ export function Register() {
             setOnAccountPoKbOpen(false)
           }}
         />
+        {offlineReconcileModalOpen ? (
+          <div
+            className="open-tabs-backdrop"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="offline-reconcile-title"
+            onMouseDown={(e) => {
+              if (e.target === e.currentTarget) setOfflineReconcileModalOpen(false)
+            }}
+          >
+            <div className="open-tabs-dialog quotes-modal-dialog" style={{ maxWidth: 'min(96vw, 34rem)' }}>
+              <div className="open-tabs-header">
+                <h2 id="offline-reconcile-title">Back Online - Stock Reconciliation</h2>
+                <button type="button" className="btn ghost open-tabs-close" onClick={() => setOfflineReconcileModalOpen(false)}>
+                  Close
+                </button>
+              </div>
+              <div className="quotes-modal-body">
+                <p className="muted" style={{ marginBottom: '0.75rem' }}>
+                  Offline sales synced. Please verify physical stock counts for these items.
+                </p>
+                <p className="muted" style={{ marginBottom: '0.5rem' }}>
+                  Synced at {new Date(offlineReconcileSyncedAt ?? new Date().toISOString()).toLocaleString()} ·{' '}
+                  {offlineReconcileItems.length} item{offlineReconcileItems.length === 1 ? '' : 's'} ·{' '}
+                  {offlineReconcileItems.reduce((sum, item) => sum + item.qty, 0)} units
+                </p>
+                <ul
+                  className="open-tabs-list"
+                  style={{ maxHeight: '48vh', overflowY: 'auto', overflowX: 'hidden', paddingRight: '0.25rem' }}
+                >
+                  {offlineReconcileItems.map((item) => (
+                    <li
+                      key={item.productId}
+                      className="open-tabs-row"
+                      style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem' }}
+                    >
+                      <span>{item.name}</span>
+                      <strong>{item.qty}</strong>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div className="open-tabs-header" style={{ justifyContent: 'flex-end', gap: '0.5rem' }}>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => {
+                    void (async () => {
+                      const printed = await printOfflineReconciliationListToDevice()
+                      if (!printed.ok) {
+                        setError(printed.error ?? 'Failed to print reconciliation list')
+                        return
+                      }
+                      setNotice('Offline reconciliation list printed')
+                    })()
+                  }}
+                >
+                  Print reconciliation list
+                </button>
+                <button type="button" className="btn ghost" onClick={() => setOfflineReconcileModalOpen(false)}>
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
         {houseAccountPaymentTarget ? (
           <div
             className="open-tabs-backdrop"

@@ -26,6 +26,10 @@ export type CartLine = {
   quantity: number
   unitPrice: number
   listUnitPrice?: number
+  /** Manager-approved stock override was used for this line. */
+  stockOverrideApproved?: boolean
+  stockOverrideScope?: 'offline' | 'online'
+  stockOverrideAvailableQty?: number
   /** Refund mode: original sale line index for POST /sales/:id/refund */
   refundSaleLineIndex?: number
   /** Refund mode: max quantity refundable on this line (remaining from server). */
