@@ -55,11 +55,60 @@
   background: #181818;
 }
 
+/* Frameless Electron: drag top chrome; links/buttons stay clickable */
+html.electron-shell .shell-header {
+  -webkit-app-region: drag;
+}
+
+html.electron-shell .shell-header :is(a, button, input, select, textarea),
+html.electron-shell .shell-header .shell-user,
+html.electron-shell .shell-header .shell-till-badge {
+  -webkit-app-region: no-drag;
+}
+
+html.electron-shell-mac .shell-header {
+  padding-left: 78px;
+}
+
+html.electron-shell .screen.auth-screen {
+  -webkit-app-region: drag;
+}
+
+html.electron-shell .screen.auth-screen .panel,
+html.electron-shell .screen.auth-screen .panel :is(a, button, input, select, textarea, label) {
+  -webkit-app-region: no-drag;
+}
+
+html.electron-shell .auth-window-actions,
+html.electron-shell .auth-window-actions button {
+  -webkit-app-region: no-drag;
+}
 
 .shell-brand {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 0.5rem;
+}
+
+.shell-brand-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  flex-shrink: 0;
+  line-height: 0;
+  margin-right: 10px;
+  /* Explicit box so logo sizing isn’t collapsed by flex baseline quirks */
+  height: 4.989245625rem;
+}
+
+.shell-brand-logo {
+  display: block;
+  box-sizing: border-box;
+  width: auto;
+  height: 100%;
+  max-height: 100%;
+  max-width: 21.06570375rem;
+  object-fit: contain;
 }
 
 .shell-brand a {
@@ -82,6 +131,30 @@
   display: flex;
   align-items: center;
   gap: 0.75rem;
+}
+
+.shell-app-minimize {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.35rem 0.5rem;
+  min-width: 2.5rem;
+}
+
+.shell-app-quit {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.35rem 0.5rem;
+  min-width: 2.5rem;
+}
+
+.shell-window-icon {
+  width: 1.2rem;
+  height: 1.2rem;
+  display: block;
 }
 
 .shell-settings-link {
@@ -446,6 +519,37 @@
   box-sizing: border-box;
 }
 
+.screen.auth-screen {
+  position: relative;
+}
+
+.auth-window-actions {
+  position: absolute;
+  top: max(0.75rem, env(safe-area-inset-top, 0px));
+  right: max(0.75rem, env(safe-area-inset-right, 0px));
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  z-index: 2;
+}
+
+.window-chrome-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.4rem;
+  min-width: 2.25rem;
+  min-height: 2.25rem;
+  box-sizing: border-box;
+}
+
+.window-chrome-action-icon {
+  width: 1.125rem;
+  height: 1.125rem;
+  flex-shrink: 0;
+  display: block;
+}
+
 .panel {
   background: #242424;
   border: 1px solid #4a4a4a;
@@ -462,6 +566,50 @@
 
 .auth-screen .panel {
   max-width: 380px;
+}
+
+.auth-brand-logo-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 1rem;
+  height: 7.206688125rem;
+}
+
+.auth-brand-logo {
+  display: block;
+  box-sizing: border-box;
+  width: auto;
+  height: auto;
+  max-height: 100%;
+  max-width: min(100%, 31.044195rem);
+  object-fit: contain;
+}
+
+.auth-app-minimize {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 0.35rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.45rem 0.75rem;
+}
+
+.auth-app-quit {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 0.35rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.45rem 0.75rem;
+}
+
+.auth-window-icon {
+  width: 1.25rem;
+  height: 1.25rem;
+  display: block;
 }
 
 .form {
@@ -1252,6 +1400,19 @@
   color: #fff;
 }
 
+/* Receipt auto-print toggle — distinct from Enter (primary blue) */
+.key-btn-receipt-on {
+  background: #256f3c;
+  border-color: #1e5630;
+  color: #fff;
+}
+
+.key-btn-receipt-off {
+  background: #1a1a1a;
+  border-color: #3d3d3d;
+  color: #9a9a9a;
+}
+
 .key-btn-wide {
   grid-column: span 2;
 }
@@ -2012,6 +2173,32 @@
   justify-content: flex-end;
   gap: 0.4rem;
   flex-shrink: 0;
+}
+
+.open-tabs-kind-badge {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.12rem 0.38rem;
+  border-radius: 4px;
+  background: #3b5bdb;
+  color: #fff;
+  vertical-align: middle;
+}
+
+.open-tabs-job-card-lead {
+  margin: 0 0 0.65rem;
+  font-size: 0.86rem;
+  line-height: 1.4;
+}
+
+.open-tabs-textarea {
+  resize: vertical;
+  min-height: 2.75rem;
+  font: inherit;
+  line-height: 1.35;
 }
 
 .open-tabs-empty {

@@ -104,3 +104,18 @@ html[data-pos-theme='elon'] a {
 html[data-pos-theme='elon'] a:hover {
   color: #bfdbfe;
 }
+
+/* Brick-inspired accent theme (playful primary colours on deep blue base) */
+html[data-pos-theme='lego'] {
+  color: #f8fafc;
+  background-color: #0c1929;
+  --muted: #cbd5e1;
+}
+
+html[data-pos-theme='lego'] a {
+  color: #ffd502;
+}
+
+html[data-pos-theme='lego'] a:hover {
+  color: #fff9c4;
+}

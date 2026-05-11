@@ -84,6 +84,31 @@ html[data-pos-theme='ubuntu'] .key-btn {
   color: #fce7f3;
 }
 
+html[data-pos-theme='ubuntu'] .key-btn-danger {
+  background: linear-gradient(180deg, #ef4444 0%, #dc2626 100%);
+  border-color: #b91c1c;
+  color: #fff;
+}
+
+html[data-pos-theme='ubuntu'] .key-btn-primary,
+html[data-pos-theme='ubuntu'] .key-btn-enter {
+  background: linear-gradient(180deg, #22d3ee 0%, #0891b2 100%);
+  border-color: #0e7490;
+  color: #fff;
+}
+
+html[data-pos-theme='ubuntu'] .key-btn-receipt-on {
+  background: linear-gradient(180deg, #34d399 0%, #059669 100%);
+  border-color: #047857;
+  color: #fff;
+}
+
+html[data-pos-theme='ubuntu'] .key-btn-receipt-off {
+  background: rgba(30, 27, 75, 0.92);
+  border-color: #6366f1;
+  color: #a5b4fc;
+}
+
 html[data-pos-theme='ubuntu'] .panel-cart .cart-footer {
   border-top-color: #06b6d4;
 }
@@ -289,4 +314,19 @@ html[data-pos-theme='ubuntu'] .success {
 
 html[data-pos-theme='ubuntu'] .error {
   color: #fca5a5;
+}
+
+/* Cash payment — emerald green (matches keyboard “done” / teal accent family) */
+html[data-pos-theme='ubuntu'] .btn.checkout-btn.cash-checkout-btn {
+  background: linear-gradient(180deg, #10b981 0%, #059669 100%);
+  border-color: #047857;
+  color: #fff;
+}
+
+html[data-pos-theme='ubuntu'] .btn.checkout-btn.cash-checkout-btn:hover:not(:disabled) {
+  filter: brightness(1.07);
+}
+
+html[data-pos-theme='ubuntu'] .btn.checkout-btn.cash-checkout-btn:active:not(:disabled) {
+  filter: brightness(0.95);
 }

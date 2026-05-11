@@ -79,22 +79,23 @@ html[data-pos-theme='elon'] .screen-keyboard {
   background: #0f172a;
 }
 
+/* Keys: navy slate (matches cart rows), not stark white — reads “uniform” with Old Glory chrome */
 html[data-pos-theme='elon'] .screen-keyboard-key {
-  border-color: #dbeafe;
-  background: #ffffff;
-  color: #1d4ed8;
+  border-color: #2563eb;
+  background: #172554;
+  color: #e2e8f0;
 }
 
 html[data-pos-theme='elon'] .screen-keyboard-key:active:not(:disabled) {
   background: #1d4ed8;
-  border-color: #1d4ed8;
-  color: #ffffff;
+  border-color: #3b82f6;
+  color: #f8fafc;
 }
 
 html[data-pos-theme='elon'] .screen-keyboard-key-done {
-  background: #ffffff;
-  border-color: #dbeafe;
-  color: #1d4ed8;
+  background: #1e40af;
+  border-color: #3b82f6;
+  color: #f8fafc;
 }
 
 html[data-pos-theme='elon'] .sku-display {
@@ -104,15 +105,15 @@ html[data-pos-theme='elon'] .sku-display {
 }
 
 html[data-pos-theme='elon'] .key-btn {
-  border-color: #dbeafe;
-  background: #ffffff;
-  color: #1d4ed8;
+  border-color: #2563eb;
+  background: #172554;
+  color: #e2e8f0;
 }
 
 html[data-pos-theme='elon'] .key-btn:active:not(:disabled) {
   background: #1d4ed8;
-  border-color: #1d4ed8;
-  color: #ffffff;
+  border-color: #3b82f6;
+  color: #f8fafc;
 }
 
 html[data-pos-theme='elon'] .keys-grid .key-btn {
@@ -126,12 +127,65 @@ html[data-pos-theme='elon'] .keys-grid .key-btn {
   }
 }
 
-html[data-pos-theme='elon'] .key-btn-primary,
-html[data-pos-theme='elon'] .key-btn-danger,
+html[data-pos-theme='elon'] .key-btn-primary {
+  background: #1e40af;
+  border-color: #3b82f6;
+  color: #f8fafc;
+}
+
+html[data-pos-theme='elon'] .key-btn-danger {
+  background: #9f1239;
+  border-color: #b22234;
+  color: #f8fafc;
+}
+
 html[data-pos-theme='elon'] .key-btn-pay {
-  border-color: #dbeafe;
-  background: #ffffff;
-  color: #1d4ed8;
+  background: #166534;
+  border-color: #22c55e;
+  color: #f8fafc;
+}
+
+html[data-pos-theme='elon'] .key-btn-enter {
+  background: #1e3a8a;
+  border-color: #2563eb;
+  color: #f8fafc;
+}
+
+html[data-pos-theme='elon'] .key-btn-receipt-on {
+  background: #166534;
+  border-color: #22c55e;
+  color: #f8fafc;
+}
+
+html[data-pos-theme='elon'] .key-btn-receipt-off {
+  background: #0f172a;
+  border-color: #475569;
+  color: #94a3b8;
+}
+
+html[data-pos-theme='elon'] .key-btn-danger:active:not(:disabled) {
+  background: #881337;
+  border-color: #e11d48;
+  color: #fff;
+}
+
+html[data-pos-theme='elon'] .key-btn-primary:active:not(:disabled),
+html[data-pos-theme='elon'] .key-btn-enter:active:not(:disabled) {
+  background: #2563eb;
+  border-color: #93c5fd;
+  color: #f8fafc;
+}
+
+html[data-pos-theme='elon'] .key-btn-receipt-on:active:not(:disabled) {
+  background: #15803d;
+  border-color: #4ade80;
+  color: #f8fafc;
+}
+
+html[data-pos-theme='elon'] .key-btn-receipt-off:active:not(:disabled) {
+  background: #1e293b;
+  border-color: #64748b;
+  color: #cbd5e1;
 }
 
 html[data-pos-theme='elon'] .panel-cart .cart-footer {
@@ -339,4 +393,19 @@ html[data-pos-theme='elon'] .success {
 
 html[data-pos-theme='elon'] .error {
   color: #f87171;
+}
+
+/* Cash payment — emerald green (distinct from navy buttons & red primary accent) */
+html[data-pos-theme='elon'] .btn.checkout-btn.cash-checkout-btn {
+  background: linear-gradient(180deg, #10b981 0%, #047857 100%);
+  border-color: #065f46;
+  color: #ecfdf5;
+}
+
+html[data-pos-theme='elon'] .btn.checkout-btn.cash-checkout-btn:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+html[data-pos-theme='elon'] .btn.checkout-btn.cash-checkout-btn:active:not(:disabled) {
+  filter: brightness(0.93);
 }

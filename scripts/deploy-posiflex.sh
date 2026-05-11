@@ -18,7 +18,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 VERSION="$(node -p "JSON.parse(require('fs').readFileSync('package.json','utf8')).version")"
-APP_IMAGE="$ROOT_DIR/release/$VERSION/ElectroPOS Register-Linux-$VERSION.AppImage"
+APP_IMAGE="$ROOT_DIR/release/$VERSION/CogniPOS Register-Linux-$VERSION.AppImage"
 
 echo "== Build POS v$VERSION =="
 VITE_API_BASE_URL="$API_BASE_URL" npm run build

@@ -6,6 +6,14 @@ import { applyPosThemeToDocument, readStoredPosTheme } from './theme/posTheme'
 import './pos-theme-light.css'
 import './pos-theme-ubuntu.css'
 import './pos-theme-elon.css'
+import './pos-theme-lego.css'
+
+if (window.ipcRenderer) {
+  document.documentElement.classList.add('electron-shell')
+  if (window.electronPlatform === 'darwin') {
+    document.documentElement.classList.add('electron-shell-mac')
+  }
+}
 
 applyPosThemeToDocument(readStoredPosTheme())
 

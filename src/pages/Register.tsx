@@ -3,9 +3,11 @@ import { apiFetch, subscribeServerReachability } from '../api/client'
 import { loadProductPresetsWithMigration, pushProductPresets } from '../api/productPresetsApi'
 import type {
   CartLine,
+  CreateOpenTabModalInput,
   HouseAccountRow,
   OpenTabDetail,
   OpenTabListItem,
+  OpenTabKind,
   Product,
   QuoteDetail,
   QuoteListItem,
@@ -39,6 +41,7 @@ import {
   type PresetEntry,
   type ProductPresetsState,
 } from '../register/posProductPresets'
+import { playPosKeySound } from '../audio/posKeySound'
 import { PosShell } from '../layouts/PosShell'
 import { readPosPrinterSettings, type PosPrinterSettings } from '../printer/posPrinterSettings'
 import {
@@ -199,7 +202,9 @@ export function Register() {
   const [openTabsLoading, setOpenTabsLoading] = useState(false)
   const [activeOpenTabId, setActiveOpenTabId] = useState<string | null>(null)
   const [activeTabBanner, setActiveTabBanner] = useState<{
+    kind: OpenTabKind
     tabNumber: string
+    jobNumber?: string
     customerName: string
     phone: string
   } | null>(null)
@@ -1465,7 +1470,9 @@ export function Register() {
       clearActiveQuote()
       setActiveOpenTabId(id)
       setActiveTabBanner({
+        kind: tab.kind ?? 'tab',
         tabNumber: tab.tabNumber,
+        jobNumber: tab.jobNumber,
         customerName: tab.customerName,
         phone: tab.phone,
       })
@@ -1514,12 +1521,7 @@ export function Register() {
     }
   }
 
-  async function createOpenTabFromModal(input: {
-    tabNumber: string
-    customerName: string
-    phone: string
-    includeCurrentCart: boolean
-  }) {
+  async function createOpenTabFromModal(input: CreateOpenTabModalInput) {
     if (refundSession) {
       throw new Error('Exit refund mode before using tabs')
     }
@@ -1537,12 +1539,24 @@ export function Register() {
       : []
     const created = await apiFetch<OpenTabDetail>('/tabs', {
       method: 'POST',
-      body: JSON.stringify({
-        tabNumber: input.tabNumber,
-        customerName: input.customerName,
-        phone: input.phone,
-        lines: linesPayload,
-      }),
+      body: JSON.stringify(
+        input.mode === 'job_card'
+          ? {
+              kind: 'job_card',
+              customerName: input.customerName,
+              phone: input.phone,
+              itemCheckedIn: input.itemCheckedIn,
+              jobDescription: input.jobDescription,
+              attachmentNote: input.attachmentNote,
+              lines: linesPayload,
+            }
+          : {
+              tabNumber: input.tabNumber,
+              customerName: input.customerName,
+              phone: input.phone,
+              lines: linesPayload,
+            },
+      ),
     })
     setLastSale(null)
     setNotice(null)
@@ -1558,7 +1572,9 @@ export function Register() {
     clearActiveQuote()
     setActiveOpenTabId(created._id)
     setActiveTabBanner({
+      kind: created.kind ?? 'tab',
       tabNumber: created.tabNumber,
+      jobNumber: created.jobNumber,
       customerName: created.customerName,
       phone: created.phone,
     })
@@ -1574,6 +1590,20 @@ export function Register() {
         })
       }),
     )
+    if (input.mode === 'job_card') {
+      const jobNo = created.jobNumber ?? created.tabNumber
+      const printed = await printJobCardOpeningSlips({
+        jobNumber: jobNo,
+        customerName: created.customerName,
+        phone: created.phone ?? '',
+        itemCheckedIn: created.itemCheckedIn ?? input.itemCheckedIn,
+        jobDescription: created.jobDescription ?? input.jobDescription,
+        attachmentNote: created.attachmentNote ?? input.attachmentNote,
+      })
+      if (!printed.ok) {
+        setNotice(`Job card ${jobNo} opened — slip print failed (${printed.error ?? 'printer error'})`)
+      }
+    }
     await loadOpenTabsList()
   }
 
@@ -1599,7 +1629,7 @@ export function Register() {
     setLastStoreCredit(null)
     setLastOnAccount(null)
     setLastTotal(null)
-    setNotice('Tab saved · tab closed')
+    setNotice(activeTabBanner?.kind === 'job_card' ? 'Job card saved · closed' : 'Tab saved · tab closed')
   }
 
   function beginRefundMode(data: SaleRefundPreview, routeSaleId: string) {
@@ -2448,28 +2478,34 @@ export function Register() {
       if (e.repeat) return
 
       if (e.key >= '0' && e.key <= '9') {
+        playPosKeySound()
         pressKey(e.key)
         return
       }
       if (e.key === '.' || e.key === ',' || e.key === 'NumpadDecimal') {
+        playPosKeySound()
         pressKey('.')
         return
       }
       if (e.key === '*' || e.key === 'NumpadMultiply') {
         e.preventDefault()
+        playPosKeySound()
         pressKey('×')
         return
       }
       if (e.key === 'Backspace') {
+        playPosKeySound()
         pressKey('backspace')
         return
       }
       if (e.key === 'Enter') {
         e.preventDefault()
+        playPosKeySound()
         addBySku()
         return
       }
       if (e.key === 'Escape') {
+        playPosKeySound()
         pressKey('clear')
         return
       }
@@ -3103,6 +3139,62 @@ export function Register() {
     }
   }
 
+  async function printJobCardOpeningSlips(info: {
+    jobNumber: string
+    customerName: string
+    phone: string
+    itemCheckedIn?: string
+    jobDescription?: string
+    attachmentNote?: string
+  }): Promise<{ ok: boolean; error?: string }> {
+    if (!window.electronPos) return { ok: true }
+    const cfg = printerSettings.receiptConfig
+    const ts = new Date().toISOString()
+    const barcodeValue = info.jobNumber.replace(/[^0-9A-Za-z]/g, '').toUpperCase()
+    const copies = [
+      { copyLabel: 'WORKSHOP COPY', hints: ['Attach this slip to the item being serviced.'], printAttachmentNote: true },
+      { copyLabel: 'CUSTOMER COPY', hints: ['Customer keeps this slip. Present when collecting work.'], printAttachmentNote: false },
+    ] as const
+    for (const { copyLabel, hints, printAttachmentNote } of copies) {
+      const receipt = {
+        headerLines: [cfg.headerLine1, cfg.headerLine2, cfg.headerLine3],
+        phone: cfg.phone,
+        vatNumber: cfg.vatNumber,
+        receiptTitle: 'JOB CARD',
+        receiptNumberPrefix: 'Job',
+        receiptNumber: info.jobNumber,
+        barcodeValue: barcodeValue || undefined,
+        cashierName: resolveCashierDisplayName(session?.user),
+        tillNumber: POS_TILL_CODE,
+        tillLabel: cfg.tillLabel,
+        slipLabel: cfg.slipLabel,
+        timestampIso: ts,
+        paymentLabel: 'Open job — add charges then checkout',
+        lines: [] as Array<{ qty: number; name: string; unitPrice: number; lineTotal: number }>,
+        subtotal: 0,
+        total: 0,
+        jobCardOpenSlip: {
+          customerName: info.customerName,
+          phone: info.phone,
+          itemCheckedIn: info.itemCheckedIn,
+          jobDescription: info.jobDescription,
+          attachmentNote: info.attachmentNote,
+          printAttachmentNote,
+          hintLines: [...hints],
+        },
+        thankYouLine: cfg.thankYouLine,
+        copyLabel,
+        compactTopMargin: true,
+      }
+      const r = await window.electronPos.printReceipt(printerSettings.transport, receipt, {
+        columns: printerSettings.columns,
+        cut: printerSettings.cut,
+      })
+      if (!r.ok) return { ok: false, error: r.error ?? 'Print failed' }
+    }
+    return { ok: true }
+  }
+
   async function printSaleReceiptsToDevice(sale: Sale): Promise<{ ok: boolean; error?: string }> {
     if (!window.electronPos) return { ok: true }
     const dual = saleHasOnAccountCharge(sale) || saleUsesStoreCredit(sale)
@@ -3628,11 +3720,21 @@ export function Register() {
                 {activeTabBanner ? (
                   <div className="register-tab-banner">
                     <span className="register-tab-banner-text">
-                      Tab <strong>#{activeTabBanner.tabNumber}</strong> · {activeTabBanner.customerName}
+                      {activeTabBanner.kind === 'job_card' ? (
+                        <>
+                          Job card <strong>{activeTabBanner.jobNumber ?? activeTabBanner.tabNumber}</strong>
+                        </>
+                      ) : (
+                        <>
+                          Tab <strong>#{activeTabBanner.tabNumber}</strong>
+                        </>
+                      )}
+                      {' · '}
+                      {activeTabBanner.customerName}
                       {activeTabBanner.phone ? ` · ${activeTabBanner.phone}` : ''}
                     </span>
                     <button type="button" className="btn ghost key-action register-tab-walkin" onClick={() => void closeActiveTabSession()}>
-                      Close tab
+                      {activeTabBanner.kind === 'job_card' ? 'Close job card' : 'Close tab'}
                     </button>
                   </div>
                 ) : null}
@@ -3868,7 +3970,7 @@ export function Register() {
                       </button>
                       <button
                         type="button"
-                        className={`key-btn key-btn-fn ${receiptEnabled ? 'key-btn-primary' : ''}`}
+                        className={`key-btn key-btn-fn ${receiptEnabled ? 'key-btn-receipt-on' : 'key-btn-receipt-off'}`}
                         onClick={() => setReceiptEnabled((v) => !v)}
                       >
                         {receiptEnabled ? 'RECEIPT ON' : 'RECEIPT OFF'}

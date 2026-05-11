@@ -58,6 +58,18 @@ export type ReceiptPayload = {
   compactTopMargin?: boolean
   /** e.g. CUSTOMER COPY / STORE COPY (on-account dual receipts). */
   copyLabel?: string
+  /** Job card opened: skip priced lines; print customer + hint text only. */
+  jobCardOpenSlip?: {
+    customerName: string
+    phone: string
+    itemCheckedIn?: string
+    jobDescription?: string
+    /** Shown under "Note:" at bottom — workshop/item slip only when printAttachmentNote. */
+    attachmentNote?: string
+    printAttachmentNote?: boolean
+    /** Short centered lines under detail blocks (e.g. attach vs customer copy). */
+    hintLines?: string[]
+  }
   /** When multiple tenders apply (cash / card / store voucher), listed under Payment. */
   paymentTenders?: { cash?: number; card?: number; storeVoucher?: number }
   /** Customer-facing voucher redemption detail (phone masked). */
@@ -245,7 +257,7 @@ export function buildReceiptEscPos(payload: ReceiptPayload, opts?: { columns?: n
     chunks.push(setEmph(false))
   } else {
     chunks.push(setEmph(true))
-    chunks.push(line('ElectroPOS'))
+    chunks.push(line('CogniPOS'))
     chunks.push(setEmph(false))
   }
   if (payload.phone) chunks.push(line(`TEL ${payload.phone}`))
@@ -289,6 +301,57 @@ export function buildReceiptEscPos(payload: ReceiptPayload, opts?: { columns?: n
   }
   const compactTop = payload.compactTopMargin === true
   chunks.push(feed(compactTop ? 0 : 1))
+
+  const jc = payload.jobCardOpenSlip
+  if (jc) {
+    chunks.push(setAlign('left'))
+    chunks.push(pLine(`Customer: ${jc.customerName.trim() || '—'}`))
+    if (jc.phone?.trim()) chunks.push(pLine(`Phone: ${jc.phone.trim()}`))
+    chunks.push(feed(1))
+    const itemIn = jc.itemCheckedIn?.trim()
+    if (itemIn) {
+      chunks.push(setEmph(true))
+      chunks.push(pLine('Item checked in:'))
+      chunks.push(setEmph(false))
+      for (const w of wrapText(itemIn, contentCols)) chunks.push(pLine(w))
+      chunks.push(feed(1))
+    }
+    const jobDesc = jc.jobDescription?.trim()
+    if (jobDesc) {
+      chunks.push(setEmph(true))
+      chunks.push(pLine('Job description:'))
+      chunks.push(setEmph(false))
+      for (const w of wrapText(jobDesc, contentCols)) chunks.push(pLine(w))
+      chunks.push(feed(1))
+    }
+    const hints = jc.hintLines?.filter((x) => x.trim()) ?? []
+    if (hints.length > 0) {
+      chunks.push(setAlign('center'))
+      for (const h of hints) {
+        for (const w of wrapText(h.trim(), contentCols)) {
+          chunks.push(pLine(w))
+        }
+      }
+    }
+    const note = jc.attachmentNote?.trim()
+    if (jc.printAttachmentNote && note) {
+      chunks.push(feed(2))
+      chunks.push(setAlign('left'))
+      chunks.push(setEmph(true))
+      chunks.push(pLine('Note:'))
+      chunks.push(setEmph(false))
+      for (const w of wrapText(note, contentCols)) chunks.push(pLine(w))
+    }
+    chunks.push(feed(2))
+    chunks.push(setAlign('center'))
+    chunks.push(pLine(payload.thankYouLine ?? 'THANK YOU'))
+    chunks.push(feed(4))
+    if (cut) {
+      chunks.push(cutPartial())
+      chunks.push(feed(1))
+    }
+    return Buffer.concat(chunks)
+  }
 
   chunks.push(pLine('-'.repeat(contentCols)))
   const qtyHeader = payload.qtyHeader ?? 'QTY'

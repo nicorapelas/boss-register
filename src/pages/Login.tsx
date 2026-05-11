@@ -1,11 +1,16 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { registerRequest } from '../api/client'
+import { usePosTheme } from '../theme/PosThemeContext'
+import { resolvePosLogoSrc } from '../theme/posLogo'
 import { useAuth } from '../auth/AuthContext'
 import { getOfflineLoginCacheStatus } from '../auth/offlineAuth'
 import { ScreenKeyboard, retainInputFocusOnKeyPointerDown, type ScreenKeyboardAction } from '../components'
+import { IconCloseWindow, IconMinimize } from '../icons/windowChrome'
 
 export function Login() {
+  const { theme } = usePosTheme()
+  const logoMark = resolvePosLogoSrc(theme)
   const { session, loading, login, loginWithBadge } = useAuth()
   const navigate = useNavigate()
   const [mode, setMode] = useState<'badge' | 'login' | 'register'>('badge')
@@ -115,12 +120,39 @@ export function Login() {
     return <Navigate to="/" replace />
   }
 
+  const showBadgeElectronChrome = Boolean(window.electronApp && mode === 'badge')
+
   return (
     <div className="screen auth-screen">
+      {showBadgeElectronChrome ? (
+        <div className="auth-window-actions" role="toolbar" aria-label="Window">
+          <button
+            type="button"
+            className="btn ghost window-chrome-action"
+            aria-label="Minimize window"
+            title="Minimize"
+            onClick={() => void window.electronApp?.minimize()}
+          >
+            <IconMinimize className="window-chrome-action-icon" />
+          </button>
+          <button
+            type="button"
+            className="btn ghost window-chrome-action"
+            aria-label="Exit application"
+            title="Exit app"
+            onClick={() => void window.electronApp?.quit()}
+          >
+            <IconCloseWindow className="window-chrome-action-icon" />
+          </button>
+        </div>
+      ) : null}
       <div className="panel">
+        <div className="auth-brand-logo-wrap">
+          <img src={logoMark} alt="CogniPOS" className="auth-brand-logo" decoding="async" />
+        </div>
         <h1>{mode === 'register' ? 'Create account' : mode === 'badge' ? 'Scan staff badge' : 'Sign in'}</h1>
         <p className="muted">
-          Cash register · ElectroPOS
+          Cash register · CogniPOS
           {mode === 'register' && (
             <>
               <br />
@@ -267,6 +299,28 @@ export function Login() {
                 ? 'Create first account…'
                 : 'Back to badge scan'}
           </button>
+          {window.electronApp && mode !== 'badge' ? (
+            <>
+              <button
+                type="button"
+                className="btn ghost auth-app-minimize"
+                aria-label="Minimize"
+                title="Minimize"
+                onClick={() => void window.electronApp?.minimize()}
+              >
+                <IconMinimize className="auth-window-icon" />
+              </button>
+              <button
+                type="button"
+                className="btn ghost auth-app-quit"
+                aria-label="Exit app"
+                title="Exit app"
+                onClick={() => void window.electronApp?.quit()}
+              >
+                <IconCloseWindow className="auth-window-icon" />
+              </button>
+            </>
+          ) : null}
         </form>
       </div>
     </div>

@@ -1,8 +1,11 @@
 import type { ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
+import { usePosTheme } from '../theme/PosThemeContext'
+import { resolvePosLogoSrc } from '../theme/posLogo'
 import { isPosManager } from '../auth/permissions'
 import { useServerConnection } from '../network/useServerConnection'
+import { IconCloseWindow, IconMinimize } from '../icons/windowChrome'
 
 const POS_TILL_CODE = (import.meta.env.VITE_POS_TILL_CODE?.trim().toUpperCase() || 'T1').slice(0, 24)
 const APP_VERSION = import.meta.env.VITE_APP_VERSION || '0.0.0'
@@ -37,6 +40,8 @@ export function PosShell({
   beforeSignOut?: () => boolean
 }) {
   const { session, logout } = useAuth()
+  const { theme } = usePosTheme()
+  const logoMark = resolvePosLogoSrc(theme)
   const location = useLocation()
   const isAdmin = isPosManager(session?.user)
   const { disconnected, recovered } = useServerConnection()
@@ -50,11 +55,18 @@ export function PosShell({
     void logout()
   }
 
+  function handleQuitApp() {
+    if (beforeSignOut && !beforeSignOut()) return
+    void window.electronApp?.quit()
+  }
+
   return (
     <div className="shell">
       <header className="shell-header">
         <div className="shell-brand">
-          <Link to="/">ElectroPOS</Link>
+          <Link to="/" className="shell-brand-link" aria-label="CogniPOS — Home">
+            <img src={logoMark} alt="" className="shell-brand-logo" decoding="async" />
+          </Link>
           <span className="shell-sub">{shellSub}</span>
           <span className="shell-version" title="App version">
             v{APP_VERSION}
@@ -80,6 +92,28 @@ export function PosShell({
               <button type="button" className="btn ghost" onClick={handleSignOut}>
                 Sign out
               </button>
+              {window.electronApp ? (
+                <>
+                  <button
+                    type="button"
+                    className="btn ghost shell-app-minimize"
+                    aria-label="Minimize"
+                    title="Minimize"
+                    onClick={() => void window.electronApp?.minimize()}
+                  >
+                    <IconMinimize className="shell-window-icon" />
+                  </button>
+                  <button
+                    type="button"
+                    className="btn ghost shell-app-quit"
+                    aria-label="Exit app"
+                    title="Exit app"
+                    onClick={handleQuitApp}
+                  >
+                    <IconCloseWindow className="shell-window-icon" />
+                  </button>
+                </>
+              ) : null}
             </>
           )}
         </div>

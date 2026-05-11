@@ -1,0 +1,452 @@
+/* Bricks theme — bold primary reds, yellows & blues on a deep blue base (toy-brick inspired). */
+
+html[data-pos-theme='lego'] .shell {
+  background: linear-gradient(165deg, #003057 0%, #0c1929 35%, #050810 100%);
+}
+
+html[data-pos-theme='lego'] .shell-header {
+  border-bottom: 5px solid #ffd502;
+  background: linear-gradient(90deg, #b80d0f 0%, #d01012 40%, #9d0a0c 100%);
+  box-shadow: 0 4px 0 #1a1a1a;
+}
+
+html[data-pos-theme='lego'] .shell-brand a {
+  color: #fffef5;
+}
+
+html[data-pos-theme='lego'] .shell-header .btn.ghost {
+  color: #fffef5;
+  border-color: rgba(255, 213, 2, 0.65);
+}
+
+html[data-pos-theme='lego'] .shell-header .btn.ghost:hover {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+html[data-pos-theme='lego'] .shell-user {
+  color: #fff9e6;
+}
+
+html[data-pos-theme='lego'] .shell-sub {
+  color: #ffd502;
+}
+
+html[data-pos-theme='lego'] .muted {
+  color: #94a3b8;
+}
+
+html[data-pos-theme='lego'] .panel {
+  background: #121c2e;
+  border: 3px solid #ffd502;
+  box-shadow: 4px 4px 0 #0a0a0a;
+}
+
+html[data-pos-theme='lego'] .form input {
+  border: 3px solid #005eb8;
+  background: #0a1628;
+  color: #f8fafc;
+}
+
+html[data-pos-theme='lego'] .search {
+  border: 3px solid #005eb8;
+  background: #0a1628;
+  color: #f8fafc;
+}
+
+html[data-pos-theme='lego'] .product-row {
+  border: 3px solid #005eb8;
+  background: #1a2744;
+}
+
+html[data-pos-theme='lego'] .product-meta,
+html[data-pos-theme='lego'] .product-price {
+  color: #e2e8f0;
+}
+
+html[data-pos-theme='lego'] .table th,
+html[data-pos-theme='lego'] .table td {
+  border-bottom-color: #334155;
+}
+
+html[data-pos-theme='lego'] .screen-keyboard {
+  border-top: 4px solid #d01012;
+  background: #0f172a;
+}
+
+html[data-pos-theme='lego'] .screen-keyboard-key {
+  border: 3px solid #0a0a0a;
+  background: #ffd502;
+  color: #0a0a0a;
+  font-weight: 700;
+}
+
+html[data-pos-theme='lego'] .screen-keyboard-key:active:not(:disabled) {
+  background: #fff176;
+  border-color: #005eb8;
+  color: #0a0a0a;
+}
+
+html[data-pos-theme='lego'] .screen-keyboard-key-done {
+  background: #005eb8;
+  border-color: #003d82;
+  color: #fff;
+}
+
+html[data-pos-theme='lego'] .sku-display {
+  border: 3px solid #ffd502;
+  background: #0a0a0a;
+  color: #ffd502;
+}
+
+html[data-pos-theme='lego'] .key-btn {
+  border: 3px solid #0a0a0a;
+  background: #ffd502;
+  color: #0a0a0a;
+  font-weight: 700;
+}
+
+html[data-pos-theme='lego'] .key-btn:active:not(:disabled) {
+  background: #fff176;
+  border-color: #005eb8;
+  color: #0a0a0a;
+}
+
+html[data-pos-theme='lego'] .keys-grid .key-btn {
+  font-size: clamp(1.35rem, 2.6vw, 2rem);
+  font-weight: 800;
+}
+
+@media (max-width: 900px), (max-height: 740px) {
+  html[data-pos-theme='lego'] .keys-grid .key-btn {
+    font-size: clamp(1.15rem, 2.2vw, 1.6rem);
+  }
+}
+
+html[data-pos-theme='lego'] .key-btn-primary {
+  background: #005eb8;
+  border-color: #003d82;
+  color: #fff;
+}
+
+html[data-pos-theme='lego'] .key-btn-danger {
+  background: #d01012;
+  border-color: #7f0708;
+  color: #fff;
+}
+
+html[data-pos-theme='lego'] .key-btn-pay {
+  background: #00852b;
+  border-color: #065f46;
+  color: #fff;
+}
+
+html[data-pos-theme='lego'] .key-btn-enter {
+  background: #005eb8;
+  border-color: #003d82;
+  color: #fff;
+}
+
+html[data-pos-theme='lego'] .key-btn-receipt-on {
+  background: #00852b;
+  border-color: #065f46;
+  color: #fff;
+}
+
+html[data-pos-theme='lego'] .key-btn-receipt-off {
+  background: #1e293b;
+  border-color: #475569;
+  color: #94a3b8;
+}
+
+html[data-pos-theme='lego'] .key-btn-fn {
+  background: #005eb8;
+  border-color: #0a0a0a;
+  color: #fff;
+  font-weight: 700;
+}
+
+html[data-pos-theme='lego'] .key-btn-fn:active:not(:disabled) {
+  background: #0078e8;
+  filter: none;
+}
+
+html[data-pos-theme='lego'] .key-btn-fn.key-btn-discount {
+  background: #e67722;
+  border-color: #0a0a0a;
+  color: #0a0a0a;
+}
+
+html[data-pos-theme='lego'] .key-btn-fn.key-btn-discount:active:not(:disabled) {
+  background: #ff9800;
+  color: #0a0a0a;
+}
+
+html[data-pos-theme='lego'] .screen-keyboard-key-active {
+  background: #e67722;
+  border-color: #0a0a0a;
+  color: #0a0a0a;
+}
+
+html[data-pos-theme='lego'] .key-btn-danger:active:not(:disabled) {
+  background: #ff1744;
+  border-color: #0a0a0a;
+  color: #fff;
+}
+
+html[data-pos-theme='lego'] .key-btn-primary:active:not(:disabled),
+html[data-pos-theme='lego'] .key-btn-enter:active:not(:disabled) {
+  background: #0078e8;
+  border-color: #ffd502;
+  color: #fff;
+}
+
+html[data-pos-theme='lego'] .key-btn-receipt-on:active:not(:disabled) {
+  background: #00a651;
+  border-color: #ffd502;
+  color: #fff;
+}
+
+html[data-pos-theme='lego'] .key-btn-receipt-off:active:not(:disabled) {
+  background: #334155;
+  border-color: #94a3b8;
+  color: #e2e8f0;
+}
+
+html[data-pos-theme='lego'] .panel-cart .cart-footer {
+  border-top-color: #ffd502;
+}
+
+html[data-pos-theme='lego'] .cart-change-sticky-footer {
+  border-top-color: #ffd502;
+  background: #121c2e;
+}
+
+html[data-pos-theme='lego'] .cart-line {
+  border: 3px solid #005eb8;
+  background: #1a2744;
+}
+
+html[data-pos-theme='lego'] .cart-line-discount-badge {
+  background: #e67722;
+  color: #0a0a0a;
+  font-weight: 700;
+}
+
+html[data-pos-theme='lego'] .cart-line-sub {
+  color: #94a3b8;
+}
+
+html[data-pos-theme='lego'] .stepper {
+  border: 3px solid #ffd502;
+  background: #0a1628;
+}
+
+html[data-pos-theme='lego'] .stepper-btn:active {
+  background: rgba(255, 213, 2, 0.25);
+}
+
+html[data-pos-theme='lego'] .register-voucher-input {
+  border: 3px solid #d01012;
+  background: #0a0a0a;
+  color: #ffd502;
+}
+
+html[data-pos-theme='lego'] .register-voucher-panel {
+  border-top-color: #ffd502;
+  border-bottom-color: #005eb8;
+}
+
+html[data-pos-theme='lego'] .open-tabs-dialog {
+  background: #121c2e;
+  border: 3px solid #ffd502;
+  box-shadow: 8px 8px 0 #0a0a0a;
+}
+
+html[data-pos-theme='lego'] .open-tabs-li {
+  border: 3px solid #005eb8;
+  background: #1a2744;
+}
+
+html[data-pos-theme='lego'] .open-tabs-input {
+  border: 3px solid #ffd502;
+  background: #0a0a0a;
+  color: #f8fafc;
+}
+
+html[data-pos-theme='lego'] .layby-summary {
+  border-color: #005eb8;
+}
+
+html[data-pos-theme='lego'] .layby-cancel {
+  border-top-color: #d01012;
+}
+
+html[data-pos-theme='lego'] .btn:not(.primary):not(.ghost) {
+  background: #005eb8;
+  border: 3px solid #0a0a0a;
+  color: #fff;
+  font-weight: 600;
+}
+
+html[data-pos-theme='lego'] .btn:not(.primary):not(.ghost):active:not(:disabled) {
+  background: #0078e8;
+}
+
+html[data-pos-theme='lego'] .btn.ghost {
+  color: #ffd502;
+  border: 2px solid #ffd502;
+}
+
+html[data-pos-theme='lego'] .btn.primary {
+  background: linear-gradient(180deg, #ffd502 0%, #e6bc00 100%);
+  border: 3px solid #0a0a0a;
+  color: #0a0a0a;
+  font-weight: 700;
+}
+
+html[data-pos-theme='lego'] .pos-touch {
+  -webkit-tap-highlight-color: rgba(255, 213, 2, 0.35);
+}
+
+html[data-pos-theme='lego'] .panel-cart .cart-lines::-webkit-scrollbar-thumb,
+html[data-pos-theme='lego'] .panel-products .product-list::-webkit-scrollbar-thumb,
+html[data-pos-theme='lego'] .presets-screen::-webkit-scrollbar-thumb,
+html[data-pos-theme='lego'] .screen-keyboard::-webkit-scrollbar-thumb,
+html[data-pos-theme='lego'] .panel-products .keys-buttons-wrap::-webkit-scrollbar-thumb,
+html[data-pos-theme='lego'] .panel-products .keys-function-pad::-webkit-scrollbar-thumb,
+html[data-pos-theme='lego'] .panel-products .keys-layout::-webkit-scrollbar-thumb,
+html[data-pos-theme='lego'] .cart-change-view::-webkit-scrollbar-thumb,
+html[data-pos-theme='lego'] .cart-change-scroll::-webkit-scrollbar-thumb,
+html[data-pos-theme='lego'] .register-voucher-screen-kb::-webkit-scrollbar-thumb,
+html[data-pos-theme='lego'] .open-tabs-dialog::-webkit-scrollbar-thumb,
+html[data-pos-theme='lego'] .quotes-modal-scroll::-webkit-scrollbar-thumb,
+html[data-pos-theme='lego'] .quotes-modal-form::-webkit-scrollbar-thumb,
+html[data-pos-theme='lego'] .layby-modal-scroll::-webkit-scrollbar-thumb,
+html[data-pos-theme='lego'] .assign-preset-modal-scroll::-webkit-scrollbar-thumb,
+html[data-pos-theme='lego'] .assign-preset-screen-keyboard::-webkit-scrollbar-thumb,
+html[data-pos-theme='lego'] .pos-settings-page::-webkit-scrollbar-thumb {
+  background: rgba(255, 213, 2, 0.45);
+}
+
+html[data-pos-theme='lego'] .panel-cart .cart-lines::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='lego'] .panel-products .product-list::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='lego'] .presets-screen::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='lego'] .screen-keyboard::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='lego'] .panel-products .keys-buttons-wrap::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='lego'] .panel-products .keys-function-pad::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='lego'] .panel-products .keys-layout::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='lego'] .cart-change-view::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='lego'] .cart-change-scroll::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='lego'] .register-voucher-screen-kb::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='lego'] .open-tabs-dialog::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='lego'] .quotes-modal-scroll::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='lego'] .quotes-modal-form::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='lego'] .layby-modal-scroll::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='lego'] .assign-preset-modal-scroll::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='lego'] .assign-preset-screen-keyboard::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='lego'] .pos-settings-page::-webkit-scrollbar-thumb:hover {
+  background: rgba(208, 16, 18, 0.55);
+}
+
+html[data-pos-theme='lego'] .pos-settings-section {
+  border: 3px solid #005eb8;
+  background: #121c2e;
+}
+
+html[data-pos-theme='lego'] .pos-settings-input,
+html[data-pos-theme='lego'] .pos-settings-select {
+  border: 3px solid #ffd502;
+  background: #0a1628;
+  color: #f8fafc;
+}
+
+html[data-pos-theme='lego'] .pos-settings-check input {
+  accent-color: #d01012;
+}
+
+html[data-pos-theme='lego'] .pos-theme-option {
+  border: 3px solid #475569;
+  background: #1a2744;
+  color: #f1f5f9;
+}
+
+html[data-pos-theme='lego'] .pos-theme-option:hover {
+  border-color: #ffd502;
+  background: #243552;
+}
+
+html[data-pos-theme='lego'] .pos-theme-option--selected {
+  border-color: #d01012;
+  box-shadow: 0 0 0 2px rgba(255, 213, 2, 0.6);
+  background: #0f172a;
+  color: #ffd502;
+}
+
+html[data-pos-theme='lego'] .pos-theme-option .pos-theme-option-hint {
+  color: #94a3b8;
+}
+
+html[data-pos-theme='lego'] .btn.danger {
+  background: #d01012;
+  border-color: #0a0a0a;
+  color: #fff;
+}
+
+html[data-pos-theme='lego'] .assign-preset-input,
+html[data-pos-theme='lego'] .assign-preset-select {
+  border: 3px solid #005eb8;
+  background: #0a1628;
+  color: #f8fafc;
+}
+
+html[data-pos-theme='lego'] .assign-preset-modal .assign-preset-actions {
+  border-top-color: #ffd502;
+}
+
+html[data-pos-theme='lego'] .preset-nav-tile,
+html[data-pos-theme='lego'] .preset-item-tile {
+  border: 3px solid #ffd502;
+  background: #1a2744;
+  color: #f8fafc;
+}
+
+html[data-pos-theme='lego'] .preset-item-tile--stale {
+  background: #0f172a;
+  opacity: 0.85;
+}
+
+html[data-pos-theme='lego'] .success {
+  color: #4ade80;
+}
+
+html[data-pos-theme='lego'] .error {
+  color: #fb7185;
+}
+
+html[data-pos-theme='lego'] .btn.checkout-btn.cash-checkout-btn {
+  background: linear-gradient(180deg, #00a651 0%, #00852b 100%);
+  border: 3px solid #065f46;
+  color: #fff;
+}
+
+html[data-pos-theme='lego'] .btn.checkout-btn.cash-checkout-btn:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+html[data-pos-theme='lego'] .btn.checkout-btn.cash-checkout-btn:active:not(:disabled) {
+  filter: brightness(0.92);
+}
+
+html[data-pos-theme='lego'] .btn.checkout-btn.card-checkout-btn {
+  background: linear-gradient(180deg, #0078e8 0%, #005eb8 100%);
+  border: 3px solid #003d82;
+  color: #fff;
+}
+
+html[data-pos-theme='lego'] .btn.checkout-btn.card-checkout-btn:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+html[data-pos-theme='lego'] .btn.checkout-btn.card-checkout-btn:active:not(:disabled) {
+  filter: brightness(0.92);
+}

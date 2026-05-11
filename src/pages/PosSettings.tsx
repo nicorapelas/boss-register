@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { PosShell } from '../layouts/PosShell'
 import { usePosTheme } from '../theme/PosThemeContext'
 import type { PosTheme } from '../theme/posTheme'
+import { readPosKeySoundEnabled, writePosKeySoundEnabled } from '../audio/posKeySound'
 import {
   DEFAULT_PRINTER_SETTINGS,
   readPosPrinterSettings,
@@ -15,10 +16,12 @@ const THEMES: { id: PosTheme; label: string; hint: string }[] = [
   { id: 'light', label: 'Light', hint: 'Softer, brighter colours' },
   { id: 'ubuntu', label: 'Ubuntu', hint: 'Violet, teal, and coral accents' },
   { id: 'elon', label: 'Elon', hint: 'Old Glory blue & red — bold, minimal white' },
+  { id: 'lego', label: 'Bricks', hint: 'Classic toy-brick reds, yellows & blues on a deep base' },
 ]
 
 export function PosSettings() {
   const { theme, setTheme } = usePosTheme()
+  const [keySoundEnabled, setKeySoundEnabled] = useState(() => readPosKeySoundEnabled())
   const [printer, setPrinter] = useState<PosPrinterSettings>(() => readPosPrinterSettings())
 
   const updatePrinter = (patch: Partial<PosPrinterSettings>) => {
@@ -67,6 +70,27 @@ export function PosSettings() {
                 </button>
               )
             })}
+          </div>
+        </section>
+
+        <section className="pos-settings-section" aria-labelledby="pos-sound-heading">
+          <h2 id="pos-sound-heading" className="pos-settings-section-title">
+            Sound
+          </h2>
+          <p className="muted pos-settings-section-lead">Tap feedback for buttons and the hardware keypad when SKU entry is active.</p>
+          <div className="pos-settings-row">
+            <label className="pos-settings-check">
+              <input
+                type="checkbox"
+                checked={keySoundEnabled}
+                onChange={(e) => {
+                  const on = e.target.checked
+                  writePosKeySoundEnabled(on)
+                  setKeySoundEnabled(on)
+                }}
+              />
+              <span>Button &amp; keypad sounds</span>
+            </label>
           </div>
         </section>
 

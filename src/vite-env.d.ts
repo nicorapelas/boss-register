@@ -10,6 +10,11 @@ interface ImportMeta {
 }
 
 interface Window {
+  electronPlatform?: NodeJS.Platform
+  electronApp?: {
+    quit: () => Promise<void>
+    minimize: () => Promise<void>
+  }
   ipcRenderer?: import('electron').IpcRenderer
   electronAuth?: {
     setBundle: (json: string) => Promise<{ ok: boolean; error?: string }>

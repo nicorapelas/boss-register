@@ -83,6 +83,31 @@ html[data-pos-theme='light'] .key-btn {
   color: #120f0a;
 }
 
+html[data-pos-theme='light'] .key-btn-danger {
+  background: #dc2626;
+  border-color: #b91c1c;
+  color: #fff;
+}
+
+html[data-pos-theme='light'] .key-btn-primary,
+html[data-pos-theme='light'] .key-btn-enter {
+  background: #1d4ed8;
+  border-color: #1e40af;
+  color: #fff;
+}
+
+html[data-pos-theme='light'] .key-btn-receipt-on {
+  background: #15803d;
+  border-color: #166534;
+  color: #fff;
+}
+
+html[data-pos-theme='light'] .key-btn-receipt-off {
+  background: #dad0c4;
+  border-color: #847566;
+  color: #454038;
+}
+
 html[data-pos-theme='light'] .panel-cart .cart-footer {
   border-top-color: #5c5043;
 }
@@ -281,4 +306,33 @@ html[data-pos-theme='light'] .preset-item-tile {
 
 html[data-pos-theme='light'] .preset-item-tile--stale {
   background: #f5ebe0;
+}
+
+/* Checkout tenders — cash green & card blue (override generic light .btn surface) */
+html[data-pos-theme='light'] .btn.checkout-btn.cash-checkout-btn {
+  background: linear-gradient(180deg, #22c55e 0%, #15803d 100%);
+  border-color: #166534;
+  color: #fff;
+}
+
+html[data-pos-theme='light'] .btn.checkout-btn.cash-checkout-btn:hover:not(:disabled) {
+  filter: brightness(1.05);
+}
+
+html[data-pos-theme='light'] .btn.checkout-btn.cash-checkout-btn:active:not(:disabled) {
+  filter: brightness(0.94);
+}
+
+html[data-pos-theme='light'] .btn.checkout-btn.card-checkout-btn {
+  background: linear-gradient(180deg, #3b82f6 0%, #1d4ed8 100%);
+  border-color: #1e40af;
+  color: #fff;
+}
+
+html[data-pos-theme='light'] .btn.checkout-btn.card-checkout-btn:hover:not(:disabled) {
+  filter: brightness(1.05);
+}
+
+html[data-pos-theme='light'] .btn.checkout-btn.card-checkout-btn:active:not(:disabled) {
+  filter: brightness(0.94);
 }

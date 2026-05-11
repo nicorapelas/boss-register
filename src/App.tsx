@@ -6,6 +6,7 @@ import { RequireAuth } from './layouts/RequireAuth'
 import { Login } from './pages/Login'
 import { PosSettings } from './pages/PosSettings'
 import { Register } from './pages/Register'
+import { GlobalPosButtonSound } from './audio/GlobalPosButtonSound'
 import { PosThemeProvider } from './theme/PosThemeContext'
 import './App.css'
 
@@ -62,6 +63,7 @@ export default function App() {
   return (
     <PosThemeProvider>
       <div className="pos-app-fill pos-touch">
+        <GlobalPosButtonSound />
         <AuthProvider>
           <RuntimeErrorBoundary>
             <BrowserRouter>

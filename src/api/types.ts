@@ -303,10 +303,15 @@ export interface HouseAccountRow {
   updatedAt?: string
 }
 
+export type OpenTabKind = 'tab' | 'job_card'
+
 /** Open bar tab summary (GET /tabs/open) */
 export interface OpenTabListItem {
   _id: string
+  kind?: OpenTabKind
   tabNumber: string
+  /** Present when kind === job_card */
+  jobNumber?: string
   customerName: string
   phone: string
   lineCount: number
@@ -317,7 +322,12 @@ export interface OpenTabListItem {
 /** Full open tab (GET /tabs/:id) */
 export interface OpenTabDetail {
   _id: string
+  kind?: OpenTabKind
   tabNumber: string
+  jobNumber?: string
+  itemCheckedIn?: string
+  jobDescription?: string
+  attachmentNote?: string
   customerName: string
   phone: string
   lines: Array<{
@@ -329,3 +339,22 @@ export interface OpenTabDetail {
   }>
   updatedAt?: string
 }
+
+/** Modal → POST /tabs */
+export type CreateOpenTabModalInput =
+  | {
+      mode: 'tab'
+      tabNumber: string
+      customerName: string
+      phone: string
+      includeCurrentCart: boolean
+    }
+  | {
+      mode: 'job_card'
+      customerName: string
+      phone: string
+      itemCheckedIn: string
+      jobDescription: string
+      attachmentNote: string
+      includeCurrentCart: boolean
+    }
