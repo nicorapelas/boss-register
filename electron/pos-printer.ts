@@ -305,7 +305,7 @@ export function buildReceiptEscPos(payload: ReceiptPayload, opts?: { columns?: n
   const jc = payload.jobCardOpenSlip
   if (jc) {
     chunks.push(setAlign('left'))
-    chunks.push(pLine(`Customer: ${jc.customerName.trim() || '—'}`))
+    chunks.push(pLine(`Customer: ${jc.customerName.trim() || 'Not specified'}`))
     if (jc.phone?.trim()) chunks.push(pLine(`Phone: ${jc.phone.trim()}`))
     chunks.push(feed(1))
     const itemIn = jc.itemCheckedIn?.trim()

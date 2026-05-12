@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CreateOpenTabModalInput, OpenTabListItem } from '../api/types'
+import { jobCardCustomerDisplay } from '../utils/openTabDisplay'
 import { ScreenKeyboard, type ScreenKeyboardAction } from './ScreenKeyboard'
 
 type NewTabKbField = 'tabNumber' | 'customerName' | 'phone'
@@ -184,7 +185,7 @@ export function OpenTabsModal({
       setFormError('Tab number is required')
       return
     }
-    if (!name) {
+    if (mode === 'tab' && !name) {
       setFormError('Name is required')
       return
     }
@@ -315,20 +316,20 @@ export function OpenTabsModal({
                 </p>
               )}
               <label className="open-tabs-field">
-                <span>Name</span>
+                <span>Name{newFormMode === 'job_card' ? ' (optional)' : ''}</span>
                 <input
                   ref={customerNameInputRef}
                   className="open-tabs-input"
                   value={customerName}
                   onChange={(e) => setCustomerName(e.target.value)}
-                  placeholder="Customer or table name"
+                  placeholder={newFormMode === 'job_card' ? 'Leave blank if unknown' : 'Customer or table name'}
                   autoComplete="name"
                   inputMode={newTabScreenKbOpen ? 'none' : undefined}
                   {...newTabFieldKbHandlers('customerName')}
                 />
               </label>
               <label className="open-tabs-field">
-                <span>Phone</span>
+                <span>Phone{newFormMode === 'job_card' ? ' (optional)' : ''}</span>
                 <input
                   ref={phoneInputRef}
                   className="open-tabs-input"
@@ -344,18 +345,18 @@ export function OpenTabsModal({
               {newFormMode === 'job_card' ? (
                 <>
                   <label className="open-tabs-field">
-                    <span>Item checked in</span>
+                    <span>Item checked in (optional)</span>
                     <textarea
                       className="open-tabs-input open-tabs-textarea"
                       value={itemCheckedIn}
                       onChange={(e) => setItemCheckedIn(e.target.value)}
-                      placeholder="e.g. Laptop Dell · SN12345"
+                      placeholder="e.g. Bicycle · 26in MTB"
                       rows={2}
                       autoComplete="off"
                     />
                   </label>
                   <label className="open-tabs-field">
-                    <span>Job description</span>
+                    <span>Job description (optional)</span>
                     <textarea
                       className="open-tabs-input open-tabs-textarea"
                       value={jobDescription}
@@ -366,7 +367,7 @@ export function OpenTabsModal({
                     />
                   </label>
                   <label className="open-tabs-field">
-                    <span>Note (item / workshop slip only)</span>
+                    <span>Note — item slip only (optional)</span>
                     <textarea
                       className="open-tabs-input open-tabs-textarea"
                       value={attachmentNote}
@@ -449,7 +450,7 @@ export function OpenTabsModal({
                         <strong>#{t.tabNumber}</strong>
                       )}
                       {' · '}
-                      {t.customerName}
+                      {t.kind === 'job_card' ? jobCardCustomerDisplay(t.customerName) : t.customerName || '—'}
                     </span>
                     <span className="muted open-tabs-li-phone">{t.phone || '—'}</span>
                     <span className="open-tabs-li-total">{t.total.toFixed(2)}</span>
@@ -471,7 +472,7 @@ export function OpenTabsModal({
                         if (
                           !window.confirm(
                             t.kind === 'job_card'
-                              ? `Void open job card ${t.jobNumber ?? t.tabNumber} (${t.customerName})?`
+                              ? `Void open job card ${t.jobNumber ?? t.tabNumber} (${jobCardCustomerDisplay(t.customerName)})?`
                               : `Void open tab #${t.tabNumber} (${t.customerName})?`,
                           )
                         )

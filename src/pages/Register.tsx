@@ -41,6 +41,7 @@ import {
   type PresetEntry,
   type ProductPresetsState,
 } from '../register/posProductPresets'
+import { jobCardCustomerDisplay } from '../utils/openTabDisplay'
 import { playPosKeySound } from '../audio/posKeySound'
 import { PosShell } from '../layouts/PosShell'
 import { readPosPrinterSettings, type PosPrinterSettings } from '../printer/posPrinterSettings'
@@ -3174,7 +3175,7 @@ export function Register() {
         subtotal: 0,
         total: 0,
         jobCardOpenSlip: {
-          customerName: info.customerName,
+          customerName: jobCardCustomerDisplay(info.customerName),
           phone: info.phone,
           itemCheckedIn: info.itemCheckedIn,
           jobDescription: info.jobDescription,
@@ -3730,7 +3731,9 @@ export function Register() {
                         </>
                       )}
                       {' · '}
-                      {activeTabBanner.customerName}
+                      {activeTabBanner.kind === 'job_card'
+                        ? jobCardCustomerDisplay(activeTabBanner.customerName)
+                        : activeTabBanner.customerName}
                       {activeTabBanner.phone ? ` · ${activeTabBanner.phone}` : ''}
                     </span>
                     <button type="button" className="btn ghost key-action register-tab-walkin" onClick={() => void closeActiveTabSession()}>
