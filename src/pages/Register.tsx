@@ -12,6 +12,7 @@ import type {
   QuoteDetail,
   QuoteListItem,
   Sale,
+  SaleLine,
   SaleRefundPreview,
   SaleRefundSettlement,
   ShiftReport,
@@ -160,6 +161,66 @@ function cartHasVolumePricedLine(cart: CartLine[], products: Product[]) {
     const p = products.find((x) => x._id === l.productId)
     return p && hasVolumeTiering(p)
   })
+}
+
+function resolveCashierDisplayName(user: { displayName?: string; email?: string } | null | undefined): string | undefined {
+  const byProfile = user?.displayName?.trim()
+  if (byProfile) return byProfile
+  const raw = user?.email?.split('@')[0]?.trim()
+  if (!raw) return undefined
+  const cleaned = raw.replace(/[._-]+/g, ' ').replace(/\s+/g, ' ').trim()
+  if (!cleaned) return undefined
+  return cleaned
+    .split(' ')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
+
+function cartContributorKey(l: Pick<CartLine, 'addedByUserId' | 'addedByDisplayName'>): string {
+  return `${(l.addedByUserId ?? '').trim()}\t${(l.addedByDisplayName ?? '').trim()}`
+}
+
+function lineAttributionFromSession(user: { id?: string; displayName?: string; email?: string } | null | undefined): Pick<
+  CartLine,
+  'addedByUserId' | 'addedByDisplayName' | 'addedAt'
+> {
+  return {
+    addedByUserId: user?.id ? String(user.id) : undefined,
+    addedByDisplayName: resolveCashierDisplayName(user) ?? 'Staff',
+    addedAt: new Date().toISOString(),
+  }
+}
+
+function totalCartQtyForProduct(cartLines: CartLine[], productId: string): number {
+  return cartLines.reduce((s, l) => s + (l.productId === productId ? l.quantity : 0), 0)
+}
+
+function openTabPersistLineBody(l: CartLine) {
+  return {
+    productId: l.productId,
+    name: l.name,
+    quantity: l.quantity,
+    unitPrice: l.unitPrice,
+    listUnitPrice: l.listUnitPrice,
+    ...(l.addedByUserId ? { addedByUserId: l.addedByUserId } : {}),
+    ...(l.addedByDisplayName ? { addedByDisplayName: l.addedByDisplayName } : {}),
+    ...(l.addedAt ? { addedAt: l.addedAt } : {}),
+  }
+}
+
+function saleRequestLineBody(l: CartLine) {
+  return {
+    productId: l.productId,
+    name: l.name,
+    quantity: l.quantity,
+    unitPrice: l.unitPrice,
+    stockOverrideApproved: l.stockOverrideApproved === true,
+    stockOverrideScope: l.stockOverrideScope,
+    stockOverrideAvailableQty: l.stockOverrideAvailableQty,
+    ...(l.addedByUserId ? { addedByUserId: l.addedByUserId } : {}),
+    ...(l.addedByDisplayName ? { addedByDisplayName: l.addedByDisplayName } : {}),
+    ...(l.addedAt ? { addedAt: l.addedAt } : {}),
+  }
 }
 
 function persistLastReceiptSale(sale: Sale): void {
@@ -1029,13 +1090,7 @@ export function Register() {
     await apiFetch(`/tabs/${tabId}/lines`, {
       method: 'PUT',
       body: JSON.stringify({
-        lines: lines.map((l) => ({
-          productId: l.productId,
-          name: l.name,
-          quantity: l.quantity,
-          unitPrice: l.unitPrice,
-          listUnitPrice: l.listUnitPrice,
-        })),
+        lines: lines.map(openTabPersistLineBody),
       }),
     })
   }
@@ -1110,7 +1165,7 @@ export function Register() {
     let partialNotice: string | null = null
     let atStockLimit = false
     let blockedByPolicy = false
-    const currentLineQty = cart.find((l) => l.productId === p._id)?.quantity ?? 0
+    const currentLineQty = totalCartQtyForProduct(cart, p._id)
     let overrideApproved = false
     let overrideMaxAdd = 0
 
@@ -1171,11 +1226,13 @@ export function Register() {
       return
     }
     setCart((prev) => {
-      const i = prev.findIndex((l) => l.productId === p._id)
+      const stamp = lineAttributionFromSession(session?.user)
+      const i = prev.findIndex((l) => l.productId === p._id && cartContributorKey(l) === cartContributorKey(stamp))
       if (i >= 0) {
         const next = [...prev]
         const line = next[i]
-        const room = avail - line.quantity
+        const sumP = totalCartQtyForProduct(prev, p._id)
+        const room = avail - sumP
         const toAdd = Math.min(requestedQty, room)
         if (toAdd <= 0) {
           if (!approveStockOverride()) {
@@ -1224,7 +1281,8 @@ export function Register() {
         next[i] = enrichCartLine(p, merged)
         return next
       }
-      const toAdd = Math.min(requestedQty, avail)
+      const sumPNew = totalCartQtyForProduct(prev, p._id)
+      const toAdd = Math.min(requestedQty, avail - sumPNew)
       if (toAdd < 1) {
         if (!approveStockOverride()) return prev
         const overrideAdd = Math.min(requestedQty, overrideMaxAdd)
@@ -1237,6 +1295,7 @@ export function Register() {
           stockOverrideApproved: true,
           stockOverrideScope: overrideScope,
           stockOverrideAvailableQty: Math.max(0, avail),
+          ...stamp,
         }
         partialNotice =
           overrideAdd < requestedQty
@@ -1256,6 +1315,7 @@ export function Register() {
             stockOverrideApproved: true,
             stockOverrideScope: overrideScope,
             stockOverrideAvailableQty: Math.max(0, avail),
+            ...stamp,
           }
           partialNotice =
             overrideAdd < requestedQty
@@ -1270,6 +1330,7 @@ export function Register() {
         name: p.name,
         quantity: toAdd,
         unitPrice: p.price,
+        ...stamp,
       }
       return [...prev, enrichCartLine(p, newLine)]
     })
@@ -1308,7 +1369,8 @@ export function Register() {
     })
   }
 
-  async function bumpQty(productId: string, delta: number) {
+  async function bumpCartLineAtIndex(lineIndex: number, delta: number) {
+    if (delta === 0) return
     clearActiveQuote()
     setLastSale(null)
     setNotice(null)
@@ -1317,14 +1379,21 @@ export function Register() {
     setLastOnAccount(null)
     let blockedByPolicy = false
     let partialNotice: string | null = null
-    const line = cart.find((l) => l.productId === productId)
+    const baseLine = cart[lineIndex]
+    if (!baseLine) return
+    if (baseLine.refundSaleLineIndex !== undefined) {
+      bumpRefundLineQty(baseLine.refundSaleLineIndex, delta)
+      return
+    }
+    const productId = baseLine.productId
     const p = products.find((x) => x._id === productId)
     const max = p ? productAvailableUnits(p) : 999
-    const nextQty = (line?.quantity ?? 0) + delta
+    const sumP = totalCartQtyForProduct(cart, productId)
+    const nextTotal = sumP + delta
     const hasOfflineSignalForBump = offlineCatalogMode || !serverReachable
     const overrideScopeForBump: 'offline' | 'online' = hasOfflineSignalForBump ? 'offline' : 'online'
     let overrideApprovedForBump = false
-    if (line && nextQty > max && delta > 0) {
+    if (nextTotal > max && delta > 0) {
       const overrideMaxUnits =
         overrideScopeForBump === 'offline' ? OFFLINE_OVERSALE_MAX_UNITS : ONLINE_OVERSALE_MAX_UNITS
       const stockGuard = !!p && productTracksInventory(p)
@@ -1339,7 +1408,7 @@ export function Register() {
           return
         }
         const allowedTotalQty = Math.max(0, max) + overrideMaxUnits
-        if (nextQty > allowedTotalQty) {
+        if (nextTotal > allowedTotalQty) {
           setError(
             `${overrideScopeForBump === 'offline' ? 'Offline' : 'Online'} override limit reached for ${p.name} (max +${overrideMaxUnits}).`,
           )
@@ -1356,79 +1425,108 @@ export function Register() {
         partialNotice = `${overrideScopeForBump === 'offline' ? 'Offline' : 'Online'} stock override approved for ${p.name}`
       }
     }
+
     setCart((prev) => {
-      const line = prev.find((l) => l.productId === productId)
-      if (!line) return prev
-      const p = products.find((x) => x._id === productId)
-      const max = p ? productAvailableUnits(p) : 999
+      const line = prev[lineIndex]
+      if (!line || line.productId !== productId) return prev
+      if (line.refundSaleLineIndex !== undefined) return prev
+      const pLine = products.find((x) => x._id === line.productId)
+      const maxUnits = pLine ? productAvailableUnits(pLine) : 999
+      const sumAll = totalCartQtyForProduct(prev, line.productId)
+      const nextTotalCart = sumAll + delta
+
+      if (delta > 0 && pLine && !hasVolumeTiering(pLine)) {
+        const stamp = lineAttributionFromSession(session?.user)
+        if (cartContributorKey(line) !== cartContributorKey(stamp)) {
+          const newRow: CartLine = {
+            productId: line.productId,
+            name: line.name,
+            quantity: delta,
+            unitPrice: line.unitPrice,
+            listUnitPrice: line.listUnitPrice,
+            stockOverrideApproved: line.stockOverrideApproved,
+            stockOverrideScope: line.stockOverrideScope,
+            stockOverrideAvailableQty: line.stockOverrideAvailableQty,
+            ...stamp,
+          }
+          const withVol = enrichCartLine(pLine, newRow)
+          const ins = [...prev]
+          ins.splice(lineIndex + 1, 0, withVol)
+          return ins
+        }
+      }
+
       const nextQty = line.quantity + delta
-      if (nextQty <= 0) return prev.filter((l) => l.productId !== productId)
-      if (nextQty > max) {
+      if (nextQty <= 0) return prev.filter((_l, j) => j !== lineIndex)
+      if (nextTotalCart > maxUnits) {
         const overrideMaxUnits =
           overrideScopeForBump === 'offline' ? OFFLINE_OVERSALE_MAX_UNITS : ONLINE_OVERSALE_MAX_UNITS
-        const stockGuard = !!p && productTracksInventory(p)
+        const stockGuard = !!pLine && productTracksInventory(pLine)
         const strictOfflineStock =
-          !!p && (p as Product & { strictOfflineStock?: boolean }).strictOfflineStock === true
+          !!pLine && (pLine as Product & { strictOfflineStock?: boolean }).strictOfflineStock === true
         if (!stockGuard || delta < 0) return prev
         if (!overrideApprovedForBump) return prev
         if (overrideScopeForBump === 'offline' && strictOfflineStock) {
           blockedByPolicy = true
-          setError(`Offline strict-stock item blocked: ${p.name}`)
+          setError(`Offline strict-stock item blocked: ${pLine.name}`)
           return prev
         }
         if (!isAdmin) {
           blockedByPolicy = true
-          setError(`Insufficient stock for ${p.name}. Manager override required while ${overrideScopeForBump}.`)
+          setError(`Insufficient stock for ${pLine.name}. Manager override required while ${overrideScopeForBump}.`)
           return prev
         }
-        const allowedTotalQty = Math.max(0, max) + overrideMaxUnits
-        if (nextQty > allowedTotalQty) {
+        const allowedTotalQty = Math.max(0, maxUnits) + overrideMaxUnits
+        if (nextTotalCart > allowedTotalQty) {
           blockedByPolicy = true
           setError(
-            `${overrideScopeForBump === 'offline' ? 'Offline' : 'Online'} override limit reached for ${p.name} (max +${overrideMaxUnits}).`,
+            `${overrideScopeForBump === 'offline' ? 'Offline' : 'Online'} override limit reached for ${pLine.name} (max +${overrideMaxUnits}).`,
           )
           return prev
         }
         blockedByPolicy = true
         return prev
       }
-      return prev.map((l) => {
-        if (l.productId !== productId) return l
-        const np = p
-          ? enrichCartLine(p, {
-              ...l,
-              quantity: nextQty,
-              ...(overrideApprovedForBump
-                ? {
-                    stockOverrideApproved: true,
-                    stockOverrideScope: overrideScopeForBump,
-                    stockOverrideAvailableQty: Math.max(0, max),
-                  }
-                : {}),
-            })
-          : {
-              ...l,
-              quantity: nextQty,
-              ...(overrideApprovedForBump
-                ? {
-                    stockOverrideApproved: true,
-                    stockOverrideScope: overrideScopeForBump,
-                    stockOverrideAvailableQty: Math.max(0, max),
-                  }
-                : {}),
-            }
-        return np
+
+      return prev.map((l, j) => {
+        if (j !== lineIndex) return l
+        if (!pLine) {
+          return {
+            ...l,
+            quantity: nextQty,
+            ...(overrideApprovedForBump
+              ? {
+                  stockOverrideApproved: true,
+                  stockOverrideScope: overrideScopeForBump,
+                  stockOverrideAvailableQty: Math.max(0, maxUnits),
+                }
+              : {}),
+          }
+        }
+        return enrichCartLine(pLine, {
+          ...l,
+          quantity: nextQty,
+          ...(overrideApprovedForBump
+            ? {
+                stockOverrideApproved: true,
+                stockOverrideScope: overrideScopeForBump,
+                stockOverrideAvailableQty: Math.max(0, maxUnits),
+              }
+            : {}),
+        })
       })
     })
     if (!blockedByPolicy && partialNotice) setNotice(partialNotice)
   }
 
-  function bumpCartLineQty(line: CartLine, delta: number) {
+  function bumpCartLineQty(lineIndex: number, delta: number) {
+    const line = cart[lineIndex]
+    if (!line) return
     if (line.refundSaleLineIndex !== undefined) {
       bumpRefundLineQty(line.refundSaleLineIndex, delta)
       return
     }
-    void bumpQty(line.productId, delta)
+    void bumpCartLineAtIndex(lineIndex, delta)
   }
 
   const cartTotal = useMemo(
@@ -1486,6 +1584,9 @@ export function Register() {
             quantity: l.quantity,
             unitPrice: l.unitPrice,
             listUnitPrice: l.listUnitPrice,
+            ...(l.addedByUserId ? { addedByUserId: l.addedByUserId } : {}),
+            ...(l.addedByDisplayName ? { addedByDisplayName: l.addedByDisplayName } : {}),
+            ...(l.addedAt ? { addedAt: l.addedAt } : {}),
           })
         }),
       )
@@ -1529,15 +1630,7 @@ export function Register() {
     if (activeOpenTabId) {
       throw new Error('Use “Close tab” to leave the current tab before creating another')
     }
-    const linesPayload = input.includeCurrentCart
-      ? cart.map((l) => ({
-          productId: l.productId,
-          name: l.name,
-          quantity: l.quantity,
-          unitPrice: l.unitPrice,
-          listUnitPrice: l.listUnitPrice,
-        }))
-      : []
+    const linesPayload = input.includeCurrentCart ? cart.map(openTabPersistLineBody) : []
     const created = await apiFetch<OpenTabDetail>('/tabs', {
       method: 'POST',
       body: JSON.stringify(
@@ -1588,6 +1681,9 @@ export function Register() {
           quantity: l.quantity,
           unitPrice: l.unitPrice,
           listUnitPrice: l.listUnitPrice,
+          ...(l.addedByUserId ? { addedByUserId: l.addedByUserId } : {}),
+          ...(l.addedByDisplayName ? { addedByDisplayName: l.addedByDisplayName } : {}),
+          ...(l.addedAt ? { addedAt: l.addedAt } : {}),
         })
       }),
     )
@@ -1809,15 +1905,7 @@ export function Register() {
     const clientLocalId = createClientLocalId()
     try {
       const body: Record<string, unknown> = {
-        items: cart.map((l) => ({
-          productId: l.productId,
-          name: l.name,
-          quantity: l.quantity,
-          unitPrice: l.unitPrice,
-          stockOverrideApproved: l.stockOverrideApproved === true,
-          stockOverrideScope: l.stockOverrideScope,
-          stockOverrideAvailableQty: l.stockOverrideAvailableQty,
-        })),
+        items: cart.map(saleRequestLineBody),
         paymentMethod,
         payment,
         clientLocalId,
@@ -1853,15 +1941,7 @@ export function Register() {
     } catch (e) {
       if (!navigator.onLine || isLikelyNetworkError(e)) {
         const body: Record<string, unknown> = {
-          items: cart.map((l) => ({
-            productId: l.productId,
-            name: l.name,
-            quantity: l.quantity,
-            unitPrice: l.unitPrice,
-            stockOverrideApproved: l.stockOverrideApproved === true,
-            stockOverrideScope: l.stockOverrideScope,
-            stockOverrideAvailableQty: l.stockOverrideAvailableQty,
-          })),
+          items: cart.map(saleRequestLineBody),
           paymentMethod,
           payment,
           clientLocalId,
@@ -1895,6 +1975,9 @@ export function Register() {
               unitPrice: l.unitPrice,
               listUnitPrice: l.listUnitPrice,
               lineTotal: cartLineSubtotal(l),
+              ...(l.addedByUserId ? { addedByUserId: l.addedByUserId } : {}),
+              ...(l.addedByDisplayName ? { addedByDisplayName: l.addedByDisplayName } : {}),
+              ...(l.addedAt ? { addedAt: l.addedAt } : {}),
             })),
             total: roundCartMoney(cart.reduce((s, l) => s + cartLineSubtotal(l), 0)),
             paymentMethod,
@@ -2973,19 +3056,6 @@ export function Register() {
     return (sale.storeCreditAmount ?? 0) > 0.005
   }
 
-  function resolveCashierDisplayName(user: { displayName?: string; email?: string } | null | undefined): string | undefined {
-    const byProfile = user?.displayName?.trim()
-    if (byProfile) return byProfile
-    const raw = user?.email?.split('@')[0]?.trim()
-    if (!raw) return undefined
-    const cleaned = raw.replace(/[._-]+/g, ' ').replace(/\s+/g, ' ').trim()
-    if (!cleaned) return undefined
-    return cleaned
-      .split(' ')
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-      .join(' ')
-  }
-
   function receiptPayloadFromSale(
     sale: Sale,
     opts?: {
@@ -3021,22 +3091,69 @@ export function Register() {
     const cfg = printerSettings.receiptConfig
     const ts = sale.createdAt ?? new Date().toISOString()
     const slice = opts?.refundPrintSlice
-    const receiptLines = slice
-      ? slice.lines.map((l) => ({
-          qty: l.qty,
-          name: l.name,
-          unitPrice: l.unitPrice,
-          listUnitPrice: l.listUnitPrice,
-          lineTotal: l.lineTotal,
-        }))
-      : sale.items.map((l) => ({
-          qty: l.quantity,
-          name: l.name,
-          unitPrice: l.unitPrice,
-          listUnitPrice: l.listUnitPrice,
-          lineTotal: l.lineTotal ?? roundCartMoney(l.quantity * l.unitPrice),
-        }))
-    const gross = receiptLines.reduce(
+
+    function saleLineToReceiptRow(l: SaleLine) {
+      return {
+        qty: l.quantity,
+        name: l.name,
+        unitPrice: l.unitPrice,
+        listUnitPrice: l.listUnitPrice,
+        lineTotal: l.lineTotal ?? roundCartMoney(l.quantity * l.unitPrice),
+      }
+    }
+
+    type ReceiptRow = {
+      qty: number
+      name: string
+      unitPrice: number
+      listUnitPrice?: number
+      lineTotal: number
+    }
+
+    let receiptLines: ReceiptRow[]
+    let lineItemSections: Array<{ heading: string; lines: ReceiptRow[]; sectionSubtotal: number }> | undefined
+
+    if (slice) {
+      receiptLines = slice.lines.map((l) => ({
+        qty: l.qty,
+        name: l.name,
+        unitPrice: l.unitPrice,
+        listUnitPrice: l.listUnitPrice,
+        lineTotal: l.lineTotal,
+      }))
+      lineItemSections = undefined
+    } else {
+      const items = sale.items
+      const label = (it: SaleLine) => it.addedByDisplayName?.trim() || 'Not attributed'
+      const labels = items.map(label)
+      const distinct = new Set(labels)
+      if (distinct.size <= 1) {
+        receiptLines = items.map(saleLineToReceiptRow)
+        lineItemSections = undefined
+      } else {
+        receiptLines = []
+        const order: string[] = []
+        const seen = new Set<string>()
+        for (const lb of labels) {
+          if (!seen.has(lb)) {
+            seen.add(lb)
+            order.push(lb)
+          }
+        }
+        lineItemSections = order.map((headingKey) => {
+          const secItems = items.filter((_it, i) => labels[i] === headingKey)
+          const inner = secItems.map(saleLineToReceiptRow)
+          const sectionSubtotal = inner.reduce(
+            (s, r) => s + (r.lineTotal ?? roundCartMoney(r.qty * r.unitPrice)),
+            0,
+          )
+          return { heading: `Supplied by ${headingKey}`, lines: inner, sectionSubtotal }
+        })
+      }
+    }
+
+    const flatForTotals = lineItemSections?.length ? lineItemSections.flatMap((s) => s.lines) : receiptLines
+    const gross = flatForTotals.reduce(
       (sum, l) => sum + (l.lineTotal ?? roundCartMoney(l.qty * l.unitPrice)),
       0,
     )
@@ -3121,7 +3238,7 @@ export function Register() {
         ...(storeVoucherAck ? { storeVoucherAck } : {}),
         accountChargeAck: accountAck,
         refundAck: opts?.refundAck,
-        lines: receiptLines,
+        ...(lineItemSections && lineItemSections.length > 0 ? { lineItemSections, lines: [] } : { lines: receiptLines }),
         subtotal,
         taxTotal: taxTotal > 0.005 ? taxTotal : undefined,
         vatRatePct: vatRate > 0 ? vatRate : undefined,
@@ -4473,7 +4590,7 @@ export function Register() {
                     </p>
                   ) : (
                     <div className="cart-lines">
-                      {cart.map((l) => {
+                      {cart.map((l, i) => {
                         const disc = lineDiscountDisplay(l)
                         const vol = l.volumeSegments && l.volumeSegments.length > 0
                         const volShowAvg = (l.volumeSegments?.length ?? 0) > 1
@@ -4481,7 +4598,7 @@ export function Register() {
                         return (
                         <div
                           className="cart-line"
-                          key={l.refundSaleLineIndex != null ? `refund-${l.refundSaleLineIndex}` : l.productId}
+                          key={l.refundSaleLineIndex != null ? `refund-${l.refundSaleLineIndex}` : `cart-${i}`}
                         >
                           <div className="cart-line-info">
                             <span className="cart-line-name">
@@ -4524,7 +4641,7 @@ export function Register() {
                                 type="button"
                                 className="stepper-btn"
                                 aria-label={`Decrease ${l.name}`}
-                                onClick={() => bumpCartLineQty(l, -1)}
+                                onClick={() => bumpCartLineQty(i, -1)}
                               >
                                 −
                               </button>
@@ -4535,7 +4652,7 @@ export function Register() {
                                 type="button"
                                 className="stepper-btn"
                                 aria-label={`Increase ${l.name}`}
-                                onClick={() => bumpCartLineQty(l, 1)}
+                                onClick={() => bumpCartLineQty(i, 1)}
                               >
                                 +
                               </button>

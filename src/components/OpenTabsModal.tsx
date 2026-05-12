@@ -45,16 +45,24 @@ export function OpenTabsModal({
   const [newFormMode, setNewFormMode] = useState<null | 'tab' | 'job_card'>(null)
   const [lookup, setLookup] = useState('')
   const [newTabScreenKbOpen, setNewTabScreenKbOpen] = useState(false)
+  const [lookupScreenKbOpen, setLookupScreenKbOpen] = useState(false)
   const newTabKbFieldRef = useRef<NewTabKbField>('tabNumber')
   const newTabKbBlurTimerRef = useRef<number | null>(null)
+  const lookupKbBlurTimerRef = useRef<number | null>(null)
   const tabNumberInputRef = useRef<HTMLInputElement | null>(null)
   const customerNameInputRef = useRef<HTMLInputElement | null>(null)
   const phoneInputRef = useRef<HTMLInputElement | null>(null)
+  const lookupInputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
     if (!open) return
     setNewFormMode(null)
     setLookup('')
+    setLookupScreenKbOpen(false)
+    if (lookupKbBlurTimerRef.current) {
+      clearTimeout(lookupKbBlurTimerRef.current)
+      lookupKbBlurTimerRef.current = null
+    }
     void onRefresh()
     setFormError(null)
     setIncludeCurrentCart(canIncludeWalkInCart && walkInLineCount > 0)
@@ -91,6 +99,7 @@ export function OpenTabsModal({
   useEffect(() => {
     return () => {
       if (newTabKbBlurTimerRef.current) clearTimeout(newTabKbBlurTimerRef.current)
+      if (lookupKbBlurTimerRef.current) clearTimeout(lookupKbBlurTimerRef.current)
     }
   }, [])
 
@@ -103,6 +112,16 @@ export function OpenTabsModal({
       }
     }
   }, [open, newFormMode])
+
+  useEffect(() => {
+    if (newFormMode) {
+      setLookupScreenKbOpen(false)
+      if (lookupKbBlurTimerRef.current) {
+        clearTimeout(lookupKbBlurTimerRef.current)
+        lookupKbBlurTimerRef.current = null
+      }
+    }
+  }, [newFormMode])
 
   function cancelNewTabKbBlurHide() {
     if (newTabKbBlurTimerRef.current) {
@@ -129,6 +148,57 @@ export function OpenTabsModal({
     }, 40)
     return () => window.clearTimeout(t)
   }, [open, newFormMode, newTabScreenKbOpen])
+
+  useEffect(() => {
+    if (!open || newFormMode || !lookupScreenKbOpen) return
+    const t = window.setTimeout(() => {
+      lookupInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' })
+    }, 40)
+    return () => clearTimeout(t)
+  }, [open, newFormMode, lookupScreenKbOpen])
+
+  function cancelLookupKbBlurHide() {
+    if (lookupKbBlurTimerRef.current) {
+      clearTimeout(lookupKbBlurTimerRef.current)
+      lookupKbBlurTimerRef.current = null
+    }
+  }
+
+  function lookupFieldKbHandlers() {
+    return {
+      onFocus: () => {
+        cancelLookupKbBlurHide()
+        setLookupScreenKbOpen(true)
+        window.setTimeout(() => {
+          lookupInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' })
+        }, 20)
+      },
+      onBlur: () => {
+        cancelLookupKbBlurHide()
+        lookupKbBlurTimerRef.current = window.setTimeout(() => {
+          setLookupScreenKbOpen(false)
+        }, 200)
+      },
+    }
+  }
+
+  function handleLookupScreenKeyboardAction(action: ScreenKeyboardAction) {
+    if (action.type === 'char') {
+      setLookup((s) => s + action.char)
+      return
+    }
+    if (action.type === 'backspace') {
+      setLookup((s) => s.slice(0, -1))
+      return
+    }
+    if (action.type === 'space') {
+      setLookup((s) => s + ' ')
+      return
+    }
+    if (action.type === 'enter' || action.type === 'done') {
+      setLookupScreenKbOpen(false)
+    }
+  }
 
   function handleNewTabScreenKeyboardAction(action: ScreenKeyboardAction) {
     const field = newTabKbFieldRef.current
@@ -423,16 +493,33 @@ export function OpenTabsModal({
             <>
               <div className="quotes-modal-filters" style={{ marginBottom: '0.6rem' }}>
                 <input
+                  ref={lookupInputRef}
                   className="open-tabs-input"
                   value={lookup}
                   onChange={(e) => setLookup(e.target.value)}
                   placeholder="Find tab / job #, name, or phone"
                   aria-label="Find tab or job card"
+                  autoComplete="off"
+                  inputMode={lookupScreenKbOpen ? 'none' : 'search'}
+                  {...lookupFieldKbHandlers()}
                 />
-                <button type="button" className="btn small" onClick={() => setLookup('')} disabled={!lookup.trim()}>
+                <button
+                  type="button"
+                  className="btn small"
+                  onClick={() => {
+                    cancelLookupKbBlurHide()
+                    setLookup('')
+                  }}
+                  disabled={!lookup.trim()}
+                >
                   Clear
                 </button>
               </div>
+              <ScreenKeyboard
+                visible={lookupScreenKbOpen}
+                onAction={handleLookupScreenKeyboardAction}
+                className="open-tabs-screen-keyboard"
+              />
               {filteredTabs.length === 0 ? (
                 <p className="muted open-tabs-empty">No tabs match that search.</p>
               ) : null}

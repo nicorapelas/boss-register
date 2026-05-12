@@ -26,6 +26,10 @@ export type CartLine = {
   quantity: number
   unitPrice: number
   listUnitPrice?: number
+  /** Snapshot when the line was added (job card / tab lines). */
+  addedByUserId?: string
+  addedByDisplayName?: string
+  addedAt?: string
   /** Manager-approved stock override was used for this line. */
   stockOverrideApproved?: boolean
   stockOverrideScope?: 'offline' | 'online'
@@ -169,6 +173,9 @@ export interface SaleLine {
   unitPrice: number
   listUnitPrice?: number
   lineTotal: number
+  addedByUserId?: string
+  addedByDisplayName?: string
+  addedAt?: string
 }
 
 export interface Sale {
@@ -336,6 +343,9 @@ export interface OpenTabDetail {
     quantity: number
     unitPrice: number
     listUnitPrice?: number
+    addedByUserId?: string
+    addedByDisplayName?: string
+    addedAt?: string
   }>
   updatedAt?: string
 }

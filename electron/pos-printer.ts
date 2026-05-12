@@ -36,6 +36,12 @@ export type ReceiptPayload = {
   timestampIso: string
   paymentLabel: string
   lines: ReceiptLine[]
+  /** When set (non-empty), printed instead of flat `lines` — e.g. staff sections with subtotals. */
+  lineItemSections?: Array<{
+    heading: string
+    lines: ReceiptLine[]
+    sectionSubtotal: number
+  }>
   subtotal: number
   discountTotal?: number
   taxTotal?: number
@@ -493,21 +499,42 @@ export function buildReceiptEscPos(payload: ReceiptPayload, opts?: { columns?: n
     return Buffer.concat(chunks)
   }
 
-  const qtyCol = 4
-  const totalCol = 10
-  const nameCol = Math.max(10, contentCols - qtyCol - totalCol)
-  for (const l of payload.lines) {
-    const qty = padLeft(String(l.qty), qtyCol)
-    const lt = padLeft(money(l.lineTotal), totalCol)
-    const nameLines = wrapText(l.name, nameCol)
-    chunks.push(pLine(`${padRight(nameLines[0] ?? '', nameCol)}${qty}${lt}`))
-    chunks.push(pLine(`@ ${money(l.unitPrice)}`))
-    if (typeof l.listUnitPrice === 'number' && Number.isFinite(l.listUnitPrice) && Math.abs(l.listUnitPrice - l.unitPrice) > 0.0001) {
-      chunks.push(pLine(`List ${money(l.listUnitPrice)} -> Override ${money(l.unitPrice)}`))
+  const appendItemRows = (lines: ReceiptLine[]) => {
+    const qtyCol = 4
+    const totalCol = 10
+    const nameCol = Math.max(10, contentCols - qtyCol - totalCol)
+    for (const l of lines) {
+      const qty = padLeft(String(l.qty), qtyCol)
+      const lt = padLeft(money(l.lineTotal), totalCol)
+      const nameLines = wrapText(l.name, nameCol)
+      chunks.push(pLine(`${padRight(nameLines[0] ?? '', nameCol)}${qty}${lt}`))
+      chunks.push(pLine(`@ ${money(l.unitPrice)}`))
+      if (typeof l.listUnitPrice === 'number' && Number.isFinite(l.listUnitPrice) && Math.abs(l.listUnitPrice - l.unitPrice) > 0.0001) {
+        chunks.push(pLine(`List ${money(l.listUnitPrice)} -> Override ${money(l.unitPrice)}`))
+      }
+      for (const extra of nameLines.slice(1)) {
+        chunks.push(pLine(`${padRight(extra, nameCol)}${' '.repeat(qtyCol)}${' '.repeat(totalCol)}`))
+      }
     }
-    for (const extra of nameLines.slice(1)) {
-      chunks.push(pLine(`${padRight(extra, nameCol)}${' '.repeat(qtyCol)}${' '.repeat(totalCol)}`))
+  }
+
+  const sections = payload.lineItemSections && payload.lineItemSections.length > 0 ? payload.lineItemSections : null
+  if (sections) {
+    for (const sec of sections) {
+      chunks.push(feed(1))
+      chunks.push(setAlign('center'))
+      chunks.push(setEmph(true))
+      for (const w of wrapText(sec.heading.trim(), contentCols)) {
+        chunks.push(pLine(w))
+      }
+      chunks.push(setEmph(false))
+      chunks.push(setAlign('left'))
+      appendItemRows(sec.lines)
+      const subLabelCol = Math.max(8, contentCols - 10)
+      chunks.push(pLine(`${padRight('Subtotal', subLabelCol)}${padLeft(money(sec.sectionSubtotal), contentCols - subLabelCol)}`))
     }
+  } else {
+    appendItemRows(payload.lines)
   }
 
   chunks.push(pLine('-'.repeat(contentCols)))
