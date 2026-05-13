@@ -349,6 +349,9 @@ export interface OpenTabDetail {
     addedByUserId?: string
     addedByDisplayName?: string
     addedAt?: string
+    stockOverrideApproved?: boolean
+    stockOverrideScope?: 'offline' | 'online'
+    stockOverrideAvailableQty?: number
   }>
   updatedAt?: string
 }

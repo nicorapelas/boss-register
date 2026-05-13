@@ -256,6 +256,15 @@ function openTabPersistLineBody(l: CartLine) {
     ...(l.addedByUserId ? { addedByUserId: l.addedByUserId } : {}),
     ...(l.addedByDisplayName ? { addedByDisplayName: l.addedByDisplayName } : {}),
     ...(l.addedAt ? { addedAt: l.addedAt } : {}),
+    ...(l.stockOverrideApproved === true
+      ? {
+          stockOverrideApproved: true,
+          ...(l.stockOverrideScope ? { stockOverrideScope: l.stockOverrideScope } : {}),
+          ...(l.stockOverrideAvailableQty !== undefined
+            ? { stockOverrideAvailableQty: l.stockOverrideAvailableQty }
+            : {}),
+        }
+      : {}),
   }
 }
 
@@ -1642,6 +1651,15 @@ export function Register() {
             ...(l.addedByUserId ? { addedByUserId: l.addedByUserId } : {}),
             ...(l.addedByDisplayName ? { addedByDisplayName: l.addedByDisplayName } : {}),
             ...(l.addedAt ? { addedAt: l.addedAt } : {}),
+            ...(l.stockOverrideApproved === true
+              ? {
+                  stockOverrideApproved: true,
+                  ...(l.stockOverrideScope ? { stockOverrideScope: l.stockOverrideScope } : {}),
+                  ...(l.stockOverrideAvailableQty !== undefined
+                    ? { stockOverrideAvailableQty: l.stockOverrideAvailableQty }
+                    : {}),
+                }
+              : {}),
           })
         }),
       )
@@ -1739,6 +1757,15 @@ export function Register() {
           ...(l.addedByUserId ? { addedByUserId: l.addedByUserId } : {}),
           ...(l.addedByDisplayName ? { addedByDisplayName: l.addedByDisplayName } : {}),
           ...(l.addedAt ? { addedAt: l.addedAt } : {}),
+          ...(l.stockOverrideApproved === true
+            ? {
+                stockOverrideApproved: true,
+                ...(l.stockOverrideScope ? { stockOverrideScope: l.stockOverrideScope } : {}),
+                ...(l.stockOverrideAvailableQty !== undefined
+                  ? { stockOverrideAvailableQty: l.stockOverrideAvailableQty }
+                  : {}),
+              }
+            : {}),
         })
       }),
     )
