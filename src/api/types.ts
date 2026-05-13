@@ -12,6 +12,8 @@ export interface Product {
   volumeTiers?: Array<{ minQty: number; maxQty: number | null; unitPrice: number }>
   /** When false, service/labour — POS does not treat as stock-limited. Default true if omitted. */
   trackInventory?: boolean
+  /** VAT-inclusive labour per catalog unit when sold on a job card (POS); omitted or 0 = none. */
+  jobCardLabourPerUnit?: number
   /** Units reserved on active lay-bys (server); omitted/zero for non-tracked in list response */
   layByReservedQty?: number
   /** stock − reserved; null when trackInventory is false */
@@ -167,7 +169,8 @@ export type LayByPaymentResponse = LayByDetail & {
 }
 
 export interface SaleLine {
-  product: string
+  /** Omitted for synthetic lines (e.g. job-card labour) that do not touch stock. */
+  product?: string
   name: string
   quantity: number
   unitPrice: number

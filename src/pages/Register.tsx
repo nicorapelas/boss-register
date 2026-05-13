@@ -156,6 +156,54 @@ function cartLineSubtotal(l: CartLine) {
   return roundCartMoney(l.quantity * l.unitPrice)
 }
 
+function jobCardLabourAmountForLine(product: Product | undefined, quantity: number): number {
+  const per = product?.jobCardLabourPerUnit
+  if (per == null || !Number.isFinite(per) || per <= 0) return 0
+  return roundCartMoney(per * quantity)
+}
+
+function cartLineTotalIncludingJobLabour(
+  l: CartLine,
+  product: Product | undefined,
+  jobCardLabourActive: boolean,
+): number {
+  const material = cartLineSubtotal(l)
+  if (!jobCardLabourActive) return material
+  return roundCartMoney(material + jobCardLabourAmountForLine(product, l.quantity))
+}
+
+function saleItemsForOfflineReceiptPreview(
+  cart: CartLine[],
+  products: Product[],
+  jobCardLabourActive: boolean,
+): Sale['items'] {
+  const items: Sale['items'] = []
+  for (const l of cart) {
+    const p = products.find((x) => x._id === l.productId)
+    const lineTotal = cartLineSubtotal(l)
+    items.push({
+      product: l.productId,
+      name: l.name,
+      quantity: l.quantity,
+      unitPrice: l.unitPrice,
+      listUnitPrice: l.listUnitPrice,
+      lineTotal,
+    })
+    if (jobCardLabourActive) {
+      const lab = jobCardLabourAmountForLine(p, l.quantity)
+      if (lab > 0.0001) {
+        items.push({
+          name: `Labour — ${l.name}`,
+          quantity: 1,
+          unitPrice: lab,
+          lineTotal: lab,
+        })
+      }
+    }
+  }
+  return items
+}
+
 function cartHasVolumePricedLine(cart: CartLine[], products: Product[]) {
   return cart.some((l) => {
     const p = products.find((x) => x._id === l.productId)
@@ -1529,11 +1577,15 @@ export function Register() {
     void bumpCartLineAtIndex(lineIndex, delta)
   }
 
-  const cartTotal = useMemo(
-    () =>
-      Math.round(cart.reduce((s, l) => s + cartLineSubtotal(l), 0) * 100) / 100,
-    [cart],
-  )
+  const cartTotal = useMemo(() => {
+    const jobCardLabourActive = activeTabBanner?.kind === 'job_card'
+    let s = 0
+    for (const l of cart) {
+      const p = products.find((x) => x._id === l.productId)
+      s += cartLineTotalIncludingJobLabour(l, p, jobCardLabourActive)
+    }
+    return roundCartMoney(s)
+  }, [cart, products, activeTabBanner?.kind])
 
   useEffect(() => {
     if (!activeOpenTabId || busy) return
@@ -1963,11 +2015,13 @@ export function Register() {
           await applyOfflineStockDeduction(cart)
           const pending = await getOfflinePendingSalesCount()
           setOfflinePendingCount(pending)
+          const previewJobLabour = activeTabBanner?.kind === 'job_card'
           const queuedSale: Sale = {
             _id: `offline-${clientLocalId}`,
             saleId: clientLocalId.slice(-10),
             tillCode: POS_TILL_CODE,
             cashier: String(session?.user?.id ?? ''),
+<<<<<<< HEAD
             items: cart.map((l) => ({
               product: l.productId,
               name: l.name,
@@ -1980,6 +2034,21 @@ export function Register() {
               ...(l.addedAt ? { addedAt: l.addedAt } : {}),
             })),
             total: roundCartMoney(cart.reduce((s, l) => s + cartLineSubtotal(l), 0)),
+=======
+            items: saleItemsForOfflineReceiptPreview(cart, products, previewJobLabour),
+            total: roundCartMoney(
+              cart.reduce(
+                (s, l) =>
+                  s +
+                  cartLineTotalIncludingJobLabour(
+                    l,
+                    products.find((x) => x._id === l.productId),
+                    previewJobLabour,
+                  ),
+                0,
+              ),
+            ),
+>>>>>>> 4307f62 (tuesday fro 86)
             paymentMethod,
             payment,
             ...(storeCredit && storeCredit.amount > 0.005
@@ -4590,7 +4659,16 @@ export function Register() {
                     </p>
                   ) : (
                     <div className="cart-lines">
+<<<<<<< HEAD
                       {cart.map((l, i) => {
+=======
+                      {cart.map((l) => {
+                        const lineProduct = products.find((x) => x._id === l.productId)
+                        const jobCardLabourActive = !refundSession && activeTabBanner?.kind === 'job_card'
+                        const lineJobLabour = jobCardLabourActive
+                          ? jobCardLabourAmountForLine(lineProduct, l.quantity)
+                          : 0
+>>>>>>> 4307f62 (tuesday fro 86)
                         const disc = lineDiscountDisplay(l)
                         const vol = l.volumeSegments && l.volumeSegments.length > 0
                         const volShowAvg = (l.volumeSegments?.length ?? 0) > 1
@@ -4634,6 +4712,11 @@ export function Register() {
                                 ))}
                               </span>
                             ) : null}
+                            {lineJobLabour > 0.0001 ? (
+                              <span className="muted cart-line-volume-breakdown">
+                                Incl. job labour +{lineJobLabour.toFixed(2)}
+                              </span>
+                            ) : null}
                           </div>
                           <div className="cart-line-actions">
                             <div className="stepper" role="group" aria-label="Quantity">
@@ -4657,7 +4740,9 @@ export function Register() {
                                 +
                               </button>
                             </div>
-                            <span className="cart-line-total">{cartLineSubtotal(l).toFixed(2)}</span>
+                            <span className="cart-line-total">
+                              {cartLineTotalIncludingJobLabour(l, lineProduct, jobCardLabourActive).toFixed(2)}
+                            </span>
                           </div>
                         </div>
                         )

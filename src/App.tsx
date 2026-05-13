@@ -1,4 +1,4 @@
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { HashRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { Component, type ErrorInfo, type ReactNode } from 'react'
 import { AuthProvider } from './auth/AuthContext'
 import { RequireAdmin } from './layouts/RequireAdmin'
@@ -66,7 +66,8 @@ export default function App() {
         <GlobalPosButtonSound />
         <AuthProvider>
           <RuntimeErrorBoundary>
-            <BrowserRouter>
+            {/* HashRouter: packaged Electron uses file:// — BrowserRouter + /settings links resolve to file:///settings and break taps / show bogus URLs. */}
+            <HashRouter>
               <div className="pos-route">
                 <Routes>
                   <Route path="/login" element={<Login />} />
@@ -79,7 +80,7 @@ export default function App() {
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>
               </div>
-            </BrowserRouter>
+            </HashRouter>
           </RuntimeErrorBoundary>
         </AuthProvider>
       </div>
