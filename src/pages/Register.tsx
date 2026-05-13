@@ -188,6 +188,9 @@ function saleItemsForOfflineReceiptPreview(
       unitPrice: l.unitPrice,
       listUnitPrice: l.listUnitPrice,
       lineTotal,
+      ...(l.addedByUserId ? { addedByUserId: l.addedByUserId } : {}),
+      ...(l.addedByDisplayName ? { addedByDisplayName: l.addedByDisplayName } : {}),
+      ...(l.addedAt ? { addedAt: l.addedAt } : {}),
     })
     if (jobCardLabourActive) {
       const lab = jobCardLabourAmountForLine(p, l.quantity)
@@ -2021,20 +2024,6 @@ export function Register() {
             saleId: clientLocalId.slice(-10),
             tillCode: POS_TILL_CODE,
             cashier: String(session?.user?.id ?? ''),
-<<<<<<< HEAD
-            items: cart.map((l) => ({
-              product: l.productId,
-              name: l.name,
-              quantity: l.quantity,
-              unitPrice: l.unitPrice,
-              listUnitPrice: l.listUnitPrice,
-              lineTotal: cartLineSubtotal(l),
-              ...(l.addedByUserId ? { addedByUserId: l.addedByUserId } : {}),
-              ...(l.addedByDisplayName ? { addedByDisplayName: l.addedByDisplayName } : {}),
-              ...(l.addedAt ? { addedAt: l.addedAt } : {}),
-            })),
-            total: roundCartMoney(cart.reduce((s, l) => s + cartLineSubtotal(l), 0)),
-=======
             items: saleItemsForOfflineReceiptPreview(cart, products, previewJobLabour),
             total: roundCartMoney(
               cart.reduce(
@@ -2048,7 +2037,6 @@ export function Register() {
                 0,
               ),
             ),
->>>>>>> 4307f62 (tuesday fro 86)
             paymentMethod,
             payment,
             ...(storeCredit && storeCredit.amount > 0.005
@@ -4659,16 +4647,12 @@ export function Register() {
                     </p>
                   ) : (
                     <div className="cart-lines">
-<<<<<<< HEAD
                       {cart.map((l, i) => {
-=======
-                      {cart.map((l) => {
                         const lineProduct = products.find((x) => x._id === l.productId)
                         const jobCardLabourActive = !refundSession && activeTabBanner?.kind === 'job_card'
                         const lineJobLabour = jobCardLabourActive
                           ? jobCardLabourAmountForLine(lineProduct, l.quantity)
                           : 0
->>>>>>> 4307f62 (tuesday fro 86)
                         const disc = lineDiscountDisplay(l)
                         const vol = l.volumeSegments && l.volumeSegments.length > 0
                         const volShowAvg = (l.volumeSegments?.length ?? 0) > 1
