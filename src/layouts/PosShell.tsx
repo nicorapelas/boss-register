@@ -72,6 +72,13 @@ export function PosShell({
             v{APP_VERSION}
           </span>
         </div>
+        <div className="shell-header-center">
+          {session ? (
+            <button type="button" className="btn ghost" onClick={handleSignOut}>
+              Sign out
+            </button>
+          ) : null}
+        </div>
         <div className="shell-actions">
           {session && (
             <>
@@ -89,9 +96,6 @@ export function PosShell({
                 Till {POS_TILL_CODE}
               </span>
               <span className="shell-user">{userLabel}</span>
-              <button type="button" className="btn ghost" onClick={handleSignOut}>
-                Sign out
-              </button>
               {window.electronApp ? (
                 <>
                   <button

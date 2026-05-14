@@ -1,4 +1,5 @@
 export { AssignPresetModal } from './AssignPresetModal'
+export { ConfirmMessageModal } from './ConfirmMessageModal'
 export { ConfirmPresetDeleteModal } from './ConfirmPresetDeleteModal'
 export { LayByModal } from './LayByModal'
 export { OpenTabsModal } from './OpenTabsModal'

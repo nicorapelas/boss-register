@@ -1,9 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CreateOpenTabModalInput, OpenTabListItem } from '../api/types'
 import { jobCardCustomerDisplay } from '../utils/openTabDisplay'
+import { ConfirmMessageModal } from './ConfirmMessageModal'
 import { ScreenKeyboard, type ScreenKeyboardAction } from './ScreenKeyboard'
 
-type NewTabKbField = 'tabNumber' | 'customerName' | 'phone'
+type NewTabKbField =
+  | 'tabNumber'
+  | 'customerName'
+  | 'phone'
+  | 'itemCheckedIn'
+  | 'jobDescription'
+  | 'attachmentNote'
 
 export type OpenTabsModalProps = {
   open: boolean
@@ -15,6 +22,8 @@ export type OpenTabsModalProps = {
   /** Allow "include current cart" when ringing a walk-in sale (not already on a tab). */
   canIncludeWalkInCart: boolean
   walkInLineCount: number
+  /** Job cards may only be voided by users with the admin role (see server). */
+  canVoidJobCards: boolean
   onSelectTab: (id: string) => void | Promise<void>
   onVoidTab: (id: string) => void | Promise<void>
   onCreateTab: (input: CreateOpenTabModalInput) => void | Promise<void>
@@ -29,6 +38,7 @@ export function OpenTabsModal({
   activeOpenTabId,
   canIncludeWalkInCart,
   walkInLineCount,
+  canVoidJobCards,
   onSelectTab,
   onVoidTab,
   onCreateTab,
@@ -44,6 +54,7 @@ export function OpenTabsModal({
   const [formError, setFormError] = useState<string | null>(null)
   const [newFormMode, setNewFormMode] = useState<null | 'tab' | 'job_card'>(null)
   const [lookup, setLookup] = useState('')
+  const [voidJobCardConfirm, setVoidJobCardConfirm] = useState<OpenTabListItem | null>(null)
   const [newTabScreenKbOpen, setNewTabScreenKbOpen] = useState(false)
   const [lookupScreenKbOpen, setLookupScreenKbOpen] = useState(false)
   const newTabKbFieldRef = useRef<NewTabKbField>('tabNumber')
@@ -52,6 +63,9 @@ export function OpenTabsModal({
   const tabNumberInputRef = useRef<HTMLInputElement | null>(null)
   const customerNameInputRef = useRef<HTMLInputElement | null>(null)
   const phoneInputRef = useRef<HTMLInputElement | null>(null)
+  const itemCheckedInRef = useRef<HTMLTextAreaElement | null>(null)
+  const jobDescriptionRef = useRef<HTMLTextAreaElement | null>(null)
+  const attachmentNoteRef = useRef<HTMLTextAreaElement | null>(null)
   const lookupInputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
@@ -88,13 +102,21 @@ export function OpenTabsModal({
   }, [tabs, lookup])
 
   useEffect(() => {
-    if (!open) return
+    if (!open) {
+      setVoidJobCardConfirm(null)
+      return
+    }
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose()
+      if (e.key !== 'Escape') return
+      if (voidJobCardConfirm) {
+        setVoidJobCardConfirm(null)
+        return
+      }
+      onClose()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [open, onClose])
+  }, [open, onClose, voidJobCardConfirm])
 
   useEffect(() => {
     return () => {
@@ -132,7 +154,17 @@ export function OpenTabsModal({
 
   function scrollNewTabFieldIntoView(which: NewTabKbField) {
     const target =
-      which === 'tabNumber' ? tabNumberInputRef.current : which === 'customerName' ? customerNameInputRef.current : phoneInputRef.current
+      which === 'tabNumber'
+        ? tabNumberInputRef.current
+        : which === 'customerName'
+          ? customerNameInputRef.current
+          : which === 'phone'
+            ? phoneInputRef.current
+            : which === 'itemCheckedIn'
+              ? itemCheckedInRef.current
+              : which === 'jobDescription'
+                ? jobDescriptionRef.current
+                : attachmentNoteRef.current
     target?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' })
   }
 
@@ -202,10 +234,15 @@ export function OpenTabsModal({
 
   function handleNewTabScreenKeyboardAction(action: ScreenKeyboardAction) {
     const field = newTabKbFieldRef.current
+    const multilineField =
+      field === 'itemCheckedIn' || field === 'jobDescription' || field === 'attachmentNote'
     const patch = (updater: (s: string) => string) => {
       if (field === 'tabNumber') setTabNumber(updater)
       else if (field === 'customerName') setCustomerName(updater)
-      else setPhone(updater)
+      else if (field === 'phone') setPhone(updater)
+      else if (field === 'itemCheckedIn') setItemCheckedIn(updater)
+      else if (field === 'jobDescription') setJobDescription(updater)
+      else setAttachmentNote(updater)
     }
     if (action.type === 'char') {
       patch((s) => s + action.char)
@@ -219,7 +256,15 @@ export function OpenTabsModal({
       patch((s) => s + ' ')
       return
     }
-    if (action.type === 'enter' || action.type === 'done') {
+    if (action.type === 'enter') {
+      if (multilineField) {
+        patch((s) => s + '\n')
+        return
+      }
+      setNewTabScreenKbOpen(false)
+      return
+    }
+    if (action.type === 'done') {
       setNewTabScreenKbOpen(false)
     }
   }
@@ -296,15 +341,16 @@ export function OpenTabsModal({
   }
 
   return (
-    <div
-      className="open-tabs-backdrop"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="open-tabs-title"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose()
-      }}
-    >
+    <>
+      <div
+        className="open-tabs-backdrop"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="open-tabs-title"
+        onMouseDown={(e) => {
+          if (e.target === e.currentTarget) onClose()
+        }}
+      >
       <div className="open-tabs-dialog">
         <div className="open-tabs-header">
           <h2 id="open-tabs-title">Tabs</h2>
@@ -417,34 +463,43 @@ export function OpenTabsModal({
                   <label className="open-tabs-field">
                     <span>Item checked in (optional)</span>
                     <textarea
+                      ref={itemCheckedInRef}
                       className="open-tabs-input open-tabs-textarea"
                       value={itemCheckedIn}
                       onChange={(e) => setItemCheckedIn(e.target.value)}
                       placeholder="e.g. Bicycle · 26in MTB"
                       rows={2}
                       autoComplete="off"
+                      inputMode={newTabScreenKbOpen ? 'none' : undefined}
+                      {...newTabFieldKbHandlers('itemCheckedIn')}
                     />
                   </label>
                   <label className="open-tabs-field">
                     <span>Job description (optional)</span>
                     <textarea
+                      ref={jobDescriptionRef}
                       className="open-tabs-input open-tabs-textarea"
                       value={jobDescription}
                       onChange={(e) => setJobDescription(e.target.value)}
                       placeholder="Work requested / fault reported"
                       rows={3}
                       autoComplete="off"
+                      inputMode={newTabScreenKbOpen ? 'none' : undefined}
+                      {...newTabFieldKbHandlers('jobDescription')}
                     />
                   </label>
                   <label className="open-tabs-field">
                     <span>Note — item slip only (optional)</span>
                     <textarea
+                      ref={attachmentNoteRef}
                       className="open-tabs-input open-tabs-textarea"
                       value={attachmentNote}
                       onChange={(e) => setAttachmentNote(e.target.value)}
                       placeholder="Printed under Note: on the slip attached to the item — not on customer copy"
                       rows={3}
                       autoComplete="off"
+                      inputMode={newTabScreenKbOpen ? 'none' : undefined}
+                      {...newTabFieldKbHandlers('attachmentNote')}
                     />
                   </label>
                 </>
@@ -524,7 +579,9 @@ export function OpenTabsModal({
                 <p className="muted open-tabs-empty">No tabs match that search.</p>
               ) : null}
               <ul className="open-tabs-list">
-                {filteredTabs.map((t) => (
+                {filteredTabs.map((t) => {
+                  const voidJobCardBlocked = t.kind === 'job_card' && !canVoidJobCards
+                  return (
                 <li key={t._id} className={t._id === activeOpenTabId ? 'open-tabs-li active' : 'open-tabs-li'}>
                   <div className="open-tabs-li-main">
                     <span className="open-tabs-li-title">
@@ -554,16 +611,15 @@ export function OpenTabsModal({
                     <button
                       type="button"
                       className="btn ghost small open-tabs-void"
-                      disabled={busy}
+                      disabled={busy || voidJobCardBlocked}
+                      title={voidJobCardBlocked ? 'Only an admin can void a job card' : undefined}
                       onClick={() => {
-                        if (
-                          !window.confirm(
-                            t.kind === 'job_card'
-                              ? `Void open job card ${t.jobNumber ?? t.tabNumber} (${jobCardCustomerDisplay(t.customerName)})?`
-                              : `Void open tab #${t.tabNumber} (${t.customerName})?`,
-                          )
-                        )
+                        if (voidJobCardBlocked) return
+                        if (t.kind === 'job_card') {
+                          setVoidJobCardConfirm(t)
                           return
+                        }
+                        if (!window.confirm(`Void open tab #${t.tabNumber} (${t.customerName})?`)) return
                         void onVoidTab(t._id)
                       }}
                     >
@@ -571,12 +627,35 @@ export function OpenTabsModal({
                     </button>
                   </div>
                 </li>
-                ))}
+                  )
+                })}
               </ul>
             </>
           )}
         </div>
       </div>
     </div>
+      <ConfirmMessageModal
+        open={voidJobCardConfirm != null}
+        title="Void job card?"
+        stackOnPosOverlay
+        confirmLabel="Void job card"
+        onClose={() => setVoidJobCardConfirm(null)}
+        onConfirm={() => {
+          const row = voidJobCardConfirm
+          setVoidJobCardConfirm(null)
+          if (row) void onVoidTab(row._id)
+        }}
+      >
+        {voidJobCardConfirm ? (
+          <p className="muted confirm-preset-delete-body">
+            This removes open job card{' '}
+            <strong>{voidJobCardConfirm.jobNumber ?? voidJobCardConfirm.tabNumber}</strong> for{' '}
+            <strong>{jobCardCustomerDisplay(voidJobCardConfirm.customerName)}</strong> from the list. This cannot be
+            undone.
+          </p>
+        ) : null}
+      </ConfirmMessageModal>
+    </>
   )
 }

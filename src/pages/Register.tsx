@@ -18,7 +18,13 @@ import type {
   ShiftReport,
 } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
-import { canManageShifts, canOverridePriceOnPos, canRefundSales, isPosManager } from '../auth/permissions'
+import {
+  canManageShifts,
+  canOverridePriceOnPos,
+  canRefundSales,
+  isPosManager,
+  isRoleAdmin,
+} from '../auth/permissions'
 import {
   AssignPresetModal,
   ConfirmPresetDeleteModal,
@@ -294,6 +300,7 @@ function persistLastReceiptSale(sale: Sale): void {
 export function Register() {
   const { session } = useAuth()
   const isAdmin = isPosManager(session?.user)
+  const isStoreAdmin = isRoleAdmin(session?.user)
   const canRefund = canRefundSales(session?.user)
   const canShiftEnd = canManageShifts(session?.user)
   const [products, setProducts] = useState<Product[]>([])
@@ -5141,6 +5148,7 @@ export function Register() {
           activeOpenTabId={activeOpenTabId}
           canIncludeWalkInCart={!activeOpenTabId}
           walkInLineCount={cart.length}
+          canVoidJobCards={isStoreAdmin}
           onSelectTab={(id) => void selectOpenTab(id)}
           onVoidTab={(id) => void voidOpenTabById(id)}
           onCreateTab={(input) => createOpenTabFromModal(input)}
