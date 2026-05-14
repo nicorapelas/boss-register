@@ -462,7 +462,7 @@ html.electron-shell .auth-window-actions button {
 
   .product-row {
     min-height: 56px;
-    padding: 0.75rem 0.8rem;
+    padding: 0.65rem 0.55rem 0.65rem 0.75rem;
   }
 
   .product-name {
@@ -895,26 +895,89 @@ html.electron-shell .auth-window-actions button {
   margin: 0;
 }
 
+.product-photo-modal-heading {
+  margin: 0;
+  font-size: 1.05rem;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.product-photo-modal-body {
+  text-align: center;
+}
+
+.product-photo-modal-img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  border: 1px solid #4a4a4a;
+  display: block;
+  margin: 0 auto;
+}
+
 .product-row {
   width: 100%;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem 0.75rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  column-gap: 0.45rem;
+  row-gap: 0;
+  align-items: start;
+  box-sizing: border-box;
   border: 1px solid #4a4a4a;
   border-radius: 6px;
-  padding: 0.5rem 0.75rem;
+  padding: 0.5rem 0.5rem 0.5rem 0.75rem;
   margin-bottom: 0.5rem;
   background: #141414;
+  color: inherit;
+}
+
+.product-row--dimmed {
+  opacity: 0.62;
+}
+
+.product-row-main {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+  border: none;
+  background: transparent;
   color: inherit;
   cursor: pointer;
   text-align: left;
   font: inherit;
+  padding: 0;
+  margin: 0;
 }
 
-
-.product-row:disabled {
-  opacity: 0.6;
+.product-row-main:disabled {
+  opacity: 1;
   cursor: not-allowed;
+}
+
+.product-row-photo-btn {
+  grid-column: 2;
+  grid-row: 1;
+  flex-shrink: 0;
+  align-self: start;
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  padding: 0.35rem;
+  border-radius: 8px;
+}
+
+.product-row-photo-btn svg {
+  display: block;
+  width: 1.35rem;
+  height: 1.35rem;
 }
 
 .product-name {
@@ -1539,16 +1602,24 @@ html.electron-shell .auth-window-actions button {
   -webkit-tap-highlight-color: transparent;
 }
 
-.product-row {
-  min-height: 64px;
-  padding: 1rem 1.15rem;
-  border-radius: 12px;
-  margin-bottom: 0.6rem;
-  align-items: center;
-  gap: 0.5rem 1rem;
+.panel-products .product-row-main {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.product-row:active:not(:disabled) {
+.panel-products .product-row-photo-btn {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.product-row {
+  min-height: 64px;
+  padding: 0.85rem 0.65rem 0.85rem 1rem;
+  border-radius: 12px;
+  margin-bottom: 0.6rem;
+}
+
+.product-row-main:active:not(:disabled) {
   filter: brightness(1.08);
 }
 

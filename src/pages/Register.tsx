@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { apiFetch, subscribeServerReachability } from '../api/client'
+import { apiFetch, fetchProductPhotoObjectUrl, subscribeServerReachability } from '../api/client'
 import { loadProductPresetsWithMigration, pushProductPresets } from '../api/productPresetsApi'
 import type {
   CartLine,
@@ -439,6 +439,10 @@ export function Register() {
   const [catalogSnapshotStale, setCatalogSnapshotStale] = useState(false)
   const [offlineCatalogMode, setOfflineCatalogMode] = useState(false)
   const [serverReachable, setServerReachable] = useState(true)
+  const [productPhotoViewer, setProductPhotoViewer] = useState<Product | null>(null)
+  const [productPhotoUrl, setProductPhotoUrl] = useState<string | null>(null)
+  const [productPhotoLoading, setProductPhotoLoading] = useState(false)
+  const [productPhotoError, setProductPhotoError] = useState<string | null>(null)
   const [offlineSyncStatus, setOfflineSyncStatus] = useState<{
     lastAttemptAt?: string
     lastSuccessAt?: string
@@ -458,6 +462,41 @@ export function Register() {
   const altPaymentsOfflineDisabled = offlineCatalogMode
 
   useEffect(() => subscribeServerReachability(setServerReachable), [])
+
+  useEffect(() => {
+    if (!productPhotoViewer || (productPhotoViewer.photoRevision ?? 0) < 1) {
+      setProductPhotoUrl((u) => {
+        if (u) URL.revokeObjectURL(u)
+        return null
+      })
+      setProductPhotoLoading(false)
+      setProductPhotoError(null)
+      return
+    }
+    let cancelled = false
+    setProductPhotoLoading(true)
+    setProductPhotoError(null)
+    void fetchProductPhotoObjectUrl(productPhotoViewer._id, productPhotoViewer.photoRevision ?? 1)
+      .then((url) => {
+        if (cancelled) {
+          URL.revokeObjectURL(url)
+          return
+        }
+        setProductPhotoUrl((prev) => {
+          if (prev) URL.revokeObjectURL(prev)
+          return url
+        })
+        setProductPhotoLoading(false)
+      })
+      .catch((err) => {
+        if (cancelled) return
+        setProductPhotoError(err instanceof Error ? err.message : 'Could not load photo')
+        setProductPhotoLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [productPhotoViewer])
 
   useEffect(() => {
     return () => {
@@ -4373,36 +4412,69 @@ export function Register() {
                         {(() => {
                           const canTapProduct =
                             productHasSellableStock(p) || (productTracksInventory(p) && (offlineCatalogMode || !serverReachable || isAdmin))
+                          const showPhotoBtn = serverReachable && (p.photoRevision ?? 0) > 0
                           return (
-                        <button
-                          type="button"
-                          className="product-row"
-                          aria-label={
-                            canTapProduct
-                              ? `Add ${p.name} to cart`
-                              : `${p.name} — out of stock`
-                          }
-                          onClick={(e) => onProductRowClick(e, p)}
-                          onPointerDown={(e) => onProductRowPointerDown(e, p)}
-                          onPointerMove={onProductRowPointerMove}
-                          onPointerUp={onProductRowPointerUp}
-                          onPointerCancel={onProductRowPointerCancel}
-                          onContextMenu={(e) => {
-                            e.preventDefault()
-                            if (!canTapProduct) return
-                            setAssignPresetProduct(p)
-                          }}
-                          title="Tap to add · Long-press or right-click to assign to preset"
-                          disabled={!canTapProduct}
-                        >
-                          <span className="product-name">{p.name}</span>
-                          <span className="product-meta">
-                            <span className="muted">{p.sku}</span>
-                            <span className="product-price">
-                              {p.price.toFixed(2)} · {productAvailabilityCaptionWithMode(p, offlineCatalogMode)}
-                            </span>
-                          </span>
-                        </button>
+                            <div className={`product-row${!canTapProduct ? ' product-row--dimmed' : ''}`}>
+                              <button
+                                type="button"
+                                className="product-row-main"
+                                aria-label={
+                                  canTapProduct
+                                    ? `Add ${p.name} to cart`
+                                    : `${p.name} — out of stock`
+                                }
+                                onClick={(e) => onProductRowClick(e, p)}
+                                onPointerDown={(e) => onProductRowPointerDown(e, p)}
+                                onPointerMove={onProductRowPointerMove}
+                                onPointerUp={onProductRowPointerUp}
+                                onPointerCancel={onProductRowPointerCancel}
+                                onContextMenu={(e) => {
+                                  e.preventDefault()
+                                  if (!canTapProduct) return
+                                  setAssignPresetProduct(p)
+                                }}
+                                title="Tap to add · Long-press or right-click to assign to preset"
+                                disabled={!canTapProduct}
+                              >
+                                <span className="product-name">{p.name}</span>
+                                <span className="product-meta">
+                                  <span className="muted">{p.sku}</span>
+                                  <span className="product-price">
+                                    {p.price.toFixed(2)} · {productAvailabilityCaptionWithMode(p, offlineCatalogMode)}
+                                  </span>
+                                </span>
+                              </button>
+                              {showPhotoBtn ? (
+                                <button
+                                  type="button"
+                                  className="btn ghost product-row-photo-btn"
+                                  aria-label={`Show photo for ${p.name}`}
+                                  title="Product photo"
+                                  onPointerDown={(e) => {
+                                    e.stopPropagation()
+                                  }}
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    setProductPhotoError(null)
+                                    setProductPhotoViewer(p)
+                                  }}
+                                >
+                                  <svg
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    aria-hidden
+                                  >
+                                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                                    <circle cx="8.5" cy="8.5" r="1.5" />
+                                    <polyline points="21 15 16 10 5 21" />
+                                  </svg>
+                                </button>
+                              ) : null}
+                            </div>
                           )
                         })()}
                       </li>
@@ -5100,6 +5172,45 @@ export function Register() {
                 <button type="button" className="btn primary" onClick={() => settleStockOverrideConfirmation(true)}>
                   Approve override
                 </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+        {productPhotoViewer ? (
+          <div
+            className="open-tabs-backdrop"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="product-photo-modal-title"
+            onMouseDown={(e) => {
+              if (e.target === e.currentTarget) {
+                setProductPhotoViewer(null)
+              }
+            }}
+          >
+            <div className="open-tabs-dialog" style={{ maxWidth: 'min(96vw, 28rem)' }}>
+              <div className="open-tabs-header">
+                <h2 id="product-photo-modal-title" className="product-photo-modal-heading">
+                  {productPhotoViewer.name}
+                </h2>
+                <button
+                  type="button"
+                  className="btn ghost open-tabs-close"
+                  onClick={() => setProductPhotoViewer(null)}
+                >
+                  Close
+                </button>
+              </div>
+              <div className="quotes-modal-body product-photo-modal-body">
+                <p className="muted product-photo-modal-sku">{productPhotoViewer.sku}</p>
+                {productPhotoLoading ? <p className="muted">Loading…</p> : null}
+                {productPhotoError ? <p className="error">{productPhotoError}</p> : null}
+                {productPhotoUrl && !productPhotoLoading ? (
+                  <img src={productPhotoUrl} alt="" className="product-photo-modal-img" />
+                ) : null}
+                <p className="muted help-note" style={{ marginTop: '0.75rem' }}>
+                  Photos require a live server connection on this register.
+                </p>
               </div>
             </div>
           </div>

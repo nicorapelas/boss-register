@@ -112,6 +112,40 @@ export async function apiFetch<T>(
   return data as T
 }
 
+function apiBaseOrThrow(): string {
+  const b = base()
+  if (!b) throw new Error('Set VITE_API_BASE_URL (e.g. http://localhost:4000/api)')
+  return b
+}
+
+/** Caller must `URL.revokeObjectURL` when done. Used for authenticated product images. */
+export async function fetchProductPhotoObjectUrl(productId: string, revision: number): Promise<string> {
+  const u = `${apiBaseOrThrow()}/products/${encodeURIComponent(productId)}/photo?rev=${encodeURIComponent(String(revision))}`
+  const tryGet = async (token: string | null) => {
+    const headers = new Headers()
+    if (token) headers.set('Authorization', `Bearer ${token}`)
+    return fetch(u, { headers })
+  }
+  let res = await tryGet(getAccessToken())
+  if (res.status === 401) {
+    const refreshed = await runRefresh()
+    if (refreshed) res = await tryGet(getAccessToken())
+  }
+  if (!res.ok) {
+    const text = await res.text()
+    let msg = res.statusText
+    try {
+      const j = text ? (JSON.parse(text) as ApiErrorBody) : null
+      msg = j?.message ?? j?.error ?? msg
+    } catch {
+      // ignore
+    }
+    throw new Error(msg)
+  }
+  const blob = await res.blob()
+  return URL.createObjectURL(blob)
+}
+
 export async function registerRequest(email: string, password: string) {
   return apiFetch<{ id: string; email: string; role: string }>('/auth/register', {
     method: 'POST',

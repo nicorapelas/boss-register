@@ -20,6 +20,10 @@ export interface Product {
   availableQty?: number | null
   /** Optional policy flag: block offline oversell even with manager override. */
   strictOfflineStock?: boolean
+  /** 0 = no catalog photo; increments when photo replaced. */
+  photoRevision?: number
+  /** Present on list API when `photoRevision > 0`. */
+  hasPhoto?: boolean
 }
 
 export type CartLine = {
