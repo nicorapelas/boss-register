@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { usePosTheme } from '../theme/PosThemeContext'
 import { resolvePosLogoSrc } from '../theme/posLogo'
@@ -43,6 +43,7 @@ export function PosShell({
   const { theme } = usePosTheme()
   const logoMark = resolvePosLogoSrc(theme)
   const location = useLocation()
+  const navigate = useNavigate()
   const isAdmin = isPosManager(session?.user)
   const { disconnected, recovered } = useServerConnection()
   const onSettings = location.pathname === '/settings'
@@ -83,14 +84,15 @@ export function PosShell({
           {session && (
             <>
               {isAdmin && (
-                <Link
-                  to={onSettings ? '/' : '/settings'}
+                <button
+                  type="button"
                   className="btn ghost shell-settings-link"
                   aria-label={settingsToggleLabel}
                   title={settingsToggleLabel}
+                  onClick={() => void navigate(onSettings ? '/' : '/settings')}
                 >
                   <CogIcon />
-                </Link>
+                </button>
               )}
               <span className="shell-till-badge" title="POS till code">
                 Till {POS_TILL_CODE}

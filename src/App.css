@@ -69,9 +69,14 @@ html.electron-shell .shell-header {
 }
 
 html.electron-shell .shell-header :is(a, button, input, select, textarea),
+html.electron-shell .shell-header .shell-header-center,
 html.electron-shell .shell-header .shell-user,
 html.electron-shell .shell-header .shell-till-badge {
   -webkit-app-region: no-drag;
+}
+
+html.electron-shell .shell-header .shell-settings-link {
+  -webkit-user-drag: none;
 }
 
 html.electron-shell-mac .shell-header {
@@ -175,6 +180,7 @@ html.electron-shell .auth-window-actions button {
   justify-content: center;
   padding: 0.35rem 0.5rem;
   min-width: 2.5rem;
+  touch-action: manipulation;
 }
 
 .shell-settings-icon {
