@@ -4437,11 +4437,9 @@ export function Register() {
                                 disabled={!canTapProduct}
                               >
                                 <span className="product-name">{p.name}</span>
-                                <span className="product-meta">
-                                  <span className="muted">{p.sku}</span>
-                                  <span className="product-price">
-                                    {p.price.toFixed(2)} · {productAvailabilityCaptionWithMode(p, offlineCatalogMode)}
-                                  </span>
+                                <span className="product-meta muted">{p.sku}</span>
+                                <span className="product-price">
+                                  {p.price.toFixed(2)} · {productAvailabilityCaptionWithMode(p, offlineCatalogMode)}
                                 </span>
                               </button>
                               {showPhotoBtn ? (
