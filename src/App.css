@@ -1039,6 +1039,20 @@ html.electron-shell .auth-window-actions button {
 /* —— Touch-first register (min ~48px targets, steppers, large type) —— */
 .pos-touch {
   -webkit-tap-highlight-color: rgba(255, 255, 255, 0.06);
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Keep text selection in fields where staff type or edit */
+.pos-touch input,
+.pos-touch textarea,
+.pos-touch select,
+.pos-touch [contenteditable='true'],
+.pos-touch [contenteditable=''] {
+  -webkit-touch-callout: default;
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .pos-touch .shell-main {

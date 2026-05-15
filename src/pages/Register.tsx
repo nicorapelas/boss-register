@@ -69,6 +69,7 @@ import {
   productTracksInventory,
 } from '../utils/productInventory'
 import { formatDateDdMmYyyy } from '../utils/dateFormat'
+import { numericSkuKey } from '../utils/skuNormalize'
 import { hasVolumeTiering, lineTotalsForProduct, type ProductForVolume } from '../utils/volumePrice'
 
 const LAST_RECEIPT_STORAGE_KEY = 'electropos-pos-last-receipt-sale'
@@ -1204,14 +1205,17 @@ export function Register() {
   function findProductBySkuOrBarcode(raw: string): Product | undefined {
     const q = raw.trim()
     if (!q) return undefined
-    const numeric = q.replace(/\D/g, '')
     const qLower = q.toLowerCase()
+    const qNumericKey = numericSkuKey(q)
     const all = productsRef.current
     return (
       all.find((p) => p.sku.toLowerCase() === qLower) ??
       all.find((p) => (p.barcode ?? '').toLowerCase() === qLower) ??
-      all.find((p) => p.sku.replace(/\D/g, '') === numeric) ??
-      all.find((p) => (p.barcode ?? '').replace(/\D/g, '') === numeric)
+      all.find((p) => numericSkuKey(p.sku) === qNumericKey) ??
+      all.find((p) => {
+        const bc = p.barcode?.trim()
+        return bc ? numericSkuKey(bc) === qNumericKey : false
+      })
     )
   }
 
