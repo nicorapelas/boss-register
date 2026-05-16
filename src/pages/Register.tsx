@@ -49,11 +49,8 @@ import {
   type PresetEntry,
   type ProductPresetsState,
 } from '../register/posProductPresets'
+import { patchProductsStock, type CartStockLine } from '../register/catalogStockPatch'
 import { buildProductLookup, findProductInLookup, type ProductLookup } from '../register/productLookup'
-
-/** Item list: avoid rendering thousands of DOM rows on touch tills. */
-const ITEM_LIST_SEARCH_MIN = 2
-const ITEM_LIST_MAX_ROWS = 100
 import { jobCardCustomerDisplay } from '../utils/openTabDisplay'
 import { playPosKeySound } from '../audio/posKeySound'
 import { PosShell } from '../layouts/PosShell'
@@ -80,6 +77,13 @@ const LAST_RECEIPT_STORAGE_KEY = 'electropos-pos-last-receipt-sale'
 const POS_TILL_CODE = (import.meta.env.VITE_POS_TILL_CODE?.trim().toUpperCase() || 'T1').slice(0, 24)
 const OFFLINE_OVERSALE_MAX_UNITS = 3
 const ONLINE_OVERSALE_MAX_UNITS = 3
+
+/** Item list: avoid rendering thousands of DOM rows on touch tills. */
+const ITEM_LIST_SEARCH_MIN = 2
+const ITEM_LIST_MAX_ROWS = 100
+
+/** Debounce writing 8k+ products to offline cache (was blocking checkout on Posiflex). */
+const CATALOG_CACHE_SAVE_DEBOUNCE_MS = 2500
 
 type ReceiptPrintPayload = {
   transport: unknown
@@ -380,8 +384,27 @@ export function Register() {
   const skuInputRef = useRef(skuInput)
   const productsRef = useRef(products)
   const productLookupRef = useRef<ProductLookup>(buildProductLookup([]))
+  const catalogCacheSaveTimerRef = useRef<number | null>(null)
   skuInputRef.current = skuInput
   productsRef.current = products
+
+  const scheduleCatalogCacheSave = useCallback((snapshot: Product[]) => {
+    if (catalogCacheSaveTimerRef.current) clearTimeout(catalogCacheSaveTimerRef.current)
+    catalogCacheSaveTimerRef.current = window.setTimeout(() => {
+      catalogCacheSaveTimerRef.current = null
+      void saveCatalogCache(snapshot).catch(() => undefined)
+    }, CATALOG_CACHE_SAVE_DEBOUNCE_MS)
+  }, [])
+
+  const applyCatalogStockFromCart = useCallback(
+    (lines: CartStockLine[], direction: 'sale' | 'refund') => {
+      const patched = patchProductsStock(productsRef.current, lines, direction)
+      if (patched === productsRef.current) return
+      setProducts(patched)
+      scheduleCatalogCacheSave(patched)
+    },
+    [scheduleCatalogCacheSave],
+  )
 
   useEffect(() => {
     productLookupRef.current = buildProductLookup(products)
@@ -936,37 +959,12 @@ export function Register() {
     }
   }, [])
 
-  const applyOfflineStockDeduction = useCallback(async (lines: CartLine[]) => {
-    const qtyByProduct = new Map<string, number>()
-    for (const line of lines) {
-      const next = (qtyByProduct.get(line.productId) ?? 0) + Math.max(0, Number(line.quantity) || 0)
-      qtyByProduct.set(line.productId, next)
-    }
-    if (qtyByProduct.size === 0) return
-
-    const updatedProducts = productsRef.current.map((p) => {
-      const qty = qtyByProduct.get(p._id)
-      if (!qty || !productTracksInventory(p)) return p
-
-      const nextStock = Math.max(0, Math.round((Number(p.stock ?? 0) - qty) * 1000) / 1000)
-      const nextAvailableRaw =
-        p.availableQty == null ? null : Math.round((Number(p.availableQty ?? 0) - qty) * 1000) / 1000
-      const nextAvailable = nextAvailableRaw == null ? null : Math.max(0, nextAvailableRaw)
-
-      return {
-        ...p,
-        stock: nextStock,
-        availableQty: nextAvailable,
-      }
-    })
-
-    setProducts(updatedProducts)
-    try {
-      await saveCatalogCache(updatedProducts)
-    } catch {
-      // Non-blocking: in-memory stock is already updated for this session.
-    }
-  }, [])
+  const applyOfflineStockDeduction = useCallback(
+    (lines: CartStockLine[]) => {
+      applyCatalogStockFromCart(lines, 'sale')
+    },
+    [applyCatalogStockFromCart],
+  )
 
   useEffect(() => {
     void loadProducts()
@@ -1945,6 +1943,7 @@ export function Register() {
         return
       }
     }
+    const refundLines = cart.filter((l) => l.refundSaleLineIndex !== undefined && l.quantity > 0.005)
     setBusy(true)
     setError(null)
     setNotice(null)
@@ -2004,7 +2003,7 @@ export function Register() {
           )
         }
       }
-      await loadProducts()
+      applyCatalogStockFromCart(refundLines, 'refund')
       clearRefundModeAndCart()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Refund failed')
@@ -2046,6 +2045,7 @@ export function Register() {
     setLastTotal(null)
     setPendingSplit(null)
     const tabIdForSale = activeOpenTabId
+    const soldLines = cart.map((l) => ({ productId: l.productId, quantity: l.quantity }))
     const clientLocalId = createClientLocalId()
     try {
       const body: Record<string, unknown> = {
@@ -2080,7 +2080,7 @@ export function Register() {
       clearActiveQuote()
       setCart([])
       resetVoucherForm()
-      await loadProducts()
+      applyCatalogStockFromCart(soldLines, 'sale')
       return sale
     } catch (e) {
       if (!navigator.onLine || isLikelyNetworkError(e)) {
@@ -2104,7 +2104,7 @@ export function Register() {
         }
         try {
           await enqueueOfflineSale(clientLocalId, body)
-          await applyOfflineStockDeduction(cart)
+          applyOfflineStockDeduction(soldLines)
           const pending = await getOfflinePendingSalesCount()
           setOfflinePendingCount(pending)
           const previewJobLabour = activeTabBanner?.kind === 'job_card'
@@ -4742,7 +4742,7 @@ export function Register() {
                   ) : (
                     <div className="cart-lines">
                       {cart.map((l, i) => {
-                        const lineProduct = products.find((x) => x._id === l.productId)
+                        const lineProduct = productsById.get(l.productId)
                         const jobCardLabourActive = !refundSession && activeTabBanner?.kind === 'job_card'
                         const lineJobLabour = jobCardLabourActive
                           ? jobCardLabourAmountForLine(lineProduct, l.quantity)
