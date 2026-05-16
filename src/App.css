@@ -1626,6 +1626,17 @@ html.electron-shell .auth-window-actions button {
   flex-shrink: 0;
 }
 
+.item-list-search-prompt {
+  margin: 0 0 0.5rem;
+  font-size: 0.85rem;
+  flex-shrink: 0;
+}
+
+.panel-products .product-list li {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 3.25rem;
+}
+
 .panel-products .product-row {
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { startTransition, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { apiFetch, fetchProductPhotoObjectUrl, subscribeServerReachability } from '../api/client'
 import { loadProductPresetsWithMigration, pushProductPresets } from '../api/productPresetsApi'
 import type {
@@ -37,6 +37,7 @@ import {
   ScreenKeyboard,
   type ScreenKeyboardAction,
 } from '../components'
+import { ProductListRow } from '../components/ProductListRow'
 import {
   assignPresetEntry,
   PRESET_ENTRY_MAX,
@@ -48,6 +49,11 @@ import {
   type PresetEntry,
   type ProductPresetsState,
 } from '../register/posProductPresets'
+import { buildProductLookup, findProductInLookup, type ProductLookup } from '../register/productLookup'
+
+/** Item list: avoid rendering thousands of DOM rows on touch tills. */
+const ITEM_LIST_SEARCH_MIN = 2
+const ITEM_LIST_MAX_ROWS = 100
 import { jobCardCustomerDisplay } from '../utils/openTabDisplay'
 import { playPosKeySound } from '../audio/posKeySound'
 import { PosShell } from '../layouts/PosShell'
@@ -63,13 +69,11 @@ import {
 import type { OfflineSyncedItemSummary } from '../offline/offlineSalesQueue'
 import { isCatalogSnapshotStale, loadCatalogCache, saveCatalogCache } from '../offline/catalogCache'
 import {
-  productAvailabilityCaptionWithMode,
   productAvailableUnits,
   productHasSellableStock,
   productTracksInventory,
 } from '../utils/productInventory'
 import { formatDateDdMmYyyy } from '../utils/dateFormat'
-import { numericSkuKey } from '../utils/skuNormalize'
 import { hasVolumeTiering, lineTotalsForProduct, type ProductForVolume } from '../utils/volumePrice'
 
 const LAST_RECEIPT_STORAGE_KEY = 'electropos-pos-last-receipt-sale'
@@ -375,8 +379,13 @@ export function Register() {
   // Refs so global key handling always sees the latest buffer/products
   const skuInputRef = useRef(skuInput)
   const productsRef = useRef(products)
+  const productLookupRef = useRef<ProductLookup>(buildProductLookup([]))
   skuInputRef.current = skuInput
   productsRef.current = products
+
+  useEffect(() => {
+    productLookupRef.current = buildProductLookup(products)
+  }, [products])
 
   const discountHoldRef = useRef<{
     timer: ReturnType<typeof setTimeout> | null
@@ -1057,18 +1066,34 @@ export function Register() {
     }
   }
 
-  const filtered = useMemo(() => {
-    const q = filter.trim().toLowerCase()
-    if (!q) return products
-    return products.filter(
-      (p) =>
-        p.name.toLowerCase().includes(q) ||
-        p.sku.toLowerCase().includes(q),
-    )
-  }, [products, filter])
+  const deferredItemListFilter = useDeferredValue(filter)
+
+  const itemListDisplay = useMemo(() => {
+    const catalogSize = products.length
+    const q = deferredItemListFilter.trim().toLowerCase()
+    if (!q || q.length < ITEM_LIST_SEARCH_MIN) {
+      return { rows: [] as Product[], catalogSize, mode: 'need-search' as const }
+    }
+    const rows: Product[] = []
+    for (const p of products) {
+      if (p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q)) {
+        rows.push(p)
+        if (rows.length >= ITEM_LIST_MAX_ROWS) break
+      }
+    }
+    return {
+      rows,
+      catalogSize,
+      mode: 'results' as const,
+      capped: rows.length >= ITEM_LIST_MAX_ROWS,
+    }
+  }, [products, deferredItemListFilter])
+
+  const productsById = useMemo(() => new Map(products.map((p) => [p._id, p])), [products])
 
   /** Same pool as BackOffice Products category field: distinct product categories (no Uncategorized). */
   const catalogCategoriesForPresetSuggest = useMemo(() => {
+    if (registerLeftPanel !== 'presets' && assignPresetProduct == null) return []
     const seen = new Set<string>()
     const out: string[] = []
     for (const p of products) {
@@ -1081,7 +1106,7 @@ export function Register() {
     }
     out.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
     return out
-  }, [products])
+  }, [products, registerLeftPanel, assignPresetProduct])
 
   const presetCategories = useMemo(
     () => uniquePresetCategories(presetsState.entries),
@@ -1203,20 +1228,7 @@ export function Register() {
   }
 
   function findProductBySkuOrBarcode(raw: string): Product | undefined {
-    const q = raw.trim()
-    if (!q) return undefined
-    const qLower = q.toLowerCase()
-    const qNumericKey = numericSkuKey(q)
-    const all = productsRef.current
-    return (
-      all.find((p) => p.sku.toLowerCase() === qLower) ??
-      all.find((p) => (p.barcode ?? '').toLowerCase() === qLower) ??
-      all.find((p) => numericSkuKey(p.sku) === qNumericKey) ??
-      all.find((p) => {
-        const bc = p.barcode?.trim()
-        return bc ? numericSkuKey(bc) === qNumericKey : false
-      })
-    )
+    return findProductInLookup(productLookupRef.current, raw)
   }
 
   function requestStockOverrideConfirmation(input: {
@@ -1643,11 +1655,11 @@ export function Register() {
     const jobCardLabourActive = activeTabBanner?.kind === 'job_card'
     let s = 0
     for (const l of cart) {
-      const p = products.find((x) => x._id === l.productId)
+      const p = productsById.get(l.productId)
       s += cartLineTotalIncludingJobLabour(l, p, jobCardLabourActive)
     }
     return roundCartMoney(s)
-  }, [cart, products, activeTabBanner?.kind])
+  }, [cart, productsById, activeTabBanner?.kind])
 
   useEffect(() => {
     if (!activeOpenTabId || busy) return
@@ -4032,7 +4044,17 @@ export function Register() {
                 <button
                   type="button"
                   className="btn ghost key-action"
-                  onClick={() => setRegisterLeftPanel((m) => (m === 'list' ? 'keys' : 'list'))}
+                  onClick={() => {
+                    startTransition(() => {
+                      setRegisterLeftPanel((m) => {
+                        if (m === 'list') {
+                          setFilter('')
+                          return 'keys'
+                        }
+                        return 'list'
+                      })
+                    })
+                  }}
                 >
                   {registerLeftPanel === 'list' ? 'Hide list' : 'Item list'}
                 </button>
@@ -4406,87 +4428,51 @@ export function Register() {
                   autoComplete="off"
                 />
                 <p className="muted item-list-tap-hint">
-                  Tap a row to add. Long-press or right-click to add to the Presets menu (category → sub-category →
-                  item, up to {PRESET_ENTRY_MAX}).
+                  {itemListDisplay.catalogSize > 0
+                    ? `${itemListDisplay.catalogSize.toLocaleString()} products — type at least ${ITEM_LIST_SEARCH_MIN} characters to search. Tap a row to add; long-press for Presets (up to ${PRESET_ENTRY_MAX}).`
+                    : 'No products loaded.'}
                 </p>
+                {itemListDisplay.mode === 'need-search' && itemListDisplay.catalogSize > 0 ? (
+                  <p className="muted item-list-search-prompt">
+                    Use the search box or on-screen keyboard to find items. SKU scan on the register keys still works
+                    for the full catalog.
+                  </p>
+                ) : null}
+                {itemListDisplay.mode === 'results' && itemListDisplay.capped ? (
+                  <p className="muted item-list-search-prompt">
+                    Showing first {ITEM_LIST_MAX_ROWS} matches — refine your search.
+                  </p>
+                ) : null}
                 <div className="product-browser">
                   <ul className="product-list">
-                    {filtered.map((p) => (
-                      <li key={p._id}>
-                        {(() => {
-                          const canTapProduct =
-                            productHasSellableStock(p) || (productTracksInventory(p) && (offlineCatalogMode || !serverReachable || isAdmin))
-                          const showPhotoBtn = serverReachable && (p.photoRevision ?? 0) > 0
-                          return (
-                            <div className={`product-row${!canTapProduct ? ' product-row--dimmed' : ''}`}>
-                              <button
-                                type="button"
-                                className="product-row-main"
-                                aria-label={
-                                  canTapProduct
-                                    ? `Add ${p.name} to cart`
-                                    : `${p.name} — out of stock`
-                                }
-                                onClick={(e) => onProductRowClick(e, p)}
-                                onPointerDown={(e) => onProductRowPointerDown(e, p)}
-                                onPointerMove={onProductRowPointerMove}
-                                onPointerUp={onProductRowPointerUp}
-                                onPointerCancel={onProductRowPointerCancel}
-                                onContextMenu={(e) => {
-                                  e.preventDefault()
-                                  if (!canTapProduct) return
-                                  setAssignPresetProduct(p)
-                                }}
-                                title="Tap to add · Long-press or right-click to assign to preset"
-                                disabled={!canTapProduct}
-                              >
-                                <span className="product-name">{p.name}</span>
-                                <span className="product-meta muted">{p.sku}</span>
-                                <span className="product-price">
-                                  {p.price.toFixed(2)} · {productAvailabilityCaptionWithMode(p, offlineCatalogMode)}
-                                </span>
-                              </button>
-                              {showPhotoBtn ? (
-                                <button
-                                  type="button"
-                                  className="btn ghost product-row-photo-btn"
-                                  aria-label={`Show photo for ${p.name}`}
-                                  title="Product photo"
-                                  onPointerDown={(e) => {
-                                    e.stopPropagation()
-                                  }}
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    setProductPhotoError(null)
-                                    setProductPhotoViewer(p)
-                                  }}
-                                >
-                                  <svg
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    strokeWidth="2"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    aria-hidden
-                                  >
-                                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-                                    <circle cx="8.5" cy="8.5" r="1.5" />
-                                    <polyline points="21 15 16 10 5 21" />
-                                  </svg>
-                                </button>
-                              ) : null}
-                            </div>
-                          )
-                        })()}
-                      </li>
+                    {itemListDisplay.rows.map((p) => (
+                      <ProductListRow
+                        key={p._id}
+                        product={p}
+                        offlineCatalogMode={offlineCatalogMode}
+                        serverReachable={serverReachable}
+                        isAdmin={isAdmin}
+                        onAdd={onProductRowClick}
+                        onAssignPreset={setAssignPresetProduct}
+                        onPointerDown={onProductRowPointerDown}
+                        onPointerMove={onProductRowPointerMove}
+                        onPointerUp={onProductRowPointerUp}
+                        onPointerCancel={onProductRowPointerCancel}
+                        onShowPhoto={(prod) => {
+                          setProductPhotoError(null)
+                          setProductPhotoViewer(prod)
+                        }}
+                      />
                     ))}
                   </ul>
-                  {filtered.length === 0 && (
+                  {itemListDisplay.mode === 'results' && itemListDisplay.rows.length === 0 ? (
+                    <p className="muted empty-hint empty-hint-products">No matching products.</p>
+                  ) : null}
+                  {itemListDisplay.catalogSize === 0 ? (
                     <p className="muted empty-hint empty-hint-products">
                       No products. Add some in Back Office (admin).
                     </p>
-                  )}
+                  ) : null}
                 </div>
                 <ScreenKeyboard
                   visible={itemListScreenKbOpen}
