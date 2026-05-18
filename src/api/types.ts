@@ -64,6 +64,20 @@ export type ProductPresetsState = {
   subCategoriesByCategory: Record<string, string[]>
 }
 
+export interface CustomerDisplaySettings {
+  enabled?: boolean
+  idle?: {
+    headline?: string
+    subtext?: string
+    imageUrl?: string
+  }
+  theme?: {
+    backgroundColor?: string
+    accentColor?: string
+  }
+  footerText?: string
+}
+
 export interface StoreSettings {
   _id: string
   storeName: string
@@ -78,6 +92,7 @@ export interface StoreSettings {
   nextQuoteSeq: number
   nextHouseAccountSeq?: number
   productPresets?: ProductPresetsState
+  customerDisplay?: CustomerDisplaySettings
 }
 
 export interface QuoteListItem {
@@ -311,6 +326,12 @@ export interface HouseAccountRow {
   accountNumber: string
   name: string
   phone: string
+  contactPerson?: string
+  email?: string
+  vatNumber?: string
+  addressLines?: string[]
+  paymentTerms?: string
+  notes?: string
   balance: number
   creditLimit: number | null
   status: string

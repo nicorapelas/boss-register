@@ -41,6 +41,33 @@ contextBridge.exposeInMainWorld('electronPos', {
     ipcRenderer.invoke('pos:receipt:print', { transport, receipt, ...opts }) as Promise<{ ok: boolean; error?: string }>,
 })
 
+contextBridge.exposeInMainWorld('electronCustomerDisplay', {
+  listDisplays: () =>
+    ipcRenderer.invoke('customer-display:list-displays') as Promise<
+      Array<{ id: number; label: string; bounds: Electron.Rectangle; primary: boolean }>
+    >,
+  getTillSettings: () =>
+    ipcRenderer.invoke('customer-display:get-till-settings') as Promise<{
+      enabled: boolean
+      displayId: number | null
+    }>,
+  setTillSettings: (settings: { enabled: boolean; displayId: number | null }) =>
+    ipcRenderer.invoke('customer-display:set-till-settings', settings) as Promise<{
+      ok: boolean
+      error?: string
+      settings?: { enabled: boolean; displayId: number | null }
+    }>,
+  publish: (snapshot: unknown) =>
+    ipcRenderer.invoke('customer-display:publish', snapshot) as Promise<{ ok: boolean }>,
+  test: (mode: 'idle' | 'ready' | 'cart' | 'complete') =>
+    ipcRenderer.invoke('customer-display:test', mode) as Promise<{ ok: boolean }>,
+  onSnapshot: (listener: (snapshot: unknown) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, snapshot: unknown) => listener(snapshot)
+    ipcRenderer.on('customer-display:snapshot', handler)
+    return () => ipcRenderer.off('customer-display:snapshot', handler)
+  },
+})
+
 contextBridge.exposeInMainWorld('electronOffline', {
   enqueueSale: (clientLocalId: string, payload: unknown) =>
     ipcRenderer.invoke('offline:enqueue-sale', { clientLocalId, payload }) as Promise<{ ok: boolean; error?: string }>,

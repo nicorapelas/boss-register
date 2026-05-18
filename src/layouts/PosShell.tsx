@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { usePosTheme } from '../theme/PosThemeContext'
+import { APP_NAME } from '../brand'
 import { resolvePosLogoSrc } from '../theme/posLogo'
 import { isPosManager } from '../auth/permissions'
 import { useServerConnection } from '../network/useServerConnection'
@@ -66,7 +67,7 @@ export function PosShell({
       <header className="shell-header">
         <div className="shell-brand">
           <Link to="/" className="shell-brand-link" aria-label="CogniPOS — Home">
-            <img src={logoMark} alt="" className="shell-brand-logo" decoding="async" />
+            <img src={logoMark} alt={APP_NAME} className="shell-brand-logo" decoding="async" />
           </Link>
           <span className="shell-sub">{shellSub}</span>
           <span className="shell-version" title="App version">

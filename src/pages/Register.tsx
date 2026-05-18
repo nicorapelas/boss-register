@@ -1,4 +1,13 @@
-import { startTransition, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  startTransition,
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { apiFetch, fetchProductPhotoObjectUrl, subscribeServerReachability } from '../api/client'
 import { loadProductPresetsWithMigration, pushProductPresets } from '../api/productPresetsApi'
 import type {
@@ -16,6 +25,7 @@ import type {
   SaleRefundPreview,
   SaleRefundSettlement,
   ShiftReport,
+  StoreSettings,
 } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import {
@@ -71,6 +81,17 @@ import {
   productTracksInventory,
 } from '../utils/productInventory'
 import { formatDateDdMmYyyy } from '../utils/dateFormat'
+import { buildCustomerDisplaySnapshot, storeConfigFromSettings } from '../customerDisplay/buildSnapshot'
+import { readCachedStoreName } from '../customerDisplay/configCache'
+import {
+  getInitialCustomerDisplayConfig,
+  useCustomerDisplaySettingsLoader,
+  useCustomerDisplaySync,
+} from '../customerDisplay/useCustomerDisplaySync'
+import { publishProductSpotlight, clearCustomerDisplaySpotlightSeen } from '../customerDisplay/spotlight'
+import { DEFAULT_STORE_NAME } from '../brand'
+import { paymentTermsShortLabel } from '../houseAccounts/paymentTerms'
+import type { CustomerDisplayStoreConfig } from '../customerDisplay/types'
 import { hasVolumeTiering, lineTotalsForProduct, type ProductForVolume } from '../utils/volumePrice'
 
 const LAST_RECEIPT_STORAGE_KEY = 'electropos-pos-last-receipt-sale'
@@ -246,6 +267,11 @@ function cartContributorKey(l: Pick<CartLine, 'addedByUserId' | 'addedByDisplayN
   return `${(l.addedByUserId ?? '').trim()}\t${(l.addedByDisplayName ?? '').trim()}`
 }
 
+function cartLineDomKey(line: CartLine): string {
+  if (line.refundSaleLineIndex != null) return `refund-${line.refundSaleLineIndex}`
+  return `sale-${line.productId}-${cartContributorKey(line)}`
+}
+
 function lineAttributionFromSession(user: { id?: string; displayName?: string; email?: string } | null | undefined): Pick<
   CartLine,
   'addedByUserId' | 'addedByDisplayName' | 'addedAt'
@@ -289,9 +315,15 @@ function saleRequestLineBody(l: CartLine) {
     name: l.name,
     quantity: l.quantity,
     unitPrice: l.unitPrice,
-    stockOverrideApproved: l.stockOverrideApproved === true,
-    stockOverrideScope: l.stockOverrideScope,
-    stockOverrideAvailableQty: l.stockOverrideAvailableQty,
+    ...(l.stockOverrideApproved === true
+      ? {
+          stockOverrideApproved: true,
+          ...(l.stockOverrideScope ? { stockOverrideScope: l.stockOverrideScope } : {}),
+          ...(l.stockOverrideAvailableQty !== undefined
+            ? { stockOverrideAvailableQty: l.stockOverrideAvailableQty }
+            : {}),
+        }
+      : {}),
     ...(l.addedByUserId ? { addedByUserId: l.addedByUserId } : {}),
     ...(l.addedByDisplayName ? { addedByDisplayName: l.addedByDisplayName } : {}),
     ...(l.addedAt ? { addedAt: l.addedAt } : {}),
@@ -326,6 +358,11 @@ export function Register() {
   >({ screen: 'categories' })
   const [itemListScreenKbOpen, setItemListScreenKbOpen] = useState(false)
   const [cart, setCart] = useState<CartLine[]>([])
+  const [customerDisplayConfig, setCustomerDisplayConfig] = useState<CustomerDisplayStoreConfig>(
+    getInitialCustomerDisplayConfig,
+  )
+  const [storeDisplayName, setStoreDisplayName] = useState(() => readCachedStoreName())
+  const spotlightAfterCartRef = useRef<Product | null>(null)
   const [openTabsModalOpen, setOpenTabsModalOpen] = useState(false)
   const [quotesModalOpen, setQuotesModalOpen] = useState(false)
   const [quotesList, setQuotesList] = useState<QuoteListItem[]>([])
@@ -385,6 +422,8 @@ export function Register() {
   const productsRef = useRef(products)
   const productLookupRef = useRef<ProductLookup>(buildProductLookup([]))
   const catalogCacheSaveTimerRef = useRef<number | null>(null)
+  const cartLinesScrollRef = useRef<HTMLDivElement | null>(null)
+  const pendingCartScrollKeyRef = useRef<string | null>(null)
   skuInputRef.current = skuInput
   productsRef.current = products
 
@@ -970,6 +1009,16 @@ export function Register() {
     void loadProducts()
   }, [loadProducts])
 
+  useLayoutEffect(() => {
+    const key = pendingCartScrollKeyRef.current
+    if (!key || showChangeView) return
+    pendingCartScrollKeyRef.current = null
+    const root = cartLinesScrollRef.current
+    if (!root) return
+    const el = root.querySelector<HTMLElement>(`[data-cart-line-key="${key}"]`)
+    el?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  }, [cart, showChangeView])
+
   useEffect(() => {
     if (activeTabBanner?.phone) {
       setVoucherPhone((prev) => prev || normalizePhone(activeTabBanner.phone))
@@ -1346,6 +1395,9 @@ export function Register() {
       return
     }
     setCart((prev) => {
+      const markCartScrollTarget = (line: CartLine) => {
+        pendingCartScrollKeyRef.current = cartLineDomKey(line)
+      }
       const stamp = lineAttributionFromSession(session?.user)
       const i = prev.findIndex((l) => l.productId === p._id && cartContributorKey(l) === cartContributorKey(stamp))
       if (i >= 0) {
@@ -1371,7 +1423,9 @@ export function Register() {
             stockOverrideScope: overrideScope,
             stockOverrideAvailableQty: Math.max(0, avail),
           }
-          next[i] = enrichCartLine(p, merged)
+          const updated = enrichCartLine(p, merged)
+          next[i] = updated
+          markCartScrollTarget(updated)
           partialNotice =
             overrideAdd < requestedQty
               ? `${overrideScope === 'offline' ? 'Offline' : 'Online'} override added ${overrideAdd} of ${requestedQty} (limit +${overrideMaxUnits})`
@@ -1388,7 +1442,9 @@ export function Register() {
               stockOverrideScope: overrideScope,
               stockOverrideAvailableQty: Math.max(0, avail),
             }
-            next[i] = enrichCartLine(p, merged)
+            const updated = enrichCartLine(p, merged)
+            next[i] = updated
+            markCartScrollTarget(updated)
             partialNotice =
               overrideAdd < requestedQty
                 ? `${overrideScope === 'offline' ? 'Offline' : 'Online'} override added ${overrideAdd} of ${requestedQty} (limit +${overrideMaxUnits})`
@@ -1398,7 +1454,9 @@ export function Register() {
           partialNotice = `Added ${toAdd} of ${requestedQty} (${avail} available)`
         }
         const merged = { ...line, quantity: line.quantity + toAdd }
-        next[i] = enrichCartLine(p, merged)
+        const updated = enrichCartLine(p, merged)
+        next[i] = updated
+        markCartScrollTarget(updated)
         return next
       }
       const sumPNew = totalCartQtyForProduct(prev, p._id)
@@ -1417,11 +1475,13 @@ export function Register() {
           stockOverrideAvailableQty: Math.max(0, avail),
           ...stamp,
         }
+        const appended = enrichCartLine(p, newLine)
+        markCartScrollTarget(appended)
         partialNotice =
           overrideAdd < requestedQty
             ? `${overrideScope === 'offline' ? 'Offline' : 'Online'} override added ${overrideAdd} of ${requestedQty} (limit +${overrideMaxUnits})`
             : `${overrideScope === 'offline' ? 'Offline' : 'Online'} stock override approved for ${p.name}`
-        return [...prev, enrichCartLine(p, newLine)]
+        return [...prev, appended]
       }
       if (toAdd < requestedQty) {
         if (approveStockOverride()) {
@@ -1437,11 +1497,13 @@ export function Register() {
             stockOverrideAvailableQty: Math.max(0, avail),
             ...stamp,
           }
+          const appended = enrichCartLine(p, newLine)
+          markCartScrollTarget(appended)
           partialNotice =
             overrideAdd < requestedQty
               ? `${overrideScope === 'offline' ? 'Offline' : 'Online'} override added ${overrideAdd} of ${requestedQty} (limit +${overrideMaxUnits})`
               : `${overrideScope === 'offline' ? 'Offline' : 'Online'} stock override approved for ${p.name}`
-          return [...prev, enrichCartLine(p, newLine)]
+          return [...prev, appended]
         }
         partialNotice = `Added ${toAdd} of ${requestedQty} (${avail} available)`
       }
@@ -1452,12 +1514,15 @@ export function Register() {
         unitPrice: p.price,
         ...stamp,
       }
-      return [...prev, enrichCartLine(p, newLine)]
+      const appended = enrichCartLine(p, newLine)
+      markCartScrollTarget(appended)
+      return [...prev, appended]
     })
     if (atStockLimit) {
       if (!blockedByPolicy) setError('This line is already at maximum stock for that product')
       return
     }
+    spotlightAfterCartRef.current = p
     if (overrideApproved && !partialNotice) {
       setNotice(`${overrideScope === 'offline' ? 'Offline' : 'Online'} stock override approved for ${p.name}`)
       return
@@ -1604,36 +1669,21 @@ export function Register() {
           )
           return prev
         }
-        blockedByPolicy = true
-        return prev
       }
 
       return prev.map((l, j) => {
         if (j !== lineIndex) return l
+        const overrideFields = overrideApprovedForBump
+          ? {
+              stockOverrideApproved: true as const,
+              stockOverrideScope: overrideScopeForBump,
+              stockOverrideAvailableQty: Math.max(0, maxUnits),
+            }
+          : {}
         if (!pLine) {
-          return {
-            ...l,
-            quantity: nextQty,
-            ...(overrideApprovedForBump
-              ? {
-                  stockOverrideApproved: true,
-                  stockOverrideScope: overrideScopeForBump,
-                  stockOverrideAvailableQty: Math.max(0, maxUnits),
-                }
-              : {}),
-          }
+          return { ...l, quantity: nextQty, ...overrideFields }
         }
-        return enrichCartLine(pLine, {
-          ...l,
-          quantity: nextQty,
-          ...(overrideApprovedForBump
-            ? {
-                stockOverrideApproved: true,
-                stockOverrideScope: overrideScopeForBump,
-                stockOverrideAvailableQty: Math.max(0, maxUnits),
-              }
-            : {}),
-        })
+        return enrichCartLine(pLine, { ...l, quantity: nextQty, ...overrideFields })
       })
     })
     if (!blockedByPolicy && partialNotice) setNotice(partialNotice)
@@ -1658,6 +1708,84 @@ export function Register() {
     }
     return roundCartMoney(s)
   }, [cart, productsById, activeTabBanner?.kind])
+
+  useCustomerDisplaySettingsLoader(session)
+  useEffect(() => {
+    if (!session) return
+    let cancelled = false
+    void apiFetch<StoreSettings>('/settings/store')
+      .then((s) => {
+        if (cancelled) return
+        setStoreDisplayName(s.storeName?.trim() || DEFAULT_STORE_NAME)
+        setCustomerDisplayConfig(storeConfigFromSettings(s))
+      })
+      .catch(() => {
+        /* use cache */
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [session?.accessToken])
+
+  const jobCardLabourActive = activeTabBanner?.kind === 'job_card'
+  useCustomerDisplaySync({
+    session,
+    storeConfig: customerDisplayConfig,
+    storeName: storeDisplayName,
+    cart,
+    cartTotal,
+    productsById,
+    showChangeView,
+    lastTotal: lastTotal,
+    lastChangeDue,
+    lastCardAmount,
+    lastTendered,
+    pendingSplit: !!pendingSplit,
+    refundSession: !!refundSession,
+    jobCardLabourActive,
+  })
+
+  useEffect(() => {
+    if (cart.length === 0) clearCustomerDisplaySpotlightSeen()
+  }, [cart.length])
+
+  useEffect(() => {
+    const p = spotlightAfterCartRef.current
+    if (!p) return
+    spotlightAfterCartRef.current = null
+    const snapshot = buildCustomerDisplaySnapshot({
+      session,
+      storeConfig: customerDisplayConfig,
+      storeName: storeDisplayName,
+      cart,
+      cartTotal,
+      productsById,
+      showChangeView,
+      lastTotal,
+      lastChangeDue,
+      lastCardAmount,
+      lastTendered,
+      pendingSplit: !!pendingSplit,
+      refundSession: !!refundSession,
+      jobCardLabourActive,
+    })
+    void publishProductSpotlight(p, snapshot)
+  }, [
+    cart,
+    session,
+    customerDisplayConfig,
+    storeDisplayName,
+    cartTotal,
+    productsById,
+    showChangeView,
+    lastTotal,
+    lastChangeDue,
+    lastCardAmount,
+    lastTendered,
+    pendingSplit,
+    refundSession,
+    jobCardLabourActive,
+  ])
 
   useEffect(() => {
     if (!activeOpenTabId || busy) return
@@ -4651,6 +4779,9 @@ export function Register() {
                               {houseAccountForCheckout.creditLimit != null
                                 ? ` · Limit ${houseAccountForCheckout.creditLimit.toFixed(2)}`
                                 : ''}
+                              {paymentTermsShortLabel(houseAccountForCheckout.paymentTerms)
+                                ? ` · ${paymentTermsShortLabel(houseAccountForCheckout.paymentTerms)}`
+                                : ''}
                             </p>
                           ) : (
                             <p className="muted register-voucher-balance" style={{ marginTop: '0.35rem' }}>
@@ -4740,7 +4871,7 @@ export function Register() {
                       {refundSession ? 'No refundable lines left on this sale.' : 'Tap a product to add.'}
                     </p>
                   ) : (
-                    <div className="cart-lines">
+                    <div className="cart-lines" ref={cartLinesScrollRef}>
                       {cart.map((l, i) => {
                         const lineProduct = productsById.get(l.productId)
                         const jobCardLabourActive = !refundSession && activeTabBanner?.kind === 'job_card'
@@ -4754,6 +4885,7 @@ export function Register() {
                         return (
                         <div
                           className="cart-line"
+                          data-cart-line-key={cartLineDomKey(l)}
                           key={l.refundSaleLineIndex != null ? `refund-${l.refundSaleLineIndex}` : `cart-${i}`}
                         >
                           <div className="cart-line-info">
@@ -4940,6 +5072,9 @@ export function Register() {
                                 {houseAccountForCheckout.balance.toFixed(2)}
                                 {houseAccountForCheckout.creditLimit != null
                                   ? ` · Limit ${houseAccountForCheckout.creditLimit.toFixed(2)}`
+                                  : ''}
+                                {paymentTermsShortLabel(houseAccountForCheckout.paymentTerms)
+                                  ? ` · ${paymentTermsShortLabel(houseAccountForCheckout.paymentTerms)}`
                                   : ''}
                               </p>
                             ) : (

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { PosShell } from '../layouts/PosShell'
 import { usePosTheme } from '../theme/PosThemeContext'
@@ -23,6 +23,21 @@ export function PosSettings() {
   const { theme, setTheme } = usePosTheme()
   const [keySoundEnabled, setKeySoundEnabled] = useState(() => readPosKeySoundEnabled())
   const [printer, setPrinter] = useState<PosPrinterSettings>(() => readPosPrinterSettings())
+  const [cdEnabled, setCdEnabled] = useState(false)
+  const [cdDisplayId, setCdDisplayId] = useState<number | null>(null)
+  const [cdDisplays, setCdDisplays] = useState<
+    Array<{ id: number; label: string; primary: boolean }>
+  >([])
+  const [cdNotice, setCdNotice] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!window.electronCustomerDisplay) return
+    void window.electronCustomerDisplay.getTillSettings().then((s) => {
+      setCdEnabled(s.enabled)
+      setCdDisplayId(s.displayId)
+    })
+    void window.electronCustomerDisplay.listDisplays().then((list) => setCdDisplays(list))
+  }, [])
 
   const updatePrinter = (patch: Partial<PosPrinterSettings>) => {
     setPrinter((prev) => {
@@ -414,6 +429,80 @@ export function PosSettings() {
             </label>
           </div>
         </section>
+
+        {window.electronCustomerDisplay ? (
+          <section className="pos-settings-section" aria-labelledby="pos-cd-heading">
+            <h2 id="pos-cd-heading" className="pos-settings-section-title">
+              Customer display
+            </h2>
+            <p className="muted pos-settings-section-lead">
+              Second monitor for customers. Use extended desktop (not mirror). Idle content is configured in Back
+              Office.
+            </p>
+            {cdNotice ? <p className="success">{cdNotice}</p> : null}
+            <div className="pos-settings-row">
+              <label className="pos-settings-check">
+                <input
+                  type="checkbox"
+                  checked={cdEnabled}
+                  onChange={(e) => {
+                    const enabled = e.target.checked
+                    setCdEnabled(enabled)
+                    void window.electronCustomerDisplay?.setTillSettings({
+                      enabled,
+                      displayId: cdDisplayId,
+                    })
+                  }}
+                />
+                <span>Enable customer display on this till</span>
+              </label>
+            </div>
+            {cdDisplays.length > 0 ? (
+              <label className="pos-settings-field">
+                <span className="pos-settings-field-label">Target monitor</span>
+                <select
+                  className="pos-settings-input"
+                  value={cdDisplayId ?? ''}
+                  onChange={(e) => {
+                    const v = e.target.value
+                    const displayId = v === '' ? null : Number(v)
+                    setCdDisplayId(displayId)
+                    void window.electronCustomerDisplay?.setTillSettings({
+                      enabled: cdEnabled,
+                      displayId,
+                    })
+                  }}
+                >
+                  <option value="">Automatic (first external, else primary)</option>
+                  {cdDisplays.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.label}
+                      {d.primary ? ' (primary)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : (
+              <p className="muted">No displays reported — connect a second monitor and reopen settings.</p>
+            )}
+            <div className="pos-settings-row" style={{ gap: '0.5rem', flexWrap: 'wrap' }}>
+              {(['idle', 'ready', 'cart', 'complete'] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  className="btn ghost"
+                  onClick={() => {
+                    void window.electronCustomerDisplay?.test(mode).then(() =>
+                      setCdNotice(`Test sent: ${mode}`),
+                    )
+                  }}
+                >
+                  Test {mode}
+                </button>
+              ))}
+            </div>
+          </section>
+        ) : null}
 
         <p className="pos-settings-back">
           <Link to="/" className="btn ghost">

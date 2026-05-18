@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiFetch } from '../api/client'
 import type { HouseAccountRow } from '../api/types'
+import { paymentTermsShortLabel } from '../houseAccounts/paymentTerms'
 import { ScreenKeyboard, type ScreenKeyboardAction } from './ScreenKeyboard'
 
 export type HouseAccountsModalProps = {
@@ -169,6 +170,10 @@ export function HouseAccountsModal({
                     </div>
                     <div style={{ fontSize: '0.85rem', color: 'var(--muted, #a8a8a8)', marginBottom: '0.35rem' }}>
                       Owed (incl. VAT){row.creditLimit != null ? ` · Limit ${row.creditLimit.toFixed(2)}` : ''}
+                      {paymentTermsShortLabel(row.paymentTerms)
+                        ? ` · ${paymentTermsShortLabel(row.paymentTerms)}`
+                        : ''}
+                      {row.contactPerson ? ` · ${row.contactPerson}` : ''}
                     </div>
                     <div className="open-tabs-li-actions">
                       <button

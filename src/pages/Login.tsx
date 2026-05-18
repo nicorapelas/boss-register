@@ -7,6 +7,10 @@ import { useAuth } from '../auth/AuthContext'
 import { getOfflineLoginCacheStatus } from '../auth/offlineAuth'
 import { ScreenKeyboard, retainInputFocusOnKeyPointerDown, type ScreenKeyboardAction } from '../components'
 import { IconCloseWindow, IconMinimize } from '../icons/windowChrome'
+import { buildCustomerDisplaySnapshot } from '../customerDisplay/buildSnapshot'
+import { readCachedStoreName } from '../customerDisplay/configCache'
+import { publishCustomerDisplay } from '../customerDisplay/publish'
+import { getInitialCustomerDisplayConfig } from '../customerDisplay/useCustomerDisplaySync'
 
 export function Login() {
   const { theme } = usePosTheme()
@@ -33,6 +37,29 @@ export function Login() {
   const emailInputRef = useRef<HTMLInputElement | null>(null)
   const passwordInputRef = useRef<HTMLInputElement | null>(null)
   const shouldRedirect = !loading && !!session
+
+  useEffect(() => {
+    if (loading || session) return
+    const storeConfig = getInitialCustomerDisplayConfig()
+    publishCustomerDisplay(
+      buildCustomerDisplaySnapshot({
+        session: null,
+        storeConfig,
+        storeName: readCachedStoreName(),
+        cart: [],
+        cartTotal: 0,
+        productsById: new Map(),
+        showChangeView: false,
+        lastTotal: null,
+        lastChangeDue: null,
+        lastCardAmount: null,
+        lastTendered: null,
+        pendingSplit: false,
+        refundSession: false,
+        jobCardLabourActive: false,
+      }),
+    )
+  }, [loading, session])
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()

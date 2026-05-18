@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain } from 'electron'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { registerAuthIpc } from './auth-storage'
+import { initCustomerDisplayModule, onAppReadyCustomerDisplay } from './customer-display'
 import { registerOfflineIpc } from './offline-storage'
 import { buildReceiptEscPos, drawerKick, sendEscPosToPrinter, type PrinterTransport, type ReceiptPayload } from './pos-printer'
 
@@ -19,6 +20,11 @@ process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL
 
 registerAuthIpc()
 registerOfflineIpc()
+initCustomerDisplayModule({
+  rendererDist: RENDERER_DIST,
+  viteDevServerUrl: VITE_DEV_SERVER_URL,
+  preloadPath: path.join(__dirname, 'preload.mjs'),
+})
 
 ipcMain.handle('app:quit', () => {
   app.quit()
@@ -133,7 +139,7 @@ function createWindow() {
     minWidth: 800,
     minHeight: 560,
     fullscreen: true,
-    icon: path.join(process.env.VITE_PUBLIC, 'electron-vite.svg'),
+    icon: path.join(process.env.APP_ROOT, 'src/assets/logo-text_bottom1-dark.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
     },
@@ -164,4 +170,7 @@ app.on('activate', () => {
   }
 })
 
-app.whenReady().then(createWindow)
+app.whenReady().then(() => {
+  createWindow()
+  onAppReadyCustomerDisplay()
+})

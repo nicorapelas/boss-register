@@ -11,8 +11,8 @@ export function productTracksInventory(p: Pick<Product, 'trackInventory'>): bool
 export function productAvailableUnits(p: Product): number {
   if (!productTracksInventory(p)) return PRODUCT_MAX_UNTRACKED_LINE_QTY
   const a = p.availableQty
-  if (a == null) return p.stock
-  return a
+  const raw = a == null ? (p.stock ?? 0) : a
+  return Math.max(0, raw)
 }
 
 export function productHasSellableStock(p: Product): boolean {

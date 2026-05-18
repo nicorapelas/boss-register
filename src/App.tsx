@@ -5,6 +5,7 @@ import { RequireAdmin } from './layouts/RequireAdmin'
 import { RequireAuth } from './layouts/RequireAuth'
 import { Login } from './pages/Login'
 import { PosSettings } from './pages/PosSettings'
+import { CustomerDisplayPage } from './pages/CustomerDisplay'
 import { Register } from './pages/Register'
 import { GlobalPosButtonSound } from './audio/GlobalPosButtonSound'
 import { PosThemeProvider } from './theme/PosThemeContext'
@@ -59,7 +60,14 @@ class RuntimeErrorBoundary extends Component<{ children: ReactNode }, RuntimeErr
   }
 }
 
+const isCustomerDisplayWindow =
+  typeof window !== 'undefined' && window.location.hash.includes('/customer-display')
+
 export default function App() {
+  if (isCustomerDisplayWindow) {
+    return <CustomerDisplayPage />
+  }
+
   return (
     <PosThemeProvider>
       <div className="pos-app-fill pos-touch">
