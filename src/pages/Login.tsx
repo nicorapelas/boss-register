@@ -15,7 +15,7 @@ import { getInitialCustomerDisplayConfig } from '../customerDisplay/useCustomerD
 
 export function Login() {
   const { theme } = usePosTheme()
-  const logoMark = resolvePosLogoSrc(theme)
+  const logoMark = resolvePosLogoSrc(theme, 'light')
   const { session, loading, login, loginWithBadge } = useAuth()
   const navigate = useNavigate()
   const [mode, setMode] = useState<'badge' | 'login' | 'register'>('badge')

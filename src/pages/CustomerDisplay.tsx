@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react'
-import cogniLogo from '../assets/logo-text_bottom1-dark.png'
+import { resolvePosLogoForBackground } from '../theme/posLogo'
 import { APP_NAME } from '../brand'
 import {
   CUSTOMER_DISPLAY_COMPLETE_MS,
@@ -70,6 +70,11 @@ export function CustomerDisplayPage() {
     [theme.backgroundColor, theme.accentColor, theme.textColor],
   )
 
+  const brandLogoSrc = useMemo(
+    () => resolvePosLogoForBackground(theme.backgroundColor),
+    [theme.backgroundColor],
+  )
+
   const showSpotlight = spotlightVisible && snapshot?.spotlight && mode !== 'idle'
   const cartMode = mode === 'cart' || (showSpotlight && (snapshot?.lines?.length ?? 0) > 0)
 
@@ -86,7 +91,7 @@ export function CustomerDisplayPage() {
 
       {!showSpotlight && mode === 'idle' && snapshot?.idle ? (
         <div className="customer-display-idle">
-          <img src={cogniLogo} alt={APP_NAME} className="customer-display-brand-logo" decoding="async" />
+          <img src={brandLogoSrc} alt={APP_NAME} className="customer-display-brand-logo" decoding="async" />
           <h2 className="customer-display-headline">{snapshot.idle.headline}</h2>
           {snapshot.idle.subtext ? <p className="customer-display-subtext">{snapshot.idle.subtext}</p> : null}
           {snapshot.idle.imageUrl ? (
@@ -98,7 +103,7 @@ export function CustomerDisplayPage() {
 
       {!showSpotlight && mode === 'ready' ? (
         <div className="customer-display-ready">
-          <img src={cogniLogo} alt={APP_NAME} className="customer-display-brand-logo" decoding="async" />
+          <img src={brandLogoSrc} alt={APP_NAME} className="customer-display-brand-logo" decoding="async" />
           <p className="customer-display-ready-msg">We&apos;re ready to serve you</p>
           {snapshot?.footerText ? <p className="customer-display-footer">{snapshot.footerText}</p> : null}
         </div>
@@ -107,7 +112,7 @@ export function CustomerDisplayPage() {
       {cartMode && snapshot?.lines ? (
         <div className={`customer-display-cart${showSpotlight ? ' customer-display-cart--dimmed' : ''}`}>
           <header className="customer-display-cart-header">
-            <img src={cogniLogo} alt={APP_NAME} className="customer-display-brand-logo customer-display-brand-logo--compact" decoding="async" />
+            <img src={brandLogoSrc} alt={APP_NAME} className="customer-display-brand-logo customer-display-brand-logo--compact" decoding="async" />
           </header>
           <ul className="customer-display-lines">
             {snapshot.lines.map((line, i) => (
