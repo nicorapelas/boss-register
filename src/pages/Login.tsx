@@ -38,6 +38,7 @@ export function Login() {
   const emailInputRef = useRef<HTMLInputElement | null>(null)
   const passwordInputRef = useRef<HTMLInputElement | null>(null)
   const shouldRedirect = !loading && !!session
+  const { requestQuit, quitConfirmModal } = useQuitAppConfirm()
 
   useEffect(() => {
     if (loading || session) return
@@ -149,7 +150,6 @@ export function Login() {
   }
 
   const showBadgeElectronChrome = Boolean(window.electronApp && mode === 'badge')
-  const { requestQuit, quitConfirmModal } = useQuitAppConfirm()
 
   return (
     <>

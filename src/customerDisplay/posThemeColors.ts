@@ -11,7 +11,7 @@ const POS_THEME_CUSTOMER_DISPLAY: Record<
   ubuntu: { backgroundColor: '#1e1b4b', accentColor: '#22d3ee', textColor: '#f5f3ff' },
   elon: { backgroundColor: '#0a1628', accentColor: '#b22234', textColor: '#f8fafc' },
   lego: { backgroundColor: '#0c1929', accentColor: '#ffd502', textColor: '#fffef5' },
-  jacobs: { backgroundColor: '#000000', accentColor: '#fcfc30', textColor: '#ffffff' },
+  jacobs: { backgroundColor: '#ffffff', accentColor: '#0909e8', textColor: '#000000' },
 }
 
 /** Per-till: customer display colours follow POS Appearance (overrides Back Office theme colours). */
