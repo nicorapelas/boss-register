@@ -1,6 +1,7 @@
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { Component, type ErrorInfo, type ReactNode } from 'react'
 import { AuthProvider } from './auth/AuthContext'
+import { PosInactivityLogout } from './auth/PosInactivityLogout'
 import { RequireAdmin } from './layouts/RequireAdmin'
 import { RequireAuth } from './layouts/RequireAuth'
 import { Login } from './pages/Login'
@@ -77,6 +78,7 @@ export default function App() {
           <RuntimeErrorBoundary>
             {/* HashRouter: packaged Electron uses file:// — BrowserRouter + /settings links resolve to file:///settings and break taps / show bogus URLs. */}
             <HashRouter>
+              <PosInactivityLogout />
               <div className="pos-route">
                 <Routes>
                   <Route path="/login" element={<Login />} />
