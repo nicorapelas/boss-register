@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import type { CustomerDisplayBounds, CustomerDisplayTillSettings } from '../customerDisplay/electron'
 import { usePosTheme } from '../theme/PosThemeContext'
 import type { PosTheme } from '../theme/posTheme'
 import { readPosKeySoundEnabled, writePosKeySoundEnabled } from '../audio/posKeySound'
@@ -23,19 +24,55 @@ export function PosSettingsPanel({ onClose }: { onClose: () => void }) {
   const [printer, setPrinter] = useState<PosPrinterSettings>(() => readPosPrinterSettings())
   const [cdEnabled, setCdEnabled] = useState(false)
   const [cdDisplayId, setCdDisplayId] = useState<number | null>(null)
+  const [cdDisplayBounds, setCdDisplayBounds] = useState<CustomerDisplayBounds | null>(null)
   const [cdDisplays, setCdDisplays] = useState<
-    Array<{ id: number; label: string; primary: boolean }>
+    Array<{ id: number; label: string; primary: boolean; bounds: CustomerDisplayBounds }>
   >([])
   const [cdNotice, setCdNotice] = useState<string | null>(null)
 
+  const applyCdSettings = useCallback((s: CustomerDisplayTillSettings) => {
+    setCdEnabled(s.enabled)
+    setCdDisplayId(s.displayId)
+    setCdDisplayBounds(s.displayBounds)
+  }, [])
+
+  const persistCdSettings = useCallback(
+    (patch: Partial<CustomerDisplayTillSettings>) => {
+      if (!window.electronCustomerDisplay) return
+      const payload: CustomerDisplayTillSettings = {
+        enabled: patch.enabled ?? cdEnabled,
+        displayId: patch.displayId !== undefined ? patch.displayId : cdDisplayId,
+        displayBounds: patch.displayBounds !== undefined ? patch.displayBounds : cdDisplayBounds,
+      }
+      if (payload.displayId == null) payload.displayBounds = null
+      void window.electronCustomerDisplay.setTillSettings(payload).then((r) => {
+        if (r.settings) applyCdSettings(r.settings)
+      })
+    },
+    [applyCdSettings, cdDisplayBounds, cdDisplayId, cdEnabled],
+  )
+
   useEffect(() => {
     if (!window.electronCustomerDisplay) return
-    void window.electronCustomerDisplay.getTillSettings().then((s) => {
-      setCdEnabled(s.enabled)
-      setCdDisplayId(s.displayId)
-    })
+    void window.electronCustomerDisplay.getTillSettings().then(applyCdSettings)
     void window.electronCustomerDisplay.listDisplays().then((list) => setCdDisplays(list))
-  }, [])
+  }, [applyCdSettings])
+
+  useEffect(() => {
+    if (!window.electronCustomerDisplay || cdDisplayBounds == null) return
+    const match = cdDisplays.find(
+      (d) =>
+        d.bounds.x === cdDisplayBounds.x &&
+        d.bounds.y === cdDisplayBounds.y &&
+        d.bounds.width === cdDisplayBounds.width &&
+        d.bounds.height === cdDisplayBounds.height,
+    )
+    if (!match || match.id === cdDisplayId) return
+    persistCdSettings({ displayId: match.id, displayBounds: match.bounds })
+  }, [cdDisplays, cdDisplayBounds, cdDisplayId, persistCdSettings])
+
+  const savedDisplayMissing =
+    cdDisplayId != null && !cdDisplays.some((d) => d.id === cdDisplayId)
 
   const updatePrinter = (patch: Partial<PosPrinterSettings>) => {
     setPrinter((prev) => {
@@ -445,10 +482,7 @@ export function PosSettingsPanel({ onClose }: { onClose: () => void }) {
                   onChange={(e) => {
                     const enabled = e.target.checked
                     setCdEnabled(enabled)
-                    void window.electronCustomerDisplay?.setTillSettings({
-                      enabled,
-                      displayId: cdDisplayId,
-                    })
+                    persistCdSettings({ enabled })
                   }}
                 />
                 <span>Enable customer display on this till</span>
@@ -459,25 +493,47 @@ export function PosSettingsPanel({ onClose }: { onClose: () => void }) {
                 <span className="pos-settings-field-label">Target monitor</span>
                 <select
                   className="pos-settings-input"
-                  value={cdDisplayId ?? ''}
+                  value={cdDisplayId == null ? '' : String(cdDisplayId)}
                   onChange={(e) => {
                     const v = e.target.value
-                    const displayId = v === '' ? null : Number(v)
+                    if (v === '') {
+                      setCdDisplayId(null)
+                      setCdDisplayBounds(null)
+                      persistCdSettings({ displayId: null, displayBounds: null })
+                      return
+                    }
+                    const displayId = Number(v)
+                    const picked = cdDisplays.find((d) => d.id === displayId)
+                    const displayBounds = picked?.bounds ?? null
                     setCdDisplayId(displayId)
-                    void window.electronCustomerDisplay?.setTillSettings({
-                      enabled: cdEnabled,
-                      displayId,
-                    })
+                    setCdDisplayBounds(displayBounds)
+                    persistCdSettings({ displayId, displayBounds })
                   }}
                 >
                   <option value="">Automatic (first external, else primary)</option>
+                  {savedDisplayMissing ? (
+                    <option value={String(cdDisplayId)}>
+                      Saved monitor (id {cdDisplayId}
+                      {cdDisplayBounds
+                        ? ` · ${cdDisplayBounds.width}×${cdDisplayBounds.height} @ ${cdDisplayBounds.x},${cdDisplayBounds.y}`
+                        : ''}
+                      )
+                    </option>
+                  ) : null}
                   {cdDisplays.map((d) => (
-                    <option key={d.id} value={d.id}>
+                    <option key={d.id} value={String(d.id)}>
                       {d.label}
                       {d.primary ? ' (primary)' : ''}
+                      {` · ${d.bounds.width}×${d.bounds.height}`}
                     </option>
                   ))}
                 </select>
+                {savedDisplayMissing ? (
+                  <p className="muted pos-settings-hint">
+                    Saved monitor not detected by id (common after reboot). Placement uses saved position if the
+                    screen layout is unchanged — re-select the monitor once to refresh.
+                  </p>
+                ) : null}
               </label>
             ) : (
               <p className="muted">No displays reported — connect a second monitor and reopen settings.</p>

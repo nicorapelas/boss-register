@@ -50,12 +50,21 @@ contextBridge.exposeInMainWorld('electronCustomerDisplay', {
     ipcRenderer.invoke('customer-display:get-till-settings') as Promise<{
       enabled: boolean
       displayId: number | null
+      displayBounds: { x: number; y: number; width: number; height: number } | null
     }>,
-  setTillSettings: (settings: { enabled: boolean; displayId: number | null }) =>
+  setTillSettings: (settings: {
+    enabled: boolean
+    displayId: number | null
+    displayBounds: { x: number; y: number; width: number; height: number } | null
+  }) =>
     ipcRenderer.invoke('customer-display:set-till-settings', settings) as Promise<{
       ok: boolean
       error?: string
-      settings?: { enabled: boolean; displayId: number | null }
+      settings?: {
+        enabled: boolean
+        displayId: number | null
+        displayBounds: { x: number; y: number; width: number; height: number } | null
+      }
     }>,
   publish: (snapshot: unknown) =>
     ipcRenderer.invoke('customer-display:publish', snapshot) as Promise<{ ok: boolean }>,

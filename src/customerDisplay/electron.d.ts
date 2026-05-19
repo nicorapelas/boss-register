@@ -1,15 +1,28 @@
 import type { CustomerDisplaySnapshot } from './types'
 
+export type CustomerDisplayBounds = {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
 export type CustomerDisplayTillSettings = {
   enabled: boolean
   displayId: number | null
+  displayBounds: CustomerDisplayBounds | null
 }
 
 declare global {
   interface Window {
     electronCustomerDisplay?: {
       listDisplays: () => Promise<
-        Array<{ id: number; label: string; bounds: Electron.Rectangle; primary: boolean }>
+        Array<{
+          id: number
+          label: string
+          bounds: CustomerDisplayBounds
+          primary: boolean
+        }>
       >
       getTillSettings: () => Promise<CustomerDisplayTillSettings>
       setTillSettings: (settings: CustomerDisplayTillSettings) => Promise<{
