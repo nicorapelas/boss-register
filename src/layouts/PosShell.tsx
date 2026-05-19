@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useCallback, useRef, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { usePosTheme } from '../theme/PosThemeContext'
@@ -51,6 +51,16 @@ export function PosShell({
   const shellSub = onSettings ? 'Settings' : 'Register'
   const settingsToggleLabel = onSettings ? 'Close settings' : 'Settings'
   const userLabel = session?.user.displayName?.trim() || session?.user.email
+  const settingsNavLockRef = useRef(false)
+
+  const toggleSettings = useCallback(() => {
+    if (settingsNavLockRef.current) return
+    settingsNavLockRef.current = true
+    navigate(onSettings ? '/' : '/settings')
+    window.setTimeout(() => {
+      settingsNavLockRef.current = false
+    }, 450)
+  }, [navigate, onSettings])
 
   function handleSignOut() {
     if (beforeSignOut && !beforeSignOut()) return
@@ -90,7 +100,7 @@ export function PosShell({
                   className="btn ghost shell-settings-link"
                   aria-label={settingsToggleLabel}
                   title={settingsToggleLabel}
-                  onClick={() => void navigate(onSettings ? '/' : '/settings')}
+                  onClick={toggleSettings}
                 >
                   <CogIcon />
                 </button>

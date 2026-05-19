@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from 'react'
+import { useLocation } from 'react-router-dom'
 import { apiFetch, fetchProductPhotoObjectUrl, subscribeServerReachability } from '../api/client'
 import { loadProductPresetsWithMigration, pushProductPresets } from '../api/productPresetsApi'
 import type {
@@ -27,6 +28,7 @@ import type {
   ShiftReport,
   StoreSettings,
 } from '../api/types'
+import { useCatalog } from '../catalog/CatalogContext'
 import { useAuth } from '../auth/AuthContext'
 import {
   canManageShifts,
@@ -74,7 +76,7 @@ import {
   isLikelyNetworkError,
 } from '../offline/offlineSalesQueue'
 import type { OfflineSyncedItemSummary } from '../offline/offlineSalesQueue'
-import { isCatalogSnapshotStale, loadCatalogCache, saveCatalogCache } from '../offline/catalogCache'
+import { saveCatalogCache } from '../offline/catalogCache'
 import {
   productAvailableUnits,
   productHasSellableStock,
@@ -340,11 +342,23 @@ function persistLastReceiptSale(sale: Sale): void {
 
 export function Register() {
   const { session } = useAuth()
+  const location = useLocation()
+  const settingsObscured = location.pathname === '/settings'
+  const {
+    products,
+    setProducts,
+    productsRef,
+    catalogSnapshotSyncedAt,
+    catalogSnapshotStale,
+    offlineCatalogMode,
+    catalogReady,
+    catalogError,
+    loadProducts,
+  } = useCatalog()
   const isAdmin = isPosManager(session?.user)
   const isStoreAdmin = isRoleAdmin(session?.user)
   const canRefund = canRefundSales(session?.user)
   const canShiftEnd = canManageShifts(session?.user)
-  const [products, setProducts] = useState<Product[]>([])
   const [filter, setFilter] = useState('')
   const [skuInput, setSkuInput] = useState('')
   const [registerLeftPanel, setRegisterLeftPanel] = useState<'keys' | 'presets' | 'list'>('keys')
@@ -419,13 +433,11 @@ export function Register() {
 
   // Refs so global key handling always sees the latest buffer/products
   const skuInputRef = useRef(skuInput)
-  const productsRef = useRef(products)
   const productLookupRef = useRef<ProductLookup>(buildProductLookup([]))
   const catalogCacheSaveTimerRef = useRef<number | null>(null)
   const cartLinesScrollRef = useRef<HTMLDivElement | null>(null)
   const pendingCartScrollKeyRef = useRef<string | null>(null)
   skuInputRef.current = skuInput
-  productsRef.current = products
 
   const scheduleCatalogCacheSave = useCallback((snapshot: Product[]) => {
     if (catalogCacheSaveTimerRef.current) clearTimeout(catalogCacheSaveTimerRef.current)
@@ -507,9 +519,6 @@ export function Register() {
   const [altPaymentExpanded, setAltPaymentExpanded] = useState(false)
   const [lastOnAccount, setLastOnAccount] = useState<number | null>(null)
   const [offlinePendingCount, setOfflinePendingCount] = useState(0)
-  const [catalogSnapshotSyncedAt, setCatalogSnapshotSyncedAt] = useState<string | null>(null)
-  const [catalogSnapshotStale, setCatalogSnapshotStale] = useState(false)
-  const [offlineCatalogMode, setOfflineCatalogMode] = useState(false)
   const [serverReachable, setServerReachable] = useState(true)
   const [productPhotoViewer, setProductPhotoViewer] = useState<Product | null>(null)
   const [productPhotoUrl, setProductPhotoUrl] = useState<string | null>(null)
@@ -675,7 +684,7 @@ export function Register() {
             )
           }
         }
-        void loadProducts({ hydrateFromCache: false })
+        void loadProducts({ hydrateFromCache: false, force: true })
       }
     }
     void tick()
@@ -947,67 +956,12 @@ export function Register() {
     }
   }
 
-  const loadProducts = useCallback(async (opts?: { hydrateFromCache?: boolean }) => {
-    setError(null)
-    const hydrateFromCache = opts?.hydrateFromCache !== false
-    const shouldHydrateFromCache = hydrateFromCache && productsRef.current.length === 0
-    const cached = shouldHydrateFromCache ? await loadCatalogCache() : { products: [], syncedAt: null as string | null }
-    if (cached.products.length > 0) {
-      setProducts(cached.products)
-      setCatalogSnapshotSyncedAt(cached.syncedAt)
-      setCatalogSnapshotStale(isCatalogSnapshotStale(cached.syncedAt))
-    }
-
-    try {
-      const list = await apiFetch<Product[]>('/products')
-      setProducts(list)
-      const syncedAt = new Date().toISOString()
-      setCatalogSnapshotSyncedAt(syncedAt)
-      setCatalogSnapshotStale(false)
-      setOfflineCatalogMode(false)
-      try {
-        await saveCatalogCache(list)
-      } catch {
-        // Non-blocking: UI still uses fresh online list.
-      }
-    } catch (e) {
-      if (cached.products.length > 0 && isLikelyNetworkError(e)) {
-        setOfflineCatalogMode(true)
-        setNotice(
-          `Server unavailable. Using offline catalog snapshot${cached.syncedAt ? ` from ${new Date(cached.syncedAt).toLocaleString()}` : ''
-          }.`,
-        )
-        return
-      }
-      if (!isLikelyNetworkError(e)) setOfflineCatalogMode(false)
-      const message = e instanceof Error ? e.message : 'Failed to load products'
-      if (productsRef.current.length > 0) {
-        const lower = message.toLowerCase()
-        if (
-          lower.includes('unauthorized') ||
-          lower.includes('session expired') ||
-          lower.includes('invalid refresh token')
-        ) {
-          setError(`Catalog refresh failed: ${message}. Please sign out and sign in again.`)
-        } else {
-          setError(`Catalog refresh failed: ${message}. Displayed stock may be stale.`)
-        }
-        return
-      }
-      setError(message)
-    }
-  }, [])
-
   const applyOfflineStockDeduction = useCallback(
     (lines: CartStockLine[]) => {
       applyCatalogStockFromCart(lines, 'sale')
     },
     [applyCatalogStockFromCart],
   )
-
-  useEffect(() => {
-    void loadProducts()
-  }, [loadProducts])
 
   useLayoutEffect(() => {
     const key = pendingCartScrollKeyRef.current
@@ -4066,7 +4020,10 @@ export function Register() {
   }
 
   return (
-    <div className={`register-viewport${refundSession ? ' register-viewport--refund-mode' : ''}`}>
+    <div
+      className={`register-viewport${refundSession ? ' register-viewport--refund-mode' : ''}${settingsObscured ? ' register-viewport--obscured' : ''}`}
+      aria-hidden={settingsObscured || undefined}
+    >
       <PosShell
         beforeSignOut={() => {
           if (cart.length > 0) {
@@ -4076,6 +4033,11 @@ export function Register() {
           return true
         }}
       >
+        {!catalogReady ? (
+          <div className="register-catalog-loader" role="status" aria-live="polite" aria-busy="true">
+            <p className="register-catalog-loader-text">Loading catalog…</p>
+          </div>
+        ) : null}
         <div className="register-main-stack">
           {refundSession ? (
             <div className="register-refund-banner" role="status" aria-live="polite">
@@ -5219,7 +5181,7 @@ export function Register() {
                 </div>
                 {(error || notice || lastSale || offlinePendingCount > 0) && (
                   <div className="cart-messages">
-                    {error && <p className="error">{error}</p>}
+                    {(error || catalogError) && <p className="error">{error ?? catalogError}</p>}
                     {notice && <p className="success">{notice}</p>}
                     {offlinePendingCount > 0 && (
                       <p className="success" role="status">

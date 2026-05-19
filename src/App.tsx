@@ -4,9 +4,10 @@ import { AuthProvider } from './auth/AuthContext'
 import { RequireAdmin } from './layouts/RequireAdmin'
 import { RequireAuth } from './layouts/RequireAuth'
 import { Login } from './pages/Login'
-import { PosSettings } from './pages/PosSettings'
+import { CatalogProvider } from './catalog/CatalogContext'
 import { CustomerDisplayPage } from './pages/CustomerDisplay'
-import { Register } from './pages/Register'
+import { TillLayout } from './layouts/TillLayout'
+import { PosSettingsOverlay } from './pages/PosSettingsOverlay'
 import { GlobalPosButtonSound } from './audio/GlobalPosButtonSound'
 import { PosThemeProvider } from './theme/PosThemeContext'
 import './App.css'
@@ -80,9 +81,13 @@ export default function App() {
                 <Routes>
                   <Route path="/login" element={<Login />} />
                   <Route element={<RequireAuth />}>
-                    <Route path="/" element={<Register />} />
-                    <Route element={<RequireAdmin />}>
-                      <Route path="/settings" element={<PosSettings />} />
+                    <Route element={<CatalogProvider />}>
+                      <Route element={<TillLayout />}>
+                        <Route index element={null} />
+                        <Route element={<RequireAdmin />}>
+                          <Route path="settings" element={<PosSettingsOverlay />} />
+                        </Route>
+                      </Route>
                     </Route>
                   </Route>
                   <Route path="*" element={<Navigate to="/" replace />} />

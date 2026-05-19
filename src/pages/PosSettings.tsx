@@ -1,6 +1,4 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { PosShell } from '../layouts/PosShell'
 import { usePosTheme } from '../theme/PosThemeContext'
 import type { PosTheme } from '../theme/posTheme'
 import { readPosKeySoundEnabled, writePosKeySoundEnabled } from '../audio/posKeySound'
@@ -19,7 +17,7 @@ const THEMES: { id: PosTheme; label: string; hint: string }[] = [
   { id: 'lego', label: 'Bricks', hint: 'Classic toy-brick reds, yellows & blues on a deep base' },
 ]
 
-export function PosSettings() {
+export function PosSettingsPanel({ onClose }: { onClose: () => void }) {
   const { theme, setTheme } = usePosTheme()
   const [keySoundEnabled, setKeySoundEnabled] = useState(() => readPosKeySoundEnabled())
   const [printer, setPrinter] = useState<PosPrinterSettings>(() => readPosPrinterSettings())
@@ -58,8 +56,7 @@ export function PosSettings() {
   }
 
   return (
-    <PosShell>
-      <div className="pos-settings-page">
+    <div className="pos-settings-page">
         <h1 className="pos-settings-title">Settings</h1>
         <p className="muted">Register options can be extended here. Store-wide configuration is in Back Office.</p>
 
@@ -505,11 +502,10 @@ export function PosSettings() {
         ) : null}
 
         <p className="pos-settings-back">
-          <Link to="/" className="btn ghost">
+          <button type="button" className="btn ghost" onClick={onClose}>
             Back to register
-          </Link>
+          </button>
         </p>
       </div>
-    </PosShell>
   )
 }

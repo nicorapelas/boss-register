@@ -188,6 +188,44 @@ html.electron-shell .auth-window-actions button {
   height: 1.35rem;
 }
 
+.pos-settings-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 3200;
+  display: flex;
+  flex-direction: column;
+  background: #1e1e1e;
+  overflow: hidden;
+  touch-action: manipulation;
+}
+
+.pos-settings-overlay .pos-settings-page {
+  flex: 1;
+  min-height: 0;
+}
+
+.register-viewport--obscured {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.register-catalog-loader {
+  position: absolute;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(24, 24, 24, 0.92);
+  pointer-events: all;
+}
+
+.register-catalog-loader-text {
+  margin: 0;
+  font-size: 1.15rem;
+  color: #f2f2f2;
+}
+
 .pos-settings-page {
   flex: 1;
   min-height: 0;
@@ -361,6 +399,7 @@ html.electron-shell .auth-window-actions button {
 }
 
 .shell-main {
+  position: relative;
   flex: 1;
   min-height: 0;
   overflow: hidden;
