@@ -6,6 +6,7 @@ import { resolvePosLogoSrc } from '../theme/posLogo'
 import { useAuth } from '../auth/AuthContext'
 import { getOfflineLoginCacheStatus } from '../auth/offlineAuth'
 import { ScreenKeyboard, retainInputFocusOnKeyPointerDown, type ScreenKeyboardAction } from '../components'
+import { useQuitAppConfirm } from '../components/useQuitAppConfirm'
 import { IconCloseWindow, IconMinimize } from '../icons/windowChrome'
 import { buildCustomerDisplaySnapshot } from '../customerDisplay/buildSnapshot'
 import { readCachedStoreName } from '../customerDisplay/configCache'
@@ -148,8 +149,10 @@ export function Login() {
   }
 
   const showBadgeElectronChrome = Boolean(window.electronApp && mode === 'badge')
+  const { requestQuit, quitConfirmModal } = useQuitAppConfirm()
 
   return (
+    <>
     <div className="screen auth-screen">
       {showBadgeElectronChrome ? (
         <div className="auth-window-actions" role="toolbar" aria-label="Window">
@@ -167,7 +170,7 @@ export function Login() {
             className="btn ghost window-chrome-action"
             aria-label="Exit application"
             title="Exit app"
-            onClick={() => void window.electronApp?.quit()}
+            onClick={requestQuit}
           >
             <IconCloseWindow className="window-chrome-action-icon" />
           </button>
@@ -342,7 +345,7 @@ export function Login() {
                 className="btn ghost auth-app-quit"
                 aria-label="Exit app"
                 title="Exit app"
-                onClick={() => void window.electronApp?.quit()}
+                onClick={requestQuit}
               >
                 <IconCloseWindow className="auth-window-icon" />
               </button>
@@ -351,5 +354,7 @@ export function Login() {
         </form>
       </div>
     </div>
+    {quitConfirmModal}
+    </>
   )
 }

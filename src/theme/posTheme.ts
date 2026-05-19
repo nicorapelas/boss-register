@@ -1,4 +1,4 @@
-export type PosTheme = 'dark' | 'light' | 'ubuntu' | 'elon' | 'lego'
+export type PosTheme = 'dark' | 'light' | 'ubuntu' | 'elon' | 'lego' | 'jacobs'
 
 const STORAGE_KEY = 'electropos-pos-theme'
 
@@ -27,7 +27,8 @@ export function readStoredPosTheme(): PosTheme {
     const v = localStorage.getItem(STORAGE_KEY)
     const migrated = migrateStoredTheme(v)
     if (migrated) return migrated
-    if (v === 'light' || v === 'dark' || v === 'ubuntu' || v === 'elon' || v === 'lego') return v
+    if (v === 'light' || v === 'dark' || v === 'ubuntu' || v === 'elon' || v === 'lego' || v === 'jacobs')
+      return v
   } catch {
     /* private mode / quota */
   }
@@ -55,6 +56,9 @@ export function applyPosThemeToDocument(theme: PosTheme): void {
     document.documentElement.style.colorScheme = 'dark'
   } else if (theme === 'lego') {
     document.documentElement.setAttribute('data-pos-theme', 'lego')
+    document.documentElement.style.colorScheme = 'dark'
+  } else if (theme === 'jacobs') {
+    document.documentElement.setAttribute('data-pos-theme', 'jacobs')
     document.documentElement.style.colorScheme = 'dark'
   } else {
     document.documentElement.removeAttribute('data-pos-theme')

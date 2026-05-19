@@ -7,6 +7,7 @@ import './pos-theme-light.css'
 import './pos-theme-ubuntu.css'
 import './pos-theme-elon.css'
 import './pos-theme-lego.css'
+import './pos-theme-jacobs.css'
 
 if (window.ipcRenderer) {
   document.documentElement.classList.add('electron-shell')

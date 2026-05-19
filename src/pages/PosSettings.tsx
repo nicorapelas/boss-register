@@ -16,6 +16,7 @@ const THEMES: { id: PosTheme; label: string; hint: string }[] = [
   { id: 'ubuntu', label: 'Ubuntu', hint: 'Violet, teal, and coral accents' },
   { id: 'elon', label: 'Elon', hint: 'Old Glory blue & red — bold, minimal white' },
   { id: 'lego', label: 'Bricks', hint: 'Classic toy-brick reds, yellows & blues on a deep base' },
+  { id: 'jacobs', label: 'Jacobs', hint: 'Bold yellow, blue & red on black and white' },
 ]
 
 export function PosSettingsPanel({ onClose }: { onClose: () => void }) {
@@ -101,7 +102,9 @@ export function PosSettingsPanel({ onClose }: { onClose: () => void }) {
           <h2 id="pos-theme-heading" className="pos-settings-section-title">
             Appearance
           </h2>
-          <p className="muted pos-settings-section-lead">Theme applies to this device only.</p>
+          <p className="muted pos-settings-section-lead">
+            Theme applies to this till only — register UI and the customer-facing display use matching colours.
+          </p>
           <div className="pos-theme-selector" role="radiogroup" aria-label="Register theme">
             {THEMES.map((t) => {
               const selected = theme === t.id

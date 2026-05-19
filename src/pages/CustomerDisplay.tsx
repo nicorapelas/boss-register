@@ -57,6 +57,7 @@ export function CustomerDisplayPage() {
   const theme = snapshot?.theme ?? {
     backgroundColor: snapshot?.idle?.backgroundColor ?? '#0f1419',
     accentColor: snapshot?.idle?.accentColor ?? '#3b82f6',
+    textColor: '#f4f4f5',
   }
 
   const style = useMemo(
@@ -64,8 +65,9 @@ export function CustomerDisplayPage() {
       ({
         '--cd-bg': theme.backgroundColor,
         '--cd-accent': theme.accentColor,
+        '--cd-fg': theme.textColor ?? '#f4f4f5',
       }) as CSSProperties,
-    [theme.backgroundColor, theme.accentColor],
+    [theme.backgroundColor, theme.accentColor, theme.textColor],
   )
 
   const showSpotlight = spotlightVisible && snapshot?.spotlight && mode !== 'idle'

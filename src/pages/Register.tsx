@@ -66,6 +66,7 @@ import { buildProductLookup, findProductInLookup, type ProductLookup } from '../
 import { jobCardCustomerDisplay } from '../utils/openTabDisplay'
 import { playPosKeySound } from '../audio/posKeySound'
 import { PosShell } from '../layouts/PosShell'
+import { usePosTheme } from '../theme/PosThemeContext'
 import { readPosPrinterSettings, type PosPrinterSettings } from '../printer/posPrinterSettings'
 import {
   createClientLocalId,
@@ -83,6 +84,7 @@ import {
   productTracksInventory,
 } from '../utils/productInventory'
 import { formatDateDdMmYyyy } from '../utils/dateFormat'
+import { applyPosThemeToCustomerDisplayConfig } from '../customerDisplay/posThemeColors'
 import { buildCustomerDisplaySnapshot, storeConfigFromSettings } from '../customerDisplay/buildSnapshot'
 import { readCachedStoreName } from '../customerDisplay/configCache'
 import {
@@ -359,6 +361,7 @@ export function Register() {
   const isStoreAdmin = isRoleAdmin(session?.user)
   const canRefund = canRefundSales(session?.user)
   const canShiftEnd = canManageShifts(session?.user)
+  const { theme: posTheme } = usePosTheme()
   const [filter, setFilter] = useState('')
   const [skuInput, setSkuInput] = useState('')
   const [registerLeftPanel, setRegisterLeftPanel] = useState<'keys' | 'presets' | 'list'>('keys')
@@ -1681,10 +1684,15 @@ export function Register() {
     }
   }, [session?.accessToken])
 
+  const customerDisplayConfigForTill = useMemo(
+    () => applyPosThemeToCustomerDisplayConfig(customerDisplayConfig, posTheme),
+    [customerDisplayConfig, posTheme],
+  )
+
   const jobCardLabourActive = activeTabBanner?.kind === 'job_card'
   useCustomerDisplaySync({
     session,
-    storeConfig: customerDisplayConfig,
+    storeConfig: customerDisplayConfigForTill,
     storeName: storeDisplayName,
     cart,
     cartTotal,
@@ -1709,7 +1717,7 @@ export function Register() {
     spotlightAfterCartRef.current = null
     const snapshot = buildCustomerDisplaySnapshot({
       session,
-      storeConfig: customerDisplayConfig,
+      storeConfig: customerDisplayConfigForTill,
       storeName: storeDisplayName,
       cart,
       cartTotal,
@@ -1727,7 +1735,7 @@ export function Register() {
   }, [
     cart,
     session,
-    customerDisplayConfig,
+    customerDisplayConfigForTill,
     storeDisplayName,
     cartTotal,
     productsById,
@@ -1739,6 +1747,7 @@ export function Register() {
     pendingSplit,
     refundSession,
     jobCardLabourActive,
+    posTheme,
   ])
 
   useEffect(() => {

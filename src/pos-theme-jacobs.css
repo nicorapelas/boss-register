@@ -1,0 +1,452 @@
+/* Jacobs — bold yellow (#fcfc30), blue (#0909e8), red (#fa0a0a), white & black. */
+
+html[data-pos-theme='jacobs'] .shell {
+  background: linear-gradient(165deg, #000000 0%, #0909e8 55%, #000000 100%);
+}
+
+html[data-pos-theme='jacobs'] .shell-header {
+  border-bottom: 5px solid #fcfc30;
+  background: linear-gradient(90deg, #d00808 0%, #fa0a0a 40%, #b00808 100%);
+  box-shadow: 0 4px 0 #000000;
+}
+
+html[data-pos-theme='jacobs'] .shell-brand a {
+  color: #ffffff;
+}
+
+html[data-pos-theme='jacobs'] .shell-header .btn.ghost {
+  color: #ffffff;
+  border-color: rgba(252, 252, 48, 0.65);
+}
+
+html[data-pos-theme='jacobs'] .shell-header .btn.ghost:hover {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+html[data-pos-theme='jacobs'] .shell-user {
+  color: #ffffff;
+}
+
+html[data-pos-theme='jacobs'] .shell-sub {
+  color: #fcfc30;
+}
+
+html[data-pos-theme='jacobs'] .muted {
+  color: #94a3b8;
+}
+
+html[data-pos-theme='jacobs'] .panel {
+  background: #0c0c20;
+  border: 3px solid #fcfc30;
+  box-shadow: 4px 4px 0 #000000;
+}
+
+html[data-pos-theme='jacobs'] .form input {
+  border: 3px solid #0909e8;
+  background: #000000;
+  color: #f8fafc;
+}
+
+html[data-pos-theme='jacobs'] .search {
+  border: 3px solid #0909e8;
+  background: #000000;
+  color: #f8fafc;
+}
+
+html[data-pos-theme='jacobs'] .product-row {
+  border: 3px solid #0909e8;
+  background: #141430;
+}
+
+html[data-pos-theme='jacobs'] .product-meta,
+html[data-pos-theme='jacobs'] .product-price {
+  color: #e2e8f0;
+}
+
+html[data-pos-theme='jacobs'] .table th,
+html[data-pos-theme='jacobs'] .table td {
+  border-bottom-color: #334155;
+}
+
+html[data-pos-theme='jacobs'] .screen-keyboard {
+  border-top: 4px solid #fa0a0a;
+  background: #080818;
+}
+
+html[data-pos-theme='jacobs'] .screen-keyboard-key {
+  border: 3px solid #000000;
+  background: #fcfc30;
+  color: #000000;
+  font-weight: 700;
+}
+
+html[data-pos-theme='jacobs'] .screen-keyboard-key:active:not(:disabled) {
+  background: #ffff70;
+  border-color: #0909e8;
+  color: #000000;
+}
+
+html[data-pos-theme='jacobs'] .screen-keyboard-key-done {
+  background: #0909e8;
+  border-color: #0606b0;
+  color: #fff;
+}
+
+html[data-pos-theme='jacobs'] .sku-display {
+  border: 3px solid #fcfc30;
+  background: #000000;
+  color: #fcfc30;
+}
+
+html[data-pos-theme='jacobs'] .key-btn {
+  border: 3px solid #000000;
+  background: #fcfc30;
+  color: #000000;
+  font-weight: 700;
+}
+
+html[data-pos-theme='jacobs'] .key-btn:active:not(:disabled) {
+  background: #ffff70;
+  border-color: #0909e8;
+  color: #000000;
+}
+
+html[data-pos-theme='jacobs'] .keys-grid .key-btn {
+  font-size: clamp(1.35rem, 2.6vw, 2rem);
+  font-weight: 800;
+}
+
+@media (max-width: 900px), (max-height: 740px) {
+  html[data-pos-theme='jacobs'] .keys-grid .key-btn {
+    font-size: clamp(1.15rem, 2.2vw, 1.6rem);
+  }
+}
+
+html[data-pos-theme='jacobs'] .key-btn-primary {
+  background: #0909e8;
+  border-color: #0606b0;
+  color: #fff;
+}
+
+html[data-pos-theme='jacobs'] .key-btn-danger {
+  background: #fa0a0a;
+  border-color: #900606;
+  color: #fff;
+}
+
+html[data-pos-theme='jacobs'] .key-btn-pay {
+  background: #0a8a30;
+  border-color: #064a20;
+  color: #fff;
+}
+
+html[data-pos-theme='jacobs'] .key-btn-enter {
+  background: #0909e8;
+  border-color: #0606b0;
+  color: #fff;
+}
+
+html[data-pos-theme='jacobs'] .key-btn-receipt-on {
+  background: #0a8a30;
+  border-color: #064a20;
+  color: #fff;
+}
+
+html[data-pos-theme='jacobs'] .key-btn-receipt-off {
+  background: #101028;
+  border-color: #475569;
+  color: #94a3b8;
+}
+
+html[data-pos-theme='jacobs'] .key-btn-fn {
+  background: #0909e8;
+  border-color: #000000;
+  color: #fff;
+  font-weight: 700;
+}
+
+html[data-pos-theme='jacobs'] .key-btn-fn:active:not(:disabled) {
+  background: #2a2af5;
+  filter: none;
+}
+
+html[data-pos-theme='jacobs'] .key-btn-fn.key-btn-discount {
+  background: #fcfc30;
+  border-color: #000000;
+  color: #000000;
+}
+
+html[data-pos-theme='jacobs'] .key-btn-fn.key-btn-discount:active:not(:disabled) {
+  background: #ffff70;
+  color: #000000;
+}
+
+html[data-pos-theme='jacobs'] .screen-keyboard-key-active {
+  background: #fcfc30;
+  border-color: #000000;
+  color: #000000;
+}
+
+html[data-pos-theme='jacobs'] .key-btn-danger:active:not(:disabled) {
+  background: #ff2a2a;
+  border-color: #000000;
+  color: #fff;
+}
+
+html[data-pos-theme='jacobs'] .key-btn-primary:active:not(:disabled),
+html[data-pos-theme='jacobs'] .key-btn-enter:active:not(:disabled) {
+  background: #2a2af5;
+  border-color: #fcfc30;
+  color: #fff;
+}
+
+html[data-pos-theme='jacobs'] .key-btn-receipt-on:active:not(:disabled) {
+  background: #0ba838;
+  border-color: #fcfc30;
+  color: #fff;
+}
+
+html[data-pos-theme='jacobs'] .key-btn-receipt-off:active:not(:disabled) {
+  background: #334155;
+  border-color: #94a3b8;
+  color: #e2e8f0;
+}
+
+html[data-pos-theme='jacobs'] .panel-cart .cart-footer {
+  border-top-color: #fcfc30;
+}
+
+html[data-pos-theme='jacobs'] .cart-change-sticky-footer {
+  border-top-color: #fcfc30;
+  background: #0c0c20;
+}
+
+html[data-pos-theme='jacobs'] .cart-line {
+  border: 3px solid #0909e8;
+  background: #141430;
+}
+
+html[data-pos-theme='jacobs'] .cart-line-discount-badge {
+  background: #fcfc30;
+  color: #000000;
+  font-weight: 700;
+}
+
+html[data-pos-theme='jacobs'] .cart-line-sub {
+  color: #94a3b8;
+}
+
+html[data-pos-theme='jacobs'] .stepper {
+  border: 3px solid #fcfc30;
+  background: #000000;
+}
+
+html[data-pos-theme='jacobs'] .stepper-btn:active {
+  background: rgba(252, 252, 48, 0.25);
+}
+
+html[data-pos-theme='jacobs'] .register-voucher-input {
+  border: 3px solid #fa0a0a;
+  background: #000000;
+  color: #fcfc30;
+}
+
+html[data-pos-theme='jacobs'] .register-voucher-panel {
+  border-top-color: #fcfc30;
+  border-bottom-color: #0909e8;
+}
+
+html[data-pos-theme='jacobs'] .open-tabs-dialog {
+  background: #0c0c20;
+  border: 3px solid #fcfc30;
+  box-shadow: 8px 8px 0 #000000;
+}
+
+html[data-pos-theme='jacobs'] .open-tabs-li {
+  border: 3px solid #0909e8;
+  background: #141430;
+}
+
+html[data-pos-theme='jacobs'] .open-tabs-input {
+  border: 3px solid #fcfc30;
+  background: #000000;
+  color: #f8fafc;
+}
+
+html[data-pos-theme='jacobs'] .layby-summary {
+  border-color: #0909e8;
+}
+
+html[data-pos-theme='jacobs'] .layby-cancel {
+  border-top-color: #fa0a0a;
+}
+
+html[data-pos-theme='jacobs'] .btn:not(.primary):not(.ghost) {
+  background: #0909e8;
+  border: 3px solid #000000;
+  color: #fff;
+  font-weight: 600;
+}
+
+html[data-pos-theme='jacobs'] .btn:not(.primary):not(.ghost):active:not(:disabled) {
+  background: #2a2af5;
+}
+
+html[data-pos-theme='jacobs'] .btn.ghost {
+  color: #fcfc30;
+  border: 2px solid #fcfc30;
+}
+
+html[data-pos-theme='jacobs'] .btn.primary {
+  background: linear-gradient(180deg, #fcfc30 0%, #e8e820 100%);
+  border: 3px solid #000000;
+  color: #000000;
+  font-weight: 700;
+}
+
+html[data-pos-theme='jacobs'] .pos-touch {
+  -webkit-tap-highlight-color: rgba(252, 252, 48, 0.35);
+}
+
+html[data-pos-theme='jacobs'] .panel-cart .cart-lines::-webkit-scrollbar-thumb,
+html[data-pos-theme='jacobs'] .panel-products .product-list::-webkit-scrollbar-thumb,
+html[data-pos-theme='jacobs'] .presets-screen::-webkit-scrollbar-thumb,
+html[data-pos-theme='jacobs'] .screen-keyboard::-webkit-scrollbar-thumb,
+html[data-pos-theme='jacobs'] .panel-products .keys-buttons-wrap::-webkit-scrollbar-thumb,
+html[data-pos-theme='jacobs'] .panel-products .keys-function-pad::-webkit-scrollbar-thumb,
+html[data-pos-theme='jacobs'] .panel-products .keys-layout::-webkit-scrollbar-thumb,
+html[data-pos-theme='jacobs'] .cart-change-view::-webkit-scrollbar-thumb,
+html[data-pos-theme='jacobs'] .cart-change-scroll::-webkit-scrollbar-thumb,
+html[data-pos-theme='jacobs'] .register-voucher-screen-kb::-webkit-scrollbar-thumb,
+html[data-pos-theme='jacobs'] .open-tabs-dialog::-webkit-scrollbar-thumb,
+html[data-pos-theme='jacobs'] .quotes-modal-scroll::-webkit-scrollbar-thumb,
+html[data-pos-theme='jacobs'] .quotes-modal-form::-webkit-scrollbar-thumb,
+html[data-pos-theme='jacobs'] .layby-modal-scroll::-webkit-scrollbar-thumb,
+html[data-pos-theme='jacobs'] .assign-preset-modal-scroll::-webkit-scrollbar-thumb,
+html[data-pos-theme='jacobs'] .assign-preset-screen-keyboard::-webkit-scrollbar-thumb,
+html[data-pos-theme='jacobs'] .pos-settings-page::-webkit-scrollbar-thumb {
+  background: rgba(252, 252, 48, 0.45);
+}
+
+html[data-pos-theme='jacobs'] .panel-cart .cart-lines::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='jacobs'] .panel-products .product-list::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='jacobs'] .presets-screen::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='jacobs'] .screen-keyboard::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='jacobs'] .panel-products .keys-buttons-wrap::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='jacobs'] .panel-products .keys-function-pad::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='jacobs'] .panel-products .keys-layout::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='jacobs'] .cart-change-view::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='jacobs'] .cart-change-scroll::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='jacobs'] .register-voucher-screen-kb::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='jacobs'] .open-tabs-dialog::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='jacobs'] .quotes-modal-scroll::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='jacobs'] .quotes-modal-form::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='jacobs'] .layby-modal-scroll::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='jacobs'] .assign-preset-modal-scroll::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='jacobs'] .assign-preset-screen-keyboard::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='jacobs'] .pos-settings-page::-webkit-scrollbar-thumb:hover {
+  background: rgba(208, 16, 18, 0.55);
+}
+
+html[data-pos-theme='jacobs'] .pos-settings-section {
+  border: 3px solid #0909e8;
+  background: #0c0c20;
+}
+
+html[data-pos-theme='jacobs'] .pos-settings-input,
+html[data-pos-theme='jacobs'] .pos-settings-select {
+  border: 3px solid #fcfc30;
+  background: #000000;
+  color: #f8fafc;
+}
+
+html[data-pos-theme='jacobs'] .pos-settings-check input {
+  accent-color: #fa0a0a;
+}
+
+html[data-pos-theme='jacobs'] .pos-theme-option {
+  border: 3px solid #475569;
+  background: #141430;
+  color: #f1f5f9;
+}
+
+html[data-pos-theme='jacobs'] .pos-theme-option:hover {
+  border-color: #fcfc30;
+  background: #1a1a40;
+}
+
+html[data-pos-theme='jacobs'] .pos-theme-option--selected {
+  border-color: #fa0a0a;
+  box-shadow: 0 0 0 2px rgba(252, 252, 48, 0.6);
+  background: #080818;
+  color: #fcfc30;
+}
+
+html[data-pos-theme='jacobs'] .pos-theme-option .pos-theme-option-hint {
+  color: #94a3b8;
+}
+
+html[data-pos-theme='jacobs'] .btn.danger {
+  background: #fa0a0a;
+  border-color: #000000;
+  color: #fff;
+}
+
+html[data-pos-theme='jacobs'] .assign-preset-input,
+html[data-pos-theme='jacobs'] .assign-preset-select {
+  border: 3px solid #0909e8;
+  background: #000000;
+  color: #f8fafc;
+}
+
+html[data-pos-theme='jacobs'] .assign-preset-modal .assign-preset-actions {
+  border-top-color: #fcfc30;
+}
+
+html[data-pos-theme='jacobs'] .preset-nav-tile,
+html[data-pos-theme='jacobs'] .preset-item-tile {
+  border: 3px solid #fcfc30;
+  background: #141430;
+  color: #f8fafc;
+}
+
+html[data-pos-theme='jacobs'] .preset-item-tile--stale {
+  background: #080818;
+  opacity: 0.85;
+}
+
+html[data-pos-theme='jacobs'] .success {
+  color: #4ade80;
+}
+
+html[data-pos-theme='jacobs'] .error {
+  color: #fb7185;
+}
+
+html[data-pos-theme='jacobs'] .btn.checkout-btn.cash-checkout-btn {
+  background: linear-gradient(180deg, #0ba838 0%, #0a8a30 100%);
+  border: 3px solid #064a20;
+  color: #fff;
+}
+
+html[data-pos-theme='jacobs'] .btn.checkout-btn.cash-checkout-btn:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+html[data-pos-theme='jacobs'] .btn.checkout-btn.cash-checkout-btn:active:not(:disabled) {
+  filter: brightness(0.92);
+}
+
+html[data-pos-theme='jacobs'] .btn.checkout-btn.card-checkout-btn {
+  background: linear-gradient(180deg, #2a2af5 0%, #0909e8 100%);
+  border: 3px solid #0606b0;
+  color: #fff;
+}
+
+html[data-pos-theme='jacobs'] .btn.checkout-btn.card-checkout-btn:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+html[data-pos-theme='jacobs'] .btn.checkout-btn.card-checkout-btn:active:not(:disabled) {
+  filter: brightness(0.92);
+}

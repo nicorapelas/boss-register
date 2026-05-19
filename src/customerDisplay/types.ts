@@ -14,7 +14,7 @@ export type CustomerDisplaySnapshot = {
   lines?: Array<{ name: string; quantity: number; lineTotal: number }>
   total?: number
   footerText?: string
-  theme?: { backgroundColor: string; accentColor: string }
+  theme?: { backgroundColor: string; accentColor: string; textColor?: string }
   spotlight?: { name: string; imageUrl: string }
   complete?: {
     totalPaid: number

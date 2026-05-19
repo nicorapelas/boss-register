@@ -12,6 +12,7 @@ import type { Product } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import { isLikelyNetworkError } from '../offline/offlineSalesQueue'
 import { isCatalogSnapshotStale, loadCatalogCache, saveCatalogCache } from '../offline/catalogCache'
+import { useCatalogPushSync } from './useCatalogPushSync'
 
 type LoadProductsOptions = {
   hydrateFromCache?: boolean
@@ -46,6 +47,7 @@ export function CatalogProvider() {
   const [catalogError, setCatalogError] = useState<string | null>(null)
   const productsRef = useRef(products)
   const loadInFlightRef = useRef<Promise<void> | null>(null)
+  const sessionActiveRef = useRef(false)
   productsRef.current = products
 
   const clearCatalogError = useCallback(() => setCatalogError(null), [])
@@ -123,6 +125,7 @@ export function CatalogProvider() {
 
   useEffect(() => {
     if (!session) {
+      sessionActiveRef.current = false
       setProducts([])
       setCatalogSnapshotSyncedAt(null)
       setCatalogSnapshotStale(false)
@@ -133,8 +136,13 @@ export function CatalogProvider() {
       loadInFlightRef.current = null
       return
     }
-    void loadProducts()
-  }, [session?.accessToken, loadProducts])
+    if (!sessionActiveRef.current) {
+      sessionActiveRef.current = true
+      void loadProducts()
+    }
+  }, [session, loadProducts])
+
+  useCatalogPushSync(!!session, loadProducts)
 
   const value: CatalogContextValue = {
     products,

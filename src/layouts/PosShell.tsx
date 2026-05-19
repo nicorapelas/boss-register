@@ -1,5 +1,6 @@
 import { useCallback, useRef, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { useQuitAppConfirm } from '../components/useQuitAppConfirm'
 import { useAuth } from '../auth/AuthContext'
 import { usePosTheme } from '../theme/PosThemeContext'
 import { APP_NAME } from '../brand'
@@ -60,6 +61,10 @@ export function PosShell({
       : 'Settings'
   const userLabel = session?.user.displayName?.trim() || session?.user.email
   const settingsNavLockRef = useRef(false)
+  const { requestQuit, quitConfirmModal } = useQuitAppConfirm({
+    beforeQuit: beforeSignOut,
+    stackOnPosOverlay: true,
+  })
 
   const toggleSettings = useCallback(() => {
     if (settingsOpenBlocked) return
@@ -76,12 +81,8 @@ export function PosShell({
     void logout()
   }
 
-  function handleQuitApp() {
-    if (beforeSignOut && !beforeSignOut()) return
-    void window.electronApp?.quit()
-  }
-
   return (
+    <>
     <div className="shell">
       <header className="shell-header">
         <div className="shell-brand">
@@ -135,7 +136,7 @@ export function PosShell({
                     className="btn ghost shell-app-quit"
                     aria-label="Exit app"
                     title="Exit app"
-                    onClick={handleQuitApp}
+                    onClick={requestQuit}
                   >
                     <IconCloseWindow className="shell-window-icon" />
                   </button>
@@ -157,5 +158,7 @@ export function PosShell({
       ) : null}
       <main className="shell-main">{children}</main>
     </div>
+    {quitConfirmModal}
+    </>
   )
 }

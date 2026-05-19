@@ -93,6 +93,8 @@ export interface StoreSettings {
   nextHouseAccountSeq?: number
   productPresets?: ProductPresetsState
   customerDisplay?: CustomerDisplaySettings
+  catalogRevision?: number
+  catalogPushedAt?: string | null
 }
 
 export interface QuoteListItem {
