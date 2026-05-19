@@ -4025,6 +4025,7 @@ export function Register() {
       aria-hidden={settingsObscured || undefined}
     >
       <PosShell
+        settingsDisabled={cart.length > 0}
         beforeSignOut={() => {
           if (cart.length > 0) {
             setNotice('Clear the cart or complete the sale before signing out.')

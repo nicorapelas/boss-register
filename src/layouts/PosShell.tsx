@@ -35,10 +35,13 @@ function CogIcon() {
 export function PosShell({
   children,
   beforeSignOut,
+  settingsDisabled = false,
 }: {
   children: ReactNode
   /** Return false to keep the session (e.g. cart not empty). */
   beforeSignOut?: () => boolean
+  /** Block opening settings while a sale is in progress (cart not empty). */
+  settingsDisabled?: boolean
 }) {
   const { session, logout } = useAuth()
   const { theme } = usePosTheme()
@@ -49,18 +52,24 @@ export function PosShell({
   const { disconnected, recovered } = useServerConnection()
   const onSettings = location.pathname === '/settings'
   const shellSub = onSettings ? 'Settings' : 'Register'
-  const settingsToggleLabel = onSettings ? 'Close settings' : 'Settings'
+  const settingsOpenBlocked = settingsDisabled && !onSettings
+  const settingsToggleLabel = onSettings
+    ? 'Close settings'
+    : settingsOpenBlocked
+      ? 'Settings unavailable while cart has items'
+      : 'Settings'
   const userLabel = session?.user.displayName?.trim() || session?.user.email
   const settingsNavLockRef = useRef(false)
 
   const toggleSettings = useCallback(() => {
+    if (settingsOpenBlocked) return
     if (settingsNavLockRef.current) return
     settingsNavLockRef.current = true
     navigate(onSettings ? '/' : '/settings')
     window.setTimeout(() => {
       settingsNavLockRef.current = false
     }, 450)
-  }, [navigate, onSettings])
+  }, [navigate, onSettings, settingsOpenBlocked])
 
   function handleSignOut() {
     if (beforeSignOut && !beforeSignOut()) return
@@ -100,6 +109,7 @@ export function PosShell({
                   className="btn ghost shell-settings-link"
                   aria-label={settingsToggleLabel}
                   title={settingsToggleLabel}
+                  disabled={settingsOpenBlocked}
                   onClick={toggleSettings}
                 >
                   <CogIcon />
