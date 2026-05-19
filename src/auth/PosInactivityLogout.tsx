@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
 
 /** Sign out when the till has no pointer/keyboard activity for this long. */
-export const POS_INACTIVITY_LOGOUT_MS = 10_000
+export const POS_INACTIVITY_LOGOUT_MS = 20_000
 
 const ACTIVITY_EVENTS = ['pointerdown', 'pointermove', 'keydown', 'touchstart', 'click', 'wheel'] as const
 
