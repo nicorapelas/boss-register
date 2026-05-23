@@ -1,5 +1,9 @@
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import {
+  posSaleBlocksInactivityLogout,
+  subscribePosSaleInactivityGuard,
+} from '../register/posSaleInactivityGuard'
 import { useAuth } from './AuthContext'
 
 /** Sign out when the till has no pointer/keyboard activity for this long. */
@@ -9,7 +13,8 @@ const ACTIVITY_EVENTS = ['pointerdown', 'pointermove', 'keydown', 'touchstart', 
 
 /**
  * Auto-logout for shared tills: clears the session after idle timeout so the next
- * cashier must scan a badge or sign in again.
+ * cashier must scan a badge or sign in again. Skipped while the cart has lines or
+ * a split payment is in progress.
  */
 export function PosInactivityLogout() {
   const { session, loading, logout } = useAuth()
@@ -18,29 +23,41 @@ export function PosInactivityLogout() {
   useEffect(() => {
     if (loading || !session) return
 
-    let timer = window.setTimeout(() => {
+    let timer = window.setTimeout(onIdleTimeout, POS_INACTIVITY_LOGOUT_MS)
+
+    function armTimer() {
+      window.clearTimeout(timer)
+      timer = window.setTimeout(onIdleTimeout, POS_INACTIVITY_LOGOUT_MS)
+    }
+
+    function onIdleTimeout() {
+      if (posSaleBlocksInactivityLogout()) {
+        armTimer()
+        return
+      }
       void (async () => {
         await logout()
         navigate('/login', { replace: true })
       })()
-    }, POS_INACTIVITY_LOGOUT_MS)
+    }
 
     const onActivity = () => {
-      window.clearTimeout(timer)
-      timer = window.setTimeout(() => {
-        void (async () => {
-          await logout()
-          navigate('/login', { replace: true })
-        })()
-      }, POS_INACTIVITY_LOGOUT_MS)
+      armTimer()
     }
 
     for (const event of ACTIVITY_EVENTS) {
       window.addEventListener(event, onActivity, { capture: true, passive: true })
     }
 
+    const unsubGuard = subscribePosSaleInactivityGuard(() => {
+      if (posSaleBlocksInactivityLogout()) {
+        armTimer()
+      }
+    })
+
     return () => {
       window.clearTimeout(timer)
+      unsubGuard()
       for (const event of ACTIVITY_EVENTS) {
         window.removeEventListener(event, onActivity, { capture: true })
       }

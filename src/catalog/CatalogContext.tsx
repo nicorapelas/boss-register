@@ -5,13 +5,19 @@ import {
   useEffect,
   useRef,
   useState,
+  type ReactNode,
 } from 'react'
-import { Outlet } from 'react-router-dom'
 import { apiFetch } from '../api/client'
-import type { Product } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
+import type { Product } from '../api/types'
 import { isLikelyNetworkError } from '../offline/offlineSalesQueue'
-import { isCatalogSnapshotStale, loadCatalogCache, saveCatalogCache } from '../offline/catalogCache'
+import {
+  getWarmCatalogSnapshot,
+  isCatalogSnapshotStale,
+  loadCatalogCache,
+  saveCatalogCache,
+} from '../offline/catalogCache'
+import { fetchCatalogRevision } from './catalogSync'
 import { useCatalogPushSync } from './useCatalogPushSync'
 
 type LoadProductsOptions = {
@@ -29,6 +35,7 @@ type CatalogContextValue = {
   offlineCatalogMode: boolean
   catalogReady: boolean
   catalogLoading: boolean
+  catalogRefreshing: boolean
   catalogError: string | null
   clearCatalogError: () => void
   loadProducts: (opts?: LoadProductsOptions) => Promise<void>
@@ -36,14 +43,29 @@ type CatalogContextValue = {
 
 const CatalogContext = createContext<CatalogContextValue | null>(null)
 
-export function CatalogProvider() {
+function initialCatalogState() {
+  const warm = getWarmCatalogSnapshot()
+  const hasProducts = (warm?.products.length ?? 0) > 0
+  return {
+    products: warm?.products ?? [],
+    catalogSnapshotSyncedAt: warm?.syncedAt ?? null,
+    catalogSnapshotStale: isCatalogSnapshotStale(warm?.syncedAt ?? null),
+    catalogReady: hasProducts,
+  }
+}
+
+export function CatalogProvider({ children }: { children: ReactNode }) {
   const { session } = useAuth()
-  const [products, setProducts] = useState<Product[]>([])
-  const [catalogSnapshotSyncedAt, setCatalogSnapshotSyncedAt] = useState<string | null>(null)
-  const [catalogSnapshotStale, setCatalogSnapshotStale] = useState(false)
+  const initial = initialCatalogState()
+  const [products, setProducts] = useState<Product[]>(initial.products)
+  const [catalogSnapshotSyncedAt, setCatalogSnapshotSyncedAt] = useState<string | null>(
+    initial.catalogSnapshotSyncedAt,
+  )
+  const [catalogSnapshotStale, setCatalogSnapshotStale] = useState(initial.catalogSnapshotStale)
   const [offlineCatalogMode, setOfflineCatalogMode] = useState(false)
-  const [catalogReady, setCatalogReady] = useState(false)
+  const [catalogReady, setCatalogReady] = useState(initial.catalogReady)
   const [catalogLoading, setCatalogLoading] = useState(false)
+  const [catalogRefreshing, setCatalogRefreshing] = useState(false)
   const [catalogError, setCatalogError] = useState<string | null>(null)
   const productsRef = useRef(products)
   const loadInFlightRef = useRef<Promise<void> | null>(null)
@@ -59,22 +81,65 @@ export function CatalogProvider() {
 
     const run = async () => {
       setCatalogError(null)
-      setCatalogLoading(true)
+      const force = opts?.force === true
       const hydrateFromCache = opts?.hydrateFromCache !== false
-      const shouldHydrateFromCache = hydrateFromCache && productsRef.current.length === 0
-      const cached = shouldHydrateFromCache
-        ? await loadCatalogCache()
-        : { products: [] as Product[], syncedAt: null as string | null }
 
-      if (cached.products.length > 0) {
+      let cached = {
+        products: [] as Product[],
+        syncedAt: null as string | null,
+        catalogRevision: null as number | null,
+      }
+      if (hydrateFromCache) {
+        cached = await loadCatalogCache()
+      }
+
+      let productCount = productsRef.current.length
+      if (cached.products.length > 0 && productCount === 0) {
         setProducts(cached.products)
+        productCount = cached.products.length
         setCatalogSnapshotSyncedAt(cached.syncedAt)
         setCatalogSnapshotStale(isCatalogSnapshotStale(cached.syncedAt))
+      }
+      if (productCount > 0) {
         setCatalogReady(true)
+        setCatalogLoading(false)
+      } else {
+        setCatalogLoading(true)
+      }
+
+      if (!sessionActiveRef.current) {
+        setCatalogLoading(false)
+        setCatalogRefreshing(false)
+        return
+      }
+
+      let serverRevision: number | null = null
+      serverRevision = await fetchCatalogRevision()
+
+      const localRevision = cached.catalogRevision
+      const revisionMatches =
+        !force &&
+        serverRevision != null &&
+        localRevision != null &&
+        serverRevision === localRevision &&
+        productCount > 0
+
+      if (revisionMatches) {
+        setCatalogRefreshing(false)
+        setCatalogLoading(false)
+        setOfflineCatalogMode(false)
+        return
+      }
+
+      const background = productCount > 0
+      if (background) {
+        setCatalogRefreshing(true)
+        setCatalogLoading(false)
       }
 
       try {
         const list = await apiFetch<Product[]>('/products')
+        const rev = serverRevision ?? (await fetchCatalogRevision())
         setProducts(list)
         const syncedAt = new Date().toISOString()
         setCatalogSnapshotSyncedAt(syncedAt)
@@ -82,19 +147,19 @@ export function CatalogProvider() {
         setOfflineCatalogMode(false)
         setCatalogReady(true)
         try {
-          await saveCatalogCache(list)
+          await saveCatalogCache(list, rev)
         } catch {
-          // Non-blocking: UI still uses fresh online list.
+          /* non-blocking */
         }
       } catch (e) {
-        if (cached.products.length > 0 && isLikelyNetworkError(e)) {
+        if (productCount > 0 && isLikelyNetworkError(e)) {
           setOfflineCatalogMode(true)
           setCatalogReady(true)
           return
         }
         if (!isLikelyNetworkError(e)) setOfflineCatalogMode(false)
         const message = e instanceof Error ? e.message : 'Failed to load products'
-        if (productsRef.current.length > 0) {
+        if (productCount > 0) {
           const lower = message.toLowerCase()
           if (
             lower.includes('unauthorized') ||
@@ -111,6 +176,7 @@ export function CatalogProvider() {
         setCatalogError(message)
       } finally {
         setCatalogLoading(false)
+        setCatalogRefreshing(false)
       }
     }
 
@@ -126,12 +192,6 @@ export function CatalogProvider() {
   useEffect(() => {
     if (!session) {
       sessionActiveRef.current = false
-      setProducts([])
-      setCatalogSnapshotSyncedAt(null)
-      setCatalogSnapshotStale(false)
-      setOfflineCatalogMode(false)
-      setCatalogReady(false)
-      setCatalogLoading(false)
       setCatalogError(null)
       loadInFlightRef.current = null
       return
@@ -153,16 +213,13 @@ export function CatalogProvider() {
     offlineCatalogMode,
     catalogReady,
     catalogLoading,
+    catalogRefreshing,
     catalogError,
     clearCatalogError,
     loadProducts,
   }
 
-  return (
-    <CatalogContext.Provider value={value}>
-      <Outlet />
-    </CatalogContext.Provider>
-  )
+  return <CatalogContext.Provider value={value}>{children}</CatalogContext.Provider>
 }
 
 export function useCatalog(): CatalogContextValue {

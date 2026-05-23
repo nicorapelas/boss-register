@@ -80,10 +80,11 @@ export default function App() {
             <HashRouter>
               <PosInactivityLogout />
               <div className="pos-route">
-                <Routes>
-                  <Route path="/login" element={<Login />} />
-                  <Route element={<RequireAuth />}>
-                    <Route element={<CatalogProvider />}>
+                {/* Keep catalog mounted across login/logout so till cache survives shift changes. */}
+                <CatalogProvider>
+                  <Routes>
+                    <Route path="/login" element={<Login />} />
+                    <Route element={<RequireAuth />}>
                       <Route element={<TillLayout />}>
                         <Route index element={null} />
                         <Route element={<RequireAdmin />}>
@@ -91,9 +92,9 @@ export default function App() {
                         </Route>
                       </Route>
                     </Route>
-                  </Route>
-                  <Route path="*" element={<Navigate to="/" replace />} />
-                </Routes>
+                    <Route path="*" element={<Navigate to="/" replace />} />
+                  </Routes>
+                </CatalogProvider>
               </div>
             </HashRouter>
           </RuntimeErrorBoundary>

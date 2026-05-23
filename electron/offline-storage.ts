@@ -153,28 +153,40 @@ export function registerOfflineIpc() {
     }
   })
 
-  ipcMain.handle('offline:catalog:set', async (_evt, args: { products?: unknown; syncedAt?: unknown } | undefined) => {
-    const products = args?.products
-    if (!Array.isArray(products)) return { ok: false, error: 'Invalid products payload' }
-    const syncedAt = typeof args?.syncedAt === 'string' ? args.syncedAt : nowIso()
-    try {
-      const conn = getDb()
-      conn
-        .prepare(
+  ipcMain.handle(
+    'offline:catalog:set',
+    async (
+      _evt,
+      args: { products?: unknown; syncedAt?: unknown; catalogRevision?: unknown } | undefined,
+    ) => {
+      const products = args?.products
+      if (!Array.isArray(products)) return { ok: false, error: 'Invalid products payload' }
+      const syncedAt = typeof args?.syncedAt === 'string' ? args.syncedAt : nowIso()
+      const catalogRevision =
+        typeof args?.catalogRevision === 'number' && Number.isFinite(args.catalogRevision)
+          ? args.catalogRevision
+          : null
+      try {
+        const conn = getDb()
+        const upsert = conn.prepare(
           `
           INSERT INTO local_cache (key, payload_json, updated_at)
-          VALUES ('products', ?, ?)
+          VALUES (?, ?, ?)
           ON CONFLICT(key) DO UPDATE SET
             payload_json = excluded.payload_json,
             updated_at = excluded.updated_at
         `,
         )
-        .run(JSON.stringify(products), syncedAt)
-      return { ok: true }
-    } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : 'Failed to cache catalog' }
-    }
-  })
+        upsert.run('products', JSON.stringify(products), syncedAt)
+        if (catalogRevision != null) {
+          upsert.run('catalog_revision', JSON.stringify(catalogRevision), syncedAt)
+        }
+        return { ok: true }
+      } catch (e) {
+        return { ok: false, error: e instanceof Error ? e.message : 'Failed to cache catalog' }
+      }
+    },
+  )
 
   ipcMain.handle('offline:catalog:get', async () => {
     try {
@@ -188,16 +200,40 @@ export function registerOfflineIpc() {
         `,
         )
         .get() as { payload_json: string; updated_at: string } | undefined
-      if (!row) return { ok: true, products: [], syncedAt: null }
+      if (!row) return { ok: true, products: [], syncedAt: null, catalogRevision: null }
       let products: unknown[] = []
       try {
         products = JSON.parse(row.payload_json) as unknown[]
       } catch {
         products = []
       }
-      return { ok: true, products, syncedAt: row.updated_at }
+      const revRow = conn
+        .prepare(
+          `
+          SELECT payload_json
+          FROM local_cache
+          WHERE key = 'catalog_revision'
+        `,
+        )
+        .get() as { payload_json: string } | undefined
+      let catalogRevision: number | null = null
+      if (revRow) {
+        try {
+          const parsed = JSON.parse(revRow.payload_json) as unknown
+          if (typeof parsed === 'number' && Number.isFinite(parsed)) catalogRevision = parsed
+        } catch {
+          catalogRevision = null
+        }
+      }
+      return { ok: true, products, syncedAt: row.updated_at, catalogRevision }
     } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : 'Failed to read cached catalog', products: [], syncedAt: null }
+      return {
+        ok: false,
+        error: e instanceof Error ? e.message : 'Failed to read cached catalog',
+        products: [],
+        syncedAt: null,
+        catalogRevision: null,
+      }
     }
   })
 }

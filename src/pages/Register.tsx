@@ -62,6 +62,7 @@ import {
   type ProductPresetsState,
 } from '../register/posProductPresets'
 import { patchProductsStock, type CartStockLine } from '../register/catalogStockPatch'
+import { setPosSaleInactivityGuard } from '../register/posSaleInactivityGuard'
 import { buildProductLookup, findProductInLookup, type ProductLookup } from '../register/productLookup'
 import { jobCardCustomerDisplay } from '../utils/openTabDisplay'
 import { playPosKeySound } from '../audio/posKeySound'
@@ -354,6 +355,7 @@ export function Register() {
     catalogSnapshotStale,
     offlineCatalogMode,
     catalogReady,
+    catalogRefreshing,
     catalogError,
     loadProducts,
   } = useCatalog()
@@ -636,6 +638,11 @@ export function Register() {
       setAltPaymentExpanded(false)
     }
   }, [cart.length])
+
+  useEffect(() => {
+    setPosSaleInactivityGuard({ cartLineCount: cart.length, hasPendingSplit: !!pendingSplit })
+    return () => setPosSaleInactivityGuard({ cartLineCount: 0, hasPendingSplit: false })
+  }, [cart.length, pendingSplit])
 
   useEffect(() => {
     if (!altPaymentExpanded) {
@@ -4047,6 +4054,11 @@ export function Register() {
           <div className="register-catalog-loader" role="status" aria-live="polite" aria-busy="true">
             <p className="register-catalog-loader-text">Loading catalog…</p>
           </div>
+        ) : null}
+        {catalogReady && catalogRefreshing ? (
+          <p className="register-catalog-refresh-banner muted" role="status" aria-live="polite">
+            Updating catalog…
+          </p>
         ) : null}
         <div className="register-main-stack">
           {refundSession ? (

@@ -1,12 +1,7 @@
 import { useEffect, useRef } from 'react'
-import { apiFetch } from '../api/client'
+import { fetchCatalogRevision } from './catalogSync'
 
 const CATALOG_SYNC_POLL_MS = 30_000
-
-type CatalogSyncResponse = {
-  catalogRevision: number
-  catalogPushedAt: string | null
-}
 
 /** Poll server catalog revision; reload products when Back Office pushes an update. */
 export function useCatalogPushSync(
@@ -27,9 +22,8 @@ export function useCatalogPushSync(
 
     const check = async () => {
       try {
-        const sync = await apiFetch<CatalogSyncResponse>('/settings/catalog-sync')
-        if (cancelled) return
-        const rev = typeof sync.catalogRevision === 'number' ? sync.catalogRevision : 0
+        const rev = await fetchCatalogRevision()
+        if (cancelled || rev == null) return
 
         if (!baselineSetRef.current) {
           revisionRef.current = rev

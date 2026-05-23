@@ -99,13 +99,17 @@ contextBridge.exposeInMainWorld('electronOffline', {
     ipcRenderer.invoke('offline:mark-sale-failed', { clientLocalId, error }) as Promise<{ ok: boolean; error?: string }>,
   getPendingCount: () =>
     ipcRenderer.invoke('offline:pending-count') as Promise<{ ok: boolean; error?: string; count: number }>,
-  setCatalog: (products: unknown[], syncedAt?: string) =>
-    ipcRenderer.invoke('offline:catalog:set', { products, syncedAt }) as Promise<{ ok: boolean; error?: string }>,
+  setCatalog: (products: unknown[], syncedAt?: string, catalogRevision?: number) =>
+    ipcRenderer.invoke('offline:catalog:set', { products, syncedAt, catalogRevision }) as Promise<{
+      ok: boolean
+      error?: string
+    }>,
   getCatalog: () =>
     ipcRenderer.invoke('offline:catalog:get') as Promise<{
       ok: boolean
       error?: string
       products: unknown[]
       syncedAt: string | null
+      catalogRevision: number | null
     }>,
 })

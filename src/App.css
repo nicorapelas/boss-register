@@ -226,6 +226,15 @@ html.electron-shell .auth-window-actions button {
   color: #f2f2f2;
 }
 
+.register-catalog-refresh-banner {
+  margin: 0;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.85rem;
+  text-align: center;
+  background: rgba(59, 130, 246, 0.15);
+  border-bottom: 1px solid rgba(59, 130, 246, 0.35);
+}
+
 .pos-settings-page {
   flex: 1;
   min-height: 0;
