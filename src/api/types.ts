@@ -53,6 +53,21 @@ export type CartLine = {
   }>
 }
 
+export type ShopAssistClaimedCart = {
+  _id: string
+  status: 'claimed'
+  expiresAt: string
+  claimedAt?: string | null
+  lines: Array<{
+    productId: string
+    sku: string
+    barcode?: string | null
+    name: string
+    quantity: number
+    unitPrice: number
+  }>
+}
+
 export type ProductPresetsState = {
   entries: Array<{
     productId: string

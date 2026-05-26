@@ -11,6 +11,7 @@ import {
 import { useLocation } from 'react-router-dom'
 import { apiFetch, fetchProductPhotoObjectUrl, subscribeServerReachability } from '../api/client'
 import { loadProductPresetsWithMigration, pushProductPresets } from '../api/productPresetsApi'
+import { claimShopAssistCart } from '../api/shopAssistCartApi'
 import type {
   CartLine,
   CreateOpenTabModalInput,
@@ -103,6 +104,8 @@ const LAST_RECEIPT_STORAGE_KEY = 'electropos-pos-last-receipt-sale'
 const POS_TILL_CODE = (import.meta.env.VITE_POS_TILL_CODE?.trim().toUpperCase() || 'T1').slice(0, 24)
 const OFFLINE_OVERSALE_MAX_UNITS = 3
 const ONLINE_OVERSALE_MAX_UNITS = 3
+const SHOPASSIST_CART_QR_PREFIX = 'shopassist-cart:'
+const SCANNER_BUFFER_RESET_MS = 250
 
 /** Item list: avoid rendering thousands of DOM rows on touch tills. */
 const ITEM_LIST_SEARCH_MIN = 2
@@ -439,10 +442,15 @@ export function Register() {
   // Refs so global key handling always sees the latest buffer/products
   const skuInputRef = useRef(skuInput)
   const productLookupRef = useRef<ProductLookup>(buildProductLookup([]))
+  const cartRef = useRef<CartLine[]>([])
+  const productsByIdRef = useRef<Map<string, Product>>(new Map())
+  const scannerRawInputRef = useRef('')
+  const scannerRawInputTimerRef = useRef<number | null>(null)
   const catalogCacheSaveTimerRef = useRef<number | null>(null)
   const cartLinesScrollRef = useRef<HTMLDivElement | null>(null)
   const pendingCartScrollKeyRef = useRef<string | null>(null)
   skuInputRef.current = skuInput
+  cartRef.current = cart
 
   const scheduleCatalogCacheSave = useCallback((snapshot: Product[]) => {
     if (catalogCacheSaveTimerRef.current) clearTimeout(catalogCacheSaveTimerRef.current)
@@ -1101,6 +1109,7 @@ export function Register() {
   }, [products, deferredItemListFilter])
 
   const productsById = useMemo(() => new Map(products.map((p) => [p._id, p])), [products])
+  productsByIdRef.current = productsById
 
   /** Same pool as BackOffice Products category field: distinct product categories (no Uncategorized). */
   const catalogCategoriesForPresetSuggest = useMemo(() => {
@@ -2782,10 +2791,72 @@ export function Register() {
     setSkuInput('')
   }
 
+  async function importShopAssistCart(scannedToken?: string) {
+    if (refundSession) {
+      setError('Exit refund mode before importing a ShopAssist cart')
+      return
+    }
+    if (offlineCatalogMode || !serverReachable) {
+      setError('ShopAssist cart import needs the server connection')
+      return
+    }
+    if (cartRef.current.length > 0 && !window.confirm('Import ShopAssist cart into the current cart?')) return
+
+    const token = scannedToken ?? window.prompt('Scan or paste the ShopAssist cart QR code') ?? ''
+    if (!token?.trim()) return
+
+    setBusy(true)
+    setError(null)
+    setNotice(null)
+    try {
+      const claimed = await claimShopAssistCart(token)
+      let imported = 0
+      for (const line of claimed.lines) {
+        const product =
+          productsByIdRef.current.get(line.productId) ??
+          findProductBySkuOrBarcode(line.sku) ??
+          (line.barcode ? findProductBySkuOrBarcode(line.barcode) : undefined)
+        if (!product) {
+          setError(`Imported cart, but POS catalog is missing ${line.sku}. Refresh catalog and add it manually.`)
+          return
+        }
+        await addToCartQty(product, line.quantity)
+        imported += line.quantity
+      }
+      setNotice(`Imported ${imported} item${imported === 1 ? '' : 's'} from ShopAssist`)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to import ShopAssist cart')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   // Global key handling (barcode scanner -> keyboard events).
   // This page doesn't have a real <input> for SKU entry, so without this listener,
   // scanned digits wouldn't be captured.
   useEffect(() => {
+    function resetScannerRawInputSoon() {
+      if (scannerRawInputTimerRef.current) clearTimeout(scannerRawInputTimerRef.current)
+      scannerRawInputTimerRef.current = window.setTimeout(() => {
+        scannerRawInputRef.current = ''
+        scannerRawInputTimerRef.current = null
+      }, SCANNER_BUFFER_RESET_MS)
+    }
+
+    function appendScannerRawInput(key: string) {
+      scannerRawInputRef.current = `${scannerRawInputRef.current}${key}`.slice(-512)
+      resetScannerRawInputSoon()
+      return scannerRawInputRef.current
+    }
+
+    function looksLikeShopAssistQrPrefix(value: string) {
+      const lower = value.toLowerCase()
+      return (
+        lower.startsWith(SHOPASSIST_CART_QR_PREFIX) ||
+        SHOPASSIST_CART_QR_PREFIX.startsWith(lower)
+      )
+    }
+
     function isTypingTarget(target: EventTarget | null) {
       const el = target as HTMLElement | null
       if (!el) return false
@@ -2804,6 +2875,34 @@ export function Register() {
 
       // Avoid repeating characters for long key presses.
       if (e.repeat) return
+
+      if (e.key === 'Enter') {
+        const rawScan = scannerRawInputRef.current.trim()
+        scannerRawInputRef.current = ''
+        if (scannerRawInputTimerRef.current) {
+          clearTimeout(scannerRawInputTimerRef.current)
+          scannerRawInputTimerRef.current = null
+        }
+        if (rawScan.toLowerCase().startsWith(SHOPASSIST_CART_QR_PREFIX)) {
+          e.preventDefault()
+          playPosKeySound()
+          setSkuInput('')
+          void importShopAssistCart(rawScan)
+          return
+        }
+        e.preventDefault()
+        playPosKeySound()
+        addBySku()
+        return
+      }
+
+      if (e.key.length === 1) {
+        const rawScan = appendScannerRawInput(e.key)
+        if (looksLikeShopAssistQrPrefix(rawScan)) {
+          e.preventDefault()
+          return
+        }
+      }
 
       if (e.key >= '0' && e.key <= '9') {
         playPosKeySound()
@@ -2826,13 +2925,12 @@ export function Register() {
         pressKey('backspace')
         return
       }
-      if (e.key === 'Enter') {
-        e.preventDefault()
-        playPosKeySound()
-        addBySku()
-        return
-      }
       if (e.key === 'Escape') {
+        scannerRawInputRef.current = ''
+        if (scannerRawInputTimerRef.current) {
+          clearTimeout(scannerRawInputTimerRef.current)
+          scannerRawInputTimerRef.current = null
+        }
         playPosKeySound()
         pressKey('clear')
         return
@@ -2840,7 +2938,10 @@ export function Register() {
     }
 
     window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      if (scannerRawInputTimerRef.current) clearTimeout(scannerRawInputTimerRef.current)
+    }
     // pressKey/addBySku/read of refs are stable enough for this listener.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [registerLeftPanel, refundSession])
@@ -4245,6 +4346,21 @@ export function Register() {
                         }}
                       >
                         TABS
+                      </button>
+                      <button
+                        type="button"
+                        className="key-btn key-btn-fn"
+                        disabled={!!refundSession || busy || offlineCatalogMode || !serverReachable}
+                        title={
+                          refundSession
+                            ? 'Finish refund first'
+                            : offlineCatalogMode || !serverReachable
+                              ? 'ShopAssist import needs the server connection'
+                              : 'Scan ShopAssist cart QR'
+                        }
+                        onClick={() => void importShopAssistCart()}
+                      >
+                        SHOPASSIST
                       </button>
                       {canRefund ? (
                         <button
