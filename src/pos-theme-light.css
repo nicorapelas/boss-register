@@ -219,7 +219,7 @@ html[data-pos-theme='light'] .layby-modal-scroll::-webkit-scrollbar-thumb,
 html[data-pos-theme='light'] .assign-preset-modal-scroll::-webkit-scrollbar-thumb,
 html[data-pos-theme='light'] .assign-preset-screen-keyboard::-webkit-scrollbar-thumb,
 html[data-pos-theme='light'] .pos-settings-page::-webkit-scrollbar-thumb {
-  background: rgba(28, 22, 16, 0.28);
+  background: rgba(101, 92, 83, 0.58);
 }
 
 html[data-pos-theme='light'] .panel-cart .cart-lines::-webkit-scrollbar-thumb:hover,
@@ -239,7 +239,38 @@ html[data-pos-theme='light'] .layby-modal-scroll::-webkit-scrollbar-thumb:hover,
 html[data-pos-theme='light'] .assign-preset-modal-scroll::-webkit-scrollbar-thumb:hover,
 html[data-pos-theme='light'] .assign-preset-screen-keyboard::-webkit-scrollbar-thumb:hover,
 html[data-pos-theme='light'] .pos-settings-page::-webkit-scrollbar-thumb:hover {
-  background: rgba(28, 22, 16, 0.42);
+  background: rgba(137, 131, 125, 0.72);
+}
+
+html[data-pos-theme='light'] .panel-cart .cart-lines::-webkit-scrollbar-track,
+html[data-pos-theme='light'] .panel-products .product-list::-webkit-scrollbar-track,
+html[data-pos-theme='light'] .presets-screen::-webkit-scrollbar-track,
+html[data-pos-theme='light'] .screen-keyboard::-webkit-scrollbar-track,
+html[data-pos-theme='light'] .panel-products .keys-buttons-wrap::-webkit-scrollbar-track,
+html[data-pos-theme='light'] .panel-products .keys-function-pad::-webkit-scrollbar-track,
+html[data-pos-theme='light'] .panel-products .keys-layout::-webkit-scrollbar-track,
+html[data-pos-theme='light'] .cart-change-view::-webkit-scrollbar-track,
+html[data-pos-theme='light'] .cart-change-scroll::-webkit-scrollbar-track,
+html[data-pos-theme='light'] .register-voucher-screen-kb::-webkit-scrollbar-track,
+html[data-pos-theme='light'] .open-tabs-dialog::-webkit-scrollbar-track,
+html[data-pos-theme='light'] .quotes-modal-scroll::-webkit-scrollbar-track,
+html[data-pos-theme='light'] .quotes-modal-form::-webkit-scrollbar-track,
+html[data-pos-theme='light'] .layby-modal-scroll::-webkit-scrollbar-track,
+html[data-pos-theme='light'] .assign-preset-modal-scroll::-webkit-scrollbar-track,
+html[data-pos-theme='light'] .assign-preset-screen-keyboard::-webkit-scrollbar-track,
+html[data-pos-theme='light'] .pos-settings-page::-webkit-scrollbar-track {
+  background: rgba(28, 22, 16, 0.14);
+}
+
+html[data-pos-theme='light'] .pos-settings-back .btn.ghost {
+  background: #302317;
+  border-color: #1f160e;
+  color: #fffdf8;
+}
+
+html[data-pos-theme='light'] .pos-settings-back .btn.ghost:hover {
+  background: #23190f;
+  border-color: #1f160e;
 }
 
 html[data-pos-theme='light'] .pos-settings-section {

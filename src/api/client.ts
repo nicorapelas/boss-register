@@ -10,6 +10,10 @@ let runRefresh: () => Promise<boolean> = async () => false
 const reachabilityListeners = new Set<ReachabilityListener>()
 let serverReachable = true
 
+export type ServerEvent =
+  | { type: 'catalog.revision'; catalogRevision: number }
+  | { type: 'unknown'; event: string; data: unknown }
+
 function setServerReachable(next: boolean) {
   if (serverReachable === next) return
   serverReachable = next
@@ -86,6 +90,7 @@ export async function apiFetch<T>(
 
   const token = isPublicAuthPath(path) ? null : getAccessToken()
   if (token) headers.set('Authorization', `Bearer ${token}`)
+  headers.set('X-Client-App', 'pos')
 
   let res: Response
   try {
@@ -116,6 +121,97 @@ function apiBaseOrThrow(): string {
   const b = base()
   if (!b) throw new Error('Set VITE_API_BASE_URL (e.g. http://localhost:4000/api)')
   return b
+}
+
+function eventsUrlOrThrow(): string {
+  const b = apiBaseOrThrow()
+  return `${b}/events`
+}
+
+function parseSseLines(block: string): { event: string; data: unknown } | null {
+  const lines = block.split('\n')
+  let event = 'message'
+  let dataText = ''
+  for (const raw of lines) {
+    const line = raw.replace(/\r$/, '')
+    if (!line || line.startsWith(':')) continue
+    if (line.startsWith('event:')) event = line.slice(6).trim()
+    else if (line.startsWith('data:')) dataText += line.slice(5).trim()
+  }
+  if (!dataText) return null
+  try {
+    return { event, data: JSON.parse(dataText) as unknown }
+  } catch {
+    return { event, data: dataText }
+  }
+}
+
+export function subscribeServerEvents(onEvent: (ev: ServerEvent) => void): () => void {
+  const abort = new AbortController()
+
+  const start = async () => {
+    let retryMs = 500
+    while (!abort.signal.aborted) {
+      const token = getAccessToken()
+      if (!token) {
+        await new Promise((r) => setTimeout(r, 1000))
+        continue
+      }
+      try {
+        const res = await fetch(eventsUrlOrThrow(), {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'X-Client-App': 'pos',
+          },
+          signal: abort.signal,
+        })
+
+        if (res.status === 401) {
+          const refreshed = await runRefresh()
+          if (!refreshed) {
+            await new Promise((r) => setTimeout(r, 2000))
+          }
+          continue
+        }
+        if (!res.ok || !res.body) throw new Error(`Events stream failed (${res.status})`)
+
+        retryMs = 500
+        const reader = res.body.getReader()
+        const decoder = new TextDecoder('utf-8')
+        let buf = ''
+        while (!abort.signal.aborted) {
+          const { value, done } = await reader.read()
+          if (done) break
+          buf += decoder.decode(value, { stream: true })
+          while (true) {
+            const idx = buf.indexOf('\n\n')
+            if (idx < 0) break
+            const block = buf.slice(0, idx)
+            buf = buf.slice(idx + 2)
+            const parsed = parseSseLines(block)
+            if (!parsed) continue
+            if (parsed.event === 'catalog.revision') {
+              const rev =
+                typeof (parsed.data as { catalogRevision?: unknown } | null)?.catalogRevision === 'number'
+                  ? (parsed.data as { catalogRevision: number }).catalogRevision
+                  : null
+              if (rev != null) onEvent({ type: 'catalog.revision', catalogRevision: rev })
+            } else {
+              onEvent({ type: 'unknown', event: parsed.event, data: parsed.data })
+            }
+          }
+        }
+      } catch {
+        // ignore; retry below
+      }
+      await new Promise((r) => setTimeout(r, retryMs))
+      retryMs = Math.min(retryMs * 2, 15_000)
+    }
+  }
+
+  void start()
+  return () => abort.abort()
 }
 
 /** Caller must `URL.revokeObjectURL` when done. Used for authenticated product images. */

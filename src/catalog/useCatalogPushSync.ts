@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { subscribeServerEvents } from '../api/client'
 import { fetchCatalogRevision } from './catalogSync'
 
 const CATALOG_SYNC_POLL_MS = 30_000
@@ -19,6 +20,19 @@ export function useCatalogPushSync(
     }
 
     let cancelled = false
+    const unsubscribe = subscribeServerEvents((ev) => {
+      if (cancelled) return
+      if (ev.type !== 'catalog.revision') return
+      if (!baselineSetRef.current) {
+        revisionRef.current = ev.catalogRevision
+        baselineSetRef.current = true
+        return
+      }
+      if (revisionRef.current != null && ev.catalogRevision > revisionRef.current) {
+        revisionRef.current = ev.catalogRevision
+        void loadProducts({ hydrateFromCache: false, force: true })
+      }
+    })
 
     const check = async () => {
       try {
@@ -47,6 +61,7 @@ export function useCatalogPushSync(
 
     return () => {
       cancelled = true
+      unsubscribe()
       window.clearInterval(timer)
     }
   }, [sessionActive, loadProducts])
