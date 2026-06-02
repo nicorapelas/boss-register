@@ -17,7 +17,7 @@ export type CustomerDisplayTillSettings = {
 }
 
 export type CustomerDisplaySnapshot = {
-  mode: 'idle' | 'ready' | 'cart' | 'spotlight' | 'complete'
+  mode: 'idle' | 'ready' | 'cart' | 'spotlight' | 'complete' | 'loyalty-entry'
   storeName: string
   idle?: {
     headline: string
@@ -38,6 +38,15 @@ export type CustomerDisplaySnapshot = {
     paymentLabel?: string
     token: number
   }
+  loyaltyEntry?: {
+    headline: string
+    subtext: string
+    displayValue: string
+    maxLength: number
+  }
+  loyaltyEntryFocusToken?: number
+  loyaltyMasked?: string
+  loyaltyPointsBalance?: number
 }
 
 const DEFAULT_TILL: CustomerDisplayTillSettings = {
@@ -47,11 +56,18 @@ const DEFAULT_TILL: CustomerDisplayTillSettings = {
 }
 
 let customerWin: BrowserWindow | null = null
+let lastPublishedMode: CustomerDisplaySnapshot['mode'] | null = null
+let lastLoyaltyEntryFocusToken = 0
 let tillSettings: CustomerDisplayTillSettings = { ...DEFAULT_TILL }
 let rendererDist = ''
 let viteDevServerUrl: string | undefined
 let preloadPath = ''
 let placementRetryTimers: ReturnType<typeof setTimeout>[] = []
+let getMainWindowRef: () => BrowserWindow | null = () => null
+
+export function setCustomerDisplayMainWindowRef(fn: () => BrowserWindow | null): void {
+  getMainWindowRef = fn
+}
 
 function settingsPath(): string {
   return path.join(app.getPath('userData'), 'customer-display-till.json')
@@ -179,6 +195,8 @@ function createCustomerWindow(): void {
     frame: false,
     autoHideMenuBar: true,
     show: false,
+    focusable: true,
+    acceptFirstMouse: true,
     webPreferences: {
       preload: preloadPath,
       contextIsolation: true,
@@ -188,6 +206,12 @@ function createCustomerWindow(): void {
 
   customerWin.on('closed', () => {
     customerWin = null
+  })
+
+  customerWin.webContents.on('dom-ready', () => {
+    if (lastPublishedMode === 'loyalty-entry' && customerWin && !customerWin.isDestroyed()) {
+      sendFocusLoyaltyPhoneToCustomerWindow(customerWin)
+    }
   })
 
   void customerWin.loadURL(customerDisplayUrl()).then(() => {
@@ -226,15 +250,96 @@ function syncCustomerWindow(): void {
   }
 }
 
-export function publishCustomerDisplaySnapshot(snapshot: CustomerDisplaySnapshot): void {
+const FOCUS_LOYALTY_PHONE_SCRIPT = `(() => {
+  const el = document.querySelector('input[data-loyalty-phone-input]');
+  if (!el || !(el instanceof HTMLInputElement)) return false;
+  try {
+    el.focus({ preventScroll: true });
+  } catch {
+    el.focus();
+  }
+  try {
+    const len = el.value.length;
+    el.setSelectionRange(len, len);
+  } catch {
+    /* ignore */
+  }
+  return document.activeElement === el;
+})()`
+
+async function focusLoyaltyPhoneInRenderer(win: BrowserWindow): Promise<boolean> {
+  if (win.isDestroyed() || win.webContents.isDestroyed()) return false
+  try {
+    return (await win.webContents.executeJavaScript(FOCUS_LOYALTY_PHONE_SCRIPT, true)) === true
+  } catch {
+    return false
+  }
+}
+
+function blurMainTillWindow(): void {
+  const main = getMainWindowRef()
+  if (main && !main.isDestroyed()) {
+    main.blur()
+    if (!main.webContents.isDestroyed()) main.webContents.executeJavaScript('document.activeElement?.blur?.()', true).catch(() => {})
+  }
+}
+
+function sendFocusLoyaltyPhoneToCustomerWindow(win: BrowserWindow): void {
+  if (win.isDestroyed()) return
+  const run = () => {
+    if (win.isDestroyed()) return
+    blurMainTillWindow()
+    win.show()
+    win.focus()
+    if (!win.webContents.isDestroyed()) {
+      win.webContents.focus()
+      win.webContents.send('customer-display:focus-loyalty-phone')
+      void focusLoyaltyPhoneInRenderer(win)
+    }
+  }
+  run()
+  for (const ms of [80, 200, 450, 800, 1300, 2000]) {
+    setTimeout(run, ms)
+  }
+}
+
+export function focusCustomerDisplayLoyaltyEntry(): void {
   if (!tillSettings.enabled) return
   if (!customerWin || customerWin.isDestroyed()) createCustomerWindow()
   if (customerWin && !customerWin.isDestroyed()) {
+    sendFocusLoyaltyPhoneToCustomerWindow(customerWin)
+  }
+}
+
+export function publishCustomerDisplaySnapshot(snapshot: CustomerDisplaySnapshot): void {
+  if (!tillSettings.enabled) return
+  const enteringLoyalty = snapshot.mode === 'loyalty-entry' && lastPublishedMode !== 'loyalty-entry'
+  const focusToken = snapshot.loyaltyEntryFocusToken ?? 0
+  const focusTokenBumped =
+    snapshot.mode === 'loyalty-entry' && focusToken > 0 && focusToken !== lastLoyaltyEntryFocusToken
+  lastPublishedMode = snapshot.mode
+  if (focusTokenBumped) lastLoyaltyEntryFocusToken = focusToken
+  if (!customerWin || customerWin.isDestroyed()) createCustomerWindow()
+  if (customerWin && !customerWin.isDestroyed()) {
     customerWin.webContents.send('customer-display:snapshot', snapshot)
+    if (enteringLoyalty || focusTokenBumped) {
+      sendFocusLoyaltyPhoneToCustomerWindow(customerWin)
+      // React on customer display needs a frame to mount the loyalty input after snapshot.
+      setTimeout(() => {
+        if (customerWin && !customerWin.isDestroyed()) sendFocusLoyaltyPhoneToCustomerWindow(customerWin)
+      }, 0)
+    }
   }
 }
 
 function registerCustomerDisplayIpc(): void {
+  ipcMain.on('customer-display:loyalty-key', (_evt, payload: unknown) => {
+    const w = getMainWindowRef()
+    if (w && !w.isDestroyed()) {
+      w.webContents.send('register:loyalty-key', payload)
+    }
+  })
+
   ipcMain.handle('customer-display:list-displays', () => {
     return screen.getAllDisplays().map((d) => ({
       id: d.id,
@@ -256,6 +361,11 @@ function registerCustomerDisplayIpc(): void {
   ipcMain.handle('customer-display:publish', (_evt, snapshot: unknown) => {
     if (!snapshot || typeof snapshot !== 'object') return { ok: false }
     publishCustomerDisplaySnapshot(snapshot as CustomerDisplaySnapshot)
+    return { ok: true }
+  })
+
+  ipcMain.handle('customer-display:focus-loyalty-entry', () => {
+    focusCustomerDisplayLoyaltyEntry()
     return { ok: true }
   })
 

@@ -28,6 +28,11 @@ type BuildInput = {
   pendingSplit: boolean
   refundSession: boolean
   jobCardLabourActive: boolean
+  loyaltyEntryActive?: boolean
+  loyaltyEntryDisplayValue?: string
+  loyaltyEntryFocusToken?: number
+  loyaltyMasked?: string | null
+  loyaltyPointsBalance?: number | null
 }
 
 function lineTotalForDisplay(
@@ -58,6 +63,11 @@ export function buildCustomerDisplaySnapshot(input: BuildInput): CustomerDisplay
     pendingSplit,
     refundSession,
     jobCardLabourActive,
+    loyaltyEntryActive = false,
+    loyaltyEntryDisplayValue = '',
+    loyaltyEntryFocusToken = 0,
+    loyaltyMasked = null,
+    loyaltyPointsBalance = null,
   } = input
 
   const theme = storeConfig.theme
@@ -84,6 +94,22 @@ export function buildCustomerDisplaySnapshot(input: BuildInput): CustomerDisplay
       storeName,
       theme,
       footerText,
+    }
+  }
+
+  if (loyaltyEntryActive) {
+    return {
+      mode: 'loyalty-entry',
+      storeName,
+      theme,
+      footerText,
+      loyaltyEntryFocusToken,
+      loyaltyEntry: {
+        headline: 'Loyalty',
+        subtext: 'Enter your cellphone number',
+        displayValue: loyaltyEntryDisplayValue,
+        maxLength: 15,
+      },
     }
   }
 
@@ -122,6 +148,7 @@ export function buildCustomerDisplaySnapshot(input: BuildInput): CustomerDisplay
       total: cartTotal,
       theme,
       footerText,
+      ...(loyaltyMasked ? { loyaltyMasked, loyaltyPointsBalance: loyaltyPointsBalance ?? undefined } : {}),
     }
   }
 

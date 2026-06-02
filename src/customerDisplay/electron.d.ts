@@ -31,8 +31,12 @@ declare global {
         settings?: CustomerDisplayTillSettings
       }>
       publish: (snapshot: CustomerDisplaySnapshot) => Promise<{ ok: boolean }>
+      focusLoyaltyEntry: () => Promise<{ ok: boolean }>
       test: (mode: 'idle' | 'ready' | 'cart' | 'complete') => Promise<{ ok: boolean }>
       onSnapshot: (listener: (snapshot: CustomerDisplaySnapshot) => void) => () => void
+      onFocusLoyaltyPhone: (listener: () => void) => () => void
+      sendLoyaltyKey: (action: unknown) => void
+      onLoyaltyKey: (listener: (action: unknown) => void) => () => void
     }
   }
 }

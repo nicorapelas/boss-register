@@ -176,3 +176,127 @@
   font-weight: 600;
   text-align: center;
 }
+
+.customer-display-loyalty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 3rem;
+  text-align: center;
+  gap: 1rem;
+}
+
+.customer-display-loyalty-title {
+  margin: 0;
+  font-size: clamp(1.75rem, 4vw, 2.75rem);
+  font-weight: 700;
+}
+
+.customer-display-loyalty-sub {
+  margin: 0;
+  font-size: clamp(1rem, 2.2vw, 1.5rem);
+  opacity: 0.85;
+}
+
+.customer-display-loyalty-value {
+  font-size: clamp(2rem, 5vw, 3.25rem);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  min-height: 1.2em;
+  padding: 0.5rem 1rem;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.08);
+  width: min(90vw, 28rem);
+}
+
+.customer-display-loyalty-input {
+  display: block;
+  margin: 0;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  outline: none;
+  text-align: center;
+  color: inherit;
+  font: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  letter-spacing: inherit;
+  caret-color: var(--cd-accent, #3b82f6);
+  box-sizing: border-box;
+}
+
+.customer-display-loyalty-input:focus {
+  border-color: var(--cd-accent, #3b82f6);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--cd-accent, #3b82f6) 45%, transparent);
+  outline: 2px solid var(--cd-accent, #3b82f6);
+  outline-offset: 2px;
+}
+
+.customer-display-loyalty-pad {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(4.5rem, 1fr));
+  gap: 0.65rem;
+  width: min(90vw, 22rem);
+}
+
+.customer-display-loyalty-key {
+  min-height: 3.25rem;
+  font-size: clamp(1.25rem, 3vw, 1.75rem);
+  font-weight: 600;
+  border-radius: 12px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+  cursor: pointer;
+}
+
+.customer-display-loyalty-key:active {
+  background: var(--cd-accent, #3b82f6);
+  border-color: var(--cd-accent, #3b82f6);
+}
+
+.customer-display-loyalty-key--spacer {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.customer-display-loyalty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  justify-content: center;
+  width: min(90vw, 28rem);
+}
+
+.customer-display-loyalty-action {
+  flex: 1;
+  min-width: 5.5rem;
+  min-height: 2.75rem;
+  font-size: clamp(0.95rem, 2vw, 1.15rem);
+  font-weight: 600;
+  border-radius: 10px;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  cursor: pointer;
+  color: inherit;
+}
+
+.customer-display-loyalty-action--primary {
+  background: var(--cd-accent, #3b82f6);
+  border-color: var(--cd-accent, #3b82f6);
+  color: #fff;
+}
+
+.customer-display-loyalty-action--ghost {
+  background: transparent;
+}
+
+.customer-display-loyalty-action--clear {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.customer-display-loyalty-linked {
+  margin: 0 0 0.5rem;
+  font-size: clamp(0.95rem, 1.8vw, 1.15rem);
+  opacity: 0.9;
+}

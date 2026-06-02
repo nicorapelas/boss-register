@@ -1,4 +1,12 @@
-export type CustomerDisplayMode = 'idle' | 'ready' | 'cart' | 'spotlight' | 'complete'
+export type CustomerDisplayMode = 'idle' | 'ready' | 'cart' | 'spotlight' | 'complete' | 'loyalty-entry'
+
+export type CustomerDisplayLoyaltyEntry = {
+  headline: string
+  subtext: string
+  /** Digits entered so far (customer sees masked display string from POS). */
+  displayValue: string
+  maxLength: number
+}
 
 export type CustomerDisplaySnapshot = {
   mode: CustomerDisplayMode
@@ -22,6 +30,12 @@ export type CustomerDisplaySnapshot = {
     paymentLabel?: string
     token: number
   }
+  loyaltyEntry?: CustomerDisplayLoyaltyEntry
+  /** Bumped when till requests focus on the loyalty phone field (customer display). */
+  loyaltyEntryFocusToken?: number
+  /** Shown on cart after loyalty linked (masked). */
+  loyaltyMasked?: string
+  loyaltyPointsBalance?: number
 }
 
 export type CustomerDisplayStoreConfig = {

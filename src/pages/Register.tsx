@@ -43,6 +43,7 @@ import {
   ConfirmPresetDeleteModal,
   HouseAccountsModal,
   LayByModal,
+  LoyaltyModal,
   OpenTabsModal,
   QuotesModal,
   RefundSaleIdModal,
@@ -94,10 +95,12 @@ import {
   useCustomerDisplaySettingsLoader,
   useCustomerDisplaySync,
 } from '../customerDisplay/useCustomerDisplaySync'
+import { scheduleCustomerDisplayLoyaltyFocus } from '../customerDisplay/publish'
 import { publishProductSpotlight, clearCustomerDisplaySpotlightSeen } from '../customerDisplay/spotlight'
 import { DEFAULT_STORE_NAME } from '../brand'
 import { paymentTermsShortLabel } from '../houseAccounts/paymentTerms'
 import type { CustomerDisplayStoreConfig } from '../customerDisplay/types'
+import { useRegisterLoyalty } from '../hooks/useRegisterLoyalty'
 import { hasVolumeTiering, lineTotalsForProduct, type ProductForVolume } from '../utils/volumePrice'
 
 const LAST_RECEIPT_STORAGE_KEY = 'electropos-pos-last-receipt-sale'
@@ -420,6 +423,8 @@ export function Register() {
   const [lastTendered, setLastTendered] = useState<number | null>(null)
   const [lastCardAmount, setLastCardAmount] = useState<number | null>(null)
   const [lastTotal, setLastTotal] = useState<number | null>(null)
+  const [lastLoyaltyDiscount, setLastLoyaltyDiscount] = useState<number | null>(null)
+  const [lastLoyaltyPoints, setLastLoyaltyPoints] = useState<number | null>(null)
   const [pendingSplit, setPendingSplit] = useState<{
     total: number
     cashReceived: number
@@ -530,6 +535,15 @@ export function Register() {
   const [onAccountPoKbOpen, setOnAccountPoKbOpen] = useState(false)
   const [houseAccountFormOpen, setHouseAccountFormOpen] = useState(false)
   const [altPaymentExpanded, setAltPaymentExpanded] = useState(false)
+  const [cartFooterCompact, setCartFooterCompact] = useState(() => {
+    try {
+      return sessionStorage.getItem('electropos-cart-footer-compact') !== '0'
+    } catch {
+      return true
+    }
+  })
+  const [loyaltyModalOpen, setLoyaltyModalOpen] = useState(false)
+  const cartFooterCompactTouchedRef = useRef(false)
   const [lastOnAccount, setLastOnAccount] = useState<number | null>(null)
   const [offlinePendingCount, setOfflinePendingCount] = useState(0)
   const [serverReachable, setServerReachable] = useState(true)
@@ -777,6 +791,8 @@ export function Register() {
     setLastStoreCredit(null)
     setLastOnAccount(null)
     setLastTotal(null)
+    setLastLoyaltyDiscount(null)
+    setLastLoyaltyPoints(null)
     resetVoucherForm()
     setNotice('Quote closed. Cart cleared.')
   }
@@ -791,6 +807,7 @@ export function Register() {
     setOnAccountPoKbOpen(false)
     setHouseAccountFormOpen(false)
     setHouseAccountForCheckout(null)
+    loyalty.clearLoyalty()
   }
 
   function openHouseAccountsForCheckout() {
@@ -805,14 +822,6 @@ export function Register() {
   function openHouseAccountsForPayment() {
     setHouseAccountsModalMode('payment')
     setHouseAccountsModalOpen(true)
-  }
-
-  function onAccountRemainingDueAmount() {
-    const total = pendingSplit?.total ?? cartTotal
-    const prevCash = pendingSplit?.cashReceived ?? 0
-    const prevCard = pendingSplit?.cardReceived ?? 0
-    const prevSc = pendingSplit?.storeCreditApplied ?? 0
-    return round2(total - prevCash - prevCard - prevSc)
   }
 
   function cancelVoucherKbBlurHide() {
@@ -1682,6 +1691,66 @@ export function Register() {
     return roundCartMoney(s)
   }, [cart, productsById, activeTabBanner?.kind])
 
+  const publishCustomerDisplayNowRef = useRef<() => void>(() => {})
+
+  const loyalty = useRegisterLoyalty({
+    sessionActive: !!session,
+    cartTotal,
+    setError,
+    setNotice,
+    onLoyaltyEntryStarted: () => {
+      setSkuInput('')
+      publishCustomerDisplayNowRef.current()
+    },
+  })
+  function closeLoyaltyModal() {
+    if (loyalty.loyaltyEntryActive) loyalty.cancelLoyaltyEntry()
+    setLoyaltyModalOpen(false)
+  }
+
+  function beginCustomerDisplayLoyaltyPhoneEntry() {
+    if (!loyalty.loyaltyProgram?.enabled) {
+      setError('Loyalty program is not enabled')
+      return
+    }
+    loyalty.startLoyaltyEntry()
+    publishCustomerDisplayNow()
+    scheduleCustomerDisplayLoyaltyFocus()
+  }
+
+  function openLoyaltyModal() {
+    setLoyaltyModalOpen(true)
+    if (!loyalty.loyaltyMasked) {
+      beginCustomerDisplayLoyaltyPhoneEntry()
+    }
+  }
+
+  function startLoyaltyPhoneFromModal() {
+    beginCustomerDisplayLoyaltyPhoneEntry()
+  }
+
+  function toggleCartFooterCompact() {
+    cartFooterCompactTouchedRef.current = true
+    setCartFooterCompact((compact) => {
+      const next = !compact
+      try {
+        sessionStorage.setItem('electropos-cart-footer-compact', next ? '1' : '0')
+      } catch {
+        /* ignore */
+      }
+      return next
+    })
+  }
+
+  function onAccountRemainingDueAmount() {
+    const total = pendingSplit?.total ?? cartTotal
+    const prevCash = pendingSplit?.cashReceived ?? 0
+    const prevCard = pendingSplit?.cardReceived ?? 0
+    const prevSc = pendingSplit?.storeCreditApplied ?? 0
+    const prevOa = pendingSplit?.onAccountApplied ?? 0
+    return round2(total - prevCash - prevCard - prevSc - prevOa - loyalty.loyaltyDiscount)
+  }
+
   useCustomerDisplaySettingsLoader(session)
   useEffect(() => {
     if (!session) return
@@ -1706,7 +1775,7 @@ export function Register() {
   )
 
   const jobCardLabourActive = activeTabBanner?.kind === 'job_card'
-  useCustomerDisplaySync({
+  const { publishNow: publishCustomerDisplayNow } = useCustomerDisplaySync({
     session,
     storeConfig: customerDisplayConfigForTill,
     storeName: storeDisplayName,
@@ -1721,13 +1790,23 @@ export function Register() {
     pendingSplit: !!pendingSplit,
     refundSession: !!refundSession,
     jobCardLabourActive,
+    loyaltyEntryActive: loyalty.loyaltyEntryActive,
+    loyaltyEntryDisplayValue: loyalty.loyaltyEntryDisplayValue,
+    loyaltyEntryFocusToken: loyalty.loyaltyEntryFocusToken,
+    loyaltyMasked: loyalty.loyaltyMasked,
+    loyaltyPointsBalance: loyalty.loyaltyPhone ? loyalty.loyaltyBalance : null,
   })
+  publishCustomerDisplayNowRef.current = publishCustomerDisplayNow
 
   useEffect(() => {
     if (cart.length === 0) clearCustomerDisplaySpotlightSeen()
   }, [cart.length])
 
   useEffect(() => {
+    if (loyalty.loyaltyEntryActiveRef.current) {
+      spotlightAfterCartRef.current = null
+      return
+    }
     const p = spotlightAfterCartRef.current
     if (!p) return
     spotlightAfterCartRef.current = null
@@ -1746,8 +1825,13 @@ export function Register() {
       pendingSplit: !!pendingSplit,
       refundSession: !!refundSession,
       jobCardLabourActive,
+      loyaltyEntryActive: loyalty.loyaltyEntryActive,
+      loyaltyEntryDisplayValue: loyalty.loyaltyEntryDisplayValue,
+      loyaltyEntryFocusToken: loyalty.loyaltyEntryFocusToken,
+      loyaltyMasked: loyalty.loyaltyMasked,
+      loyaltyPointsBalance: loyalty.loyaltyPhone ? loyalty.loyaltyBalance : null,
     })
-    void publishProductSpotlight(p, snapshot)
+    void publishProductSpotlight(p, snapshot, () => !loyalty.loyaltyEntryActiveRef.current)
   }, [
     cart,
     session,
@@ -1763,6 +1847,12 @@ export function Register() {
     pendingSplit,
     refundSession,
     jobCardLabourActive,
+    loyalty.loyaltyEntryActive,
+    loyalty.loyaltyEntryDisplayValue,
+    loyalty.loyaltyEntryFocusToken,
+    loyalty.loyaltyMasked,
+    loyalty.loyaltyBalance,
+    loyalty.loyaltyPhone,
     posTheme,
   ])
 
@@ -2150,6 +2240,8 @@ export function Register() {
     setLastStoreCredit(null)
     setLastOnAccount(null)
     setLastTotal(null)
+    setLastLoyaltyDiscount(null)
+    setLastLoyaltyPoints(null)
     setPendingSplit(null)
     const tabIdForSale = activeOpenTabId
     const soldLines = cart.map((l) => ({ productId: l.productId, quantity: l.quantity }))
@@ -2173,6 +2265,7 @@ export function Register() {
         body.houseAccountId = houseAccount.id
         body.purchaseOrderNumber = houseAccount.purchaseOrderNumber?.trim()
       }
+      loyalty.appendLoyaltyToSaleBody(body)
       const sale = await apiFetch<Sale>('/sales', {
         method: 'POST',
         body: JSON.stringify(body),
@@ -2209,6 +2302,7 @@ export function Register() {
           body.houseAccountId = houseAccount.id
           body.purchaseOrderNumber = houseAccount.purchaseOrderNumber?.trim()
         }
+        loyalty.appendLoyaltyToSaleBody(body)
         try {
           await enqueueOfflineSale(clientLocalId, body)
           applyOfflineStockDeduction(soldLines)
@@ -2248,6 +2342,13 @@ export function Register() {
                 }
               : {}),
             createdAt: new Date().toISOString(),
+            ...(loyalty.loyaltyDiscount > 0.005
+              ? {
+                  loyaltyDiscountAmount: round2(loyalty.loyaltyDiscount),
+                  loyaltyPointsRedeemed: loyalty.loyaltyPointsRedeem,
+                  loyaltyPhoneMasked: loyalty.loyaltyMasked ?? undefined,
+                }
+              : {}),
           }
           setLastSale(queuedSale)
           setLastReceiptForReprint({ kind: 'sale', sale: queuedSale })
@@ -2272,6 +2373,30 @@ export function Register() {
     }
   }
 
+  function applySaleCompleteTotals(
+    sale: Sale,
+    grossTotal: number,
+    tenders: {
+      tendered: number
+      cardAmount: number
+      storeCredit: number | null
+      onAccount: number | null
+      changeDue: number
+    },
+  ) {
+    const loyaltyAmt = Number(sale.loyaltyDiscountAmount ?? 0)
+    const loyaltyPts = Math.floor(Number(sale.loyaltyPointsRedeemed ?? 0))
+    setLastTotal(grossTotal)
+    setLastLoyaltyDiscount(loyaltyAmt > 0.005 ? loyaltyAmt : null)
+    setLastLoyaltyPoints(loyaltyPts > 0 ? loyaltyPts : null)
+    setLastTendered(tenders.tendered)
+    setLastCardAmount(tenders.cardAmount)
+    setLastStoreCredit(tenders.storeCredit)
+    setLastOnAccount(tenders.onAccount)
+    setLastChangeDue(tenders.changeDue)
+    setShowChangeView(true)
+  }
+
   async function applyPartialPayment(method: 'cash' | 'card') {
     if (refundSession) return
     setError(null)
@@ -2285,9 +2410,30 @@ export function Register() {
     const oaNum = pendingSplit?.houseAccountNumber ?? ''
     const oaName = pendingSplit?.houseAccountName ?? ''
     const poNumber = pendingSplit?.purchaseOrderNumber ?? ''
-    const due = round2(total - prevCash - prevCard - prevSc - prevOa)
-    if (due <= 0) {
-      setError('No outstanding amount due')
+    const due = round2(total - prevCash - prevCard - prevSc - prevOa - loyalty.loyaltyDiscount)
+    if (due <= 0.005) {
+      if (loyalty.loyaltyDiscount <= 0.005) {
+        setError('No outstanding amount due')
+        return
+      }
+      const sale = await submitSale(
+        'loyalty',
+        { cashAmount: 0, cardAmount: 0, tenderedCash: 0, changeDue: 0 },
+        prevSc > 0 ? { amount: prevSc, phone: storeCreditPhone } : undefined,
+        prevOa > 0 && oaId ? { id: oaId, amount: prevOa, purchaseOrderNumber: poNumber } : undefined,
+      )
+      if (!sale) return
+      loyalty.clearLoyalty()
+      applySaleCompleteTotals(sale, total, {
+        tendered: 0,
+        cardAmount: 0,
+        storeCredit: prevSc > 0 ? prevSc : null,
+        onAccount: prevOa > 0 ? prevOa : null,
+        changeDue: 0,
+      })
+      setSkuInput('')
+      setPendingSplit(null)
+      void postSaleHardwareActions(sale)
       return
     }
 
@@ -2304,7 +2450,7 @@ export function Register() {
 
     const nextCash = round2(prevCash + (method === 'cash' ? entered : 0))
     const nextCard = round2(prevCard + (method === 'card' ? entered : 0))
-    const covered = round2(nextCash + nextCard + prevSc + prevOa)
+    const covered = round2(nextCash + nextCard + prevSc + prevOa + loyalty.loyaltyDiscount)
     const remaining = round2(total - covered)
 
     if (remaining > 0) {
@@ -2325,18 +2471,18 @@ export function Register() {
       return
     }
 
-    const coveredTotal = round2(nextCash + nextCard + prevSc + prevOa)
+    const coveredTotal = round2(nextCash + nextCard + prevSc + prevOa + loyalty.loyaltyDiscount)
     const change = round2(Math.max(0, coveredTotal - total))
-    const remainingAfterScOa = round2(total - prevSc - prevOa)
+    const remainingAfterScOa = round2(total - prevSc - prevOa - loyalty.loyaltyDiscount)
     const cardApplied = round2(Math.min(nextCard, remainingAfterScOa))
     const cashApplied = round2(Math.max(0, remainingAfterScOa - cardApplied))
-    const tenderCount = [cashApplied > 0.005, cardApplied > 0.005, prevSc > 0.005, prevOa > 0.005].filter(
+    const tenderCount = [cashApplied > 0.005, cardApplied > 0.005, prevSc > 0.005, prevOa > 0.005, loyalty.loyaltyDiscount > 0.005].filter(
       Boolean,
     ).length
     const paymentMethod =
       tenderCount >= 2 || (cashApplied > 0.005 && cardApplied > 0.005)
         ? 'split'
-        : prevOa > 0.005 && cashApplied < 0.005 && cardApplied < 0.005 && prevSc < 0.005
+        : prevOa > 0.005 && cashApplied < 0.005 && cardApplied < 0.005 && prevSc < 0.005 && loyalty.loyaltyDiscount < 0.005
           ? 'on_account'
           : cardApplied > 0 && cashApplied > 0
             ? 'split'
@@ -2348,6 +2494,8 @@ export function Register() {
                   : 'cash-no-receipt'
                 : prevSc > 0.005
                   ? 'store_credit'
+                  : loyalty.loyaltyDiscount > 0.005
+                    ? 'loyalty'
                   : receiptEnabled
                     ? 'cash-receipt'
                     : 'cash-no-receipt'
@@ -2364,13 +2512,14 @@ export function Register() {
       prevOa > 0 && oaId ? { id: oaId, amount: prevOa, purchaseOrderNumber: poNumber } : undefined,
     )
     if (!sale) return
-    setLastTotal(total)
-    setLastTendered(nextCash)
-    setLastCardAmount(cardApplied)
-    setLastStoreCredit(prevSc > 0 ? prevSc : null)
-    setLastOnAccount(prevOa > 0 ? prevOa : null)
-    setLastChangeDue(change)
-    setShowChangeView(true)
+    loyalty.clearLoyalty()
+    applySaleCompleteTotals(sale, total, {
+      tendered: nextCash,
+      cardAmount: cardApplied,
+      storeCredit: prevSc > 0 ? prevSc : null,
+      onAccount: prevOa > 0 ? prevOa : null,
+      changeDue: change,
+    })
     setSkuInput('')
     setHouseAccountForCheckout(null)
     setOnAccountPoNumber('')
@@ -2440,7 +2589,7 @@ export function Register() {
     const prevCash = pendingSplit?.cashReceived ?? 0
     const prevCard = pendingSplit?.cardReceived ?? 0
     const prevOa = pendingSplit?.onAccountApplied ?? 0
-    const maxVoucher = round2(total - prevCash - prevCard - prevOa)
+    const maxVoucher = round2(total - prevCash - prevCard - prevOa - loyalty.loyaltyDiscount)
     if (voucherBalanceHint === null) {
       setError('Check balance first')
       return
@@ -2481,7 +2630,7 @@ export function Register() {
     const oaNum = pendingSplit?.houseAccountNumber ?? ''
     const oaName = pendingSplit?.houseAccountName ?? ''
     const poNumber = pendingSplit?.purchaseOrderNumber ?? ''
-    const maxVoucher = round2(total - prevCash - prevCard - prevOa)
+    const maxVoucher = round2(total - prevCash - prevCard - prevOa - loyalty.loyaltyDiscount)
     if (amt > maxVoucher + 0.01) {
       setError(`Voucher cannot exceed ${maxVoucher.toFixed(2)} (still due)`)
       return
@@ -2505,7 +2654,7 @@ export function Register() {
     }
 
     const newSc = round2(amt)
-    const amountDue = round2(total - prevCash - prevCard - newSc - prevOa)
+    const amountDue = round2(total - prevCash - prevCard - newSc - prevOa - loyalty.loyaltyDiscount)
 
     if (amountDue > 0.02) {
       setPendingSplit({
@@ -2528,9 +2677,9 @@ export function Register() {
 
     const nextCash = prevCash
     const nextCard = prevCard
-    const coveredTotal = round2(nextCash + nextCard + newSc + prevOa)
+    const coveredTotal = round2(nextCash + nextCard + newSc + prevOa + loyalty.loyaltyDiscount)
     const change = round2(Math.max(0, coveredTotal - total))
-    const remainingAfterScOa = round2(total - newSc - prevOa)
+    const remainingAfterScOa = round2(total - newSc - prevOa - loyalty.loyaltyDiscount)
     const cardApplied = round2(Math.min(nextCard, remainingAfterScOa))
     const cashApplied = round2(Math.max(0, remainingAfterScOa - cardApplied))
 
@@ -2565,13 +2714,14 @@ export function Register() {
       prevOa > 0 && oaId ? { id: oaId, amount: prevOa, purchaseOrderNumber: poNumber } : undefined,
     )
     if (!sale) return
-    setLastTotal(total)
-    setLastTendered(nextCash)
-    setLastCardAmount(cardApplied)
-    setLastStoreCredit(newSc > 0 ? newSc : null)
-    setLastOnAccount(prevOa > 0 ? prevOa : null)
-    setLastChangeDue(change)
-    setShowChangeView(true)
+    loyalty.clearLoyalty()
+    applySaleCompleteTotals(sale, total, {
+      tendered: nextCash,
+      cardAmount: cardApplied,
+      storeCredit: newSc > 0 ? newSc : null,
+      onAccount: prevOa > 0 ? prevOa : null,
+      changeDue: change,
+    })
     setSkuInput('')
     setVoucherFormOpen(false)
     setHouseAccountForCheckout(null)
@@ -2625,7 +2775,7 @@ export function Register() {
     }
 
     const newOa = round2(amt)
-    const amountDue = round2(total - prevCash - prevCard - prevSc - newOa)
+    const amountDue = round2(total - prevCash - prevCard - prevSc - newOa - loyalty.loyaltyDiscount)
     if (amountDue > 0.02) {
       setError('Insufficient available account credit. Take an account payment first.')
       return
@@ -2633,18 +2783,23 @@ export function Register() {
 
     const nextCash = prevCash
     const nextCard = prevCard
-    const coveredTotal = round2(nextCash + nextCard + prevSc + newOa)
+    const coveredTotal = round2(nextCash + nextCard + prevSc + newOa + loyalty.loyaltyDiscount)
     const change = round2(Math.max(0, coveredTotal - total))
-    const remainingAfterScOa = round2(total - prevSc - newOa)
+    const remainingAfterScOa = round2(total - prevSc - newOa - loyalty.loyaltyDiscount)
     const cardApplied = round2(Math.min(nextCard, remainingAfterScOa))
     const cashApplied = round2(Math.max(0, remainingAfterScOa - cardApplied))
 
-    const tenderCount = [cashApplied > 0.005, cardApplied > 0.005, prevSc > 0.005, newOa > 0.005].filter(Boolean)
-      .length
+    const tenderCount = [
+      cashApplied > 0.005,
+      cardApplied > 0.005,
+      prevSc > 0.005,
+      newOa > 0.005,
+      loyalty.loyaltyDiscount > 0.005,
+    ].filter(Boolean).length
     const paymentMethod =
       tenderCount >= 2 || (cashApplied > 0.005 && cardApplied > 0.005)
         ? 'split'
-        : newOa > 0.005 && cashApplied < 0.005 && cardApplied < 0.005 && prevSc < 0.005
+        : newOa > 0.005 && cashApplied < 0.005 && cardApplied < 0.005 && prevSc < 0.005 && loyalty.loyaltyDiscount < 0.005
           ? 'on_account'
           : cardApplied > 0 && cashApplied > 0
             ? 'split'
@@ -2656,7 +2811,9 @@ export function Register() {
                   : 'cash-no-receipt'
                 : prevSc > 0.005
                   ? 'store_credit'
-                  : 'on_account'
+                  : loyalty.loyaltyDiscount > 0.005
+                    ? 'loyalty'
+                    : 'on_account'
 
     const sale = await submitSale(
       paymentMethod,
@@ -2670,13 +2827,14 @@ export function Register() {
       newOa > 0 ? { id: acct._id, amount: newOa, purchaseOrderNumber: poNumber } : undefined,
     )
     if (!sale) return
-    setLastTotal(total)
-    setLastTendered(nextCash)
-    setLastCardAmount(cardApplied)
-    setLastStoreCredit(prevSc > 0 ? prevSc : null)
-    setLastOnAccount(newOa > 0 ? newOa : null)
-    setLastChangeDue(change)
-    setShowChangeView(true)
+    loyalty.clearLoyalty()
+    applySaleCompleteTotals(sale, total, {
+      tendered: nextCash,
+      cardAmount: cardApplied,
+      storeCredit: prevSc > 0 ? prevSc : null,
+      onAccount: newOa > 0 ? newOa : null,
+      changeDue: change,
+    })
     setSkuInput('')
     setHouseAccountFormOpen(false)
     setHouseAccountForCheckout(null)
@@ -2707,6 +2865,9 @@ export function Register() {
   }
 
   function pressKey(key: string) {
+    if (loyalty.loyaltyEntryActiveRef.current) {
+      return
+    }
     if (refundSession && key !== 'clear') {
       return
     }
@@ -2868,6 +3029,14 @@ export function Register() {
 
     function onKeyDown(e: KeyboardEvent) {
       if (refundSession) return
+      if (loyalty.loyaltyEntryActiveRef.current) {
+        if (e.key === 'Escape') {
+          e.preventDefault()
+          playPosKeySound()
+          loyalty.cancelLoyaltyEntry()
+        }
+        return
+      }
       // When browsing items, don't hijack typing into the search box.
       if (registerLeftPanel === 'list') return
       if (e.defaultPrevented) return
@@ -2944,7 +3113,7 @@ export function Register() {
     }
     // pressKey/addBySku/read of refs are stable enough for this listener.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [registerLeftPanel, refundSession])
+  }, [registerLeftPanel, refundSession, loyalty.cancelLoyaltyEntry])
 
   function voidLastItem() {
     clearActiveQuote()
@@ -3502,8 +3671,12 @@ export function Register() {
       (sum, l) => sum + (l.lineTotal ?? roundCartMoney(l.qty * l.unitPrice)),
       0,
     )
-    const total = slice ? slice.refundTotal : (sale.total ?? gross)
-    const discountTotal = Math.max(0, gross - total)
+    const loyaltyDiscountAmt = slice ? 0 : Math.max(0, Number(sale.loyaltyDiscountAmount ?? 0))
+    const merchandiseTotal = slice ? slice.refundTotal : (sale.total ?? gross)
+    const lineDiscountTotal = slice ? 0 : Math.max(0, gross - merchandiseTotal)
+    const total = slice ? slice.refundTotal : round2(Math.max(0, gross - loyaltyDiscountAmt))
+    const discountTotal =
+      lineDiscountTotal + loyaltyDiscountAmt > 0.005 ? round2(lineDiscountTotal + loyaltyDiscountAmt) : undefined
     const vatRate = Number(cfg.vatRatePct || 0)
     const taxTotal = vatRate > 0 ? total - total / (1 + vatRate / 100) : 0
     const subtotal = total - taxTotal
@@ -3537,15 +3710,37 @@ export function Register() {
     const cashAmt = slice ? 0 : Number(sale.payment?.cashAmount ?? 0)
     const cardAmt = slice ? 0 : Number(sale.payment?.cardAmount ?? 0)
     const voucherAmt = slice ? 0 : Number(sale.storeCreditAmount ?? 0)
+    const loyaltyAmt = slice ? 0 : loyaltyDiscountAmt
+    const loyaltyPts = slice ? 0 : Math.max(0, Math.floor(Number(sale.loyaltyPointsRedeemed ?? 0)))
+    const loyaltyPtsEarned = slice ? 0 : Math.max(0, Math.floor(Number(sale.loyaltyPointsEarned ?? 0)))
+    const loyaltyPhoneDisplay =
+      !slice &&
+      ((typeof sale.loyaltyPhoneMasked === 'string' && sale.loyaltyPhoneMasked.trim()) ||
+        (typeof sale.loyaltyPhone === 'string' && sale.loyaltyPhone.trim()))
+        ? (sale.loyaltyPhoneMasked?.trim() ||
+            maskPhoneForReceipt(typeof sale.loyaltyPhone === 'string' ? sale.loyaltyPhone : ''))
+        : null
     const tenderKindCount = slice
       ? 0
-      : [cashAmt > 0.005, cardAmt > 0.005, voucherAmt > 0.005].filter(Boolean).length
+      : [cashAmt > 0.005, cardAmt > 0.005, voucherAmt > 0.005, loyaltyAmt > 0.005].filter(Boolean).length
     const paymentTenders =
       tenderKindCount >= 2
         ? {
             ...(cashAmt > 0.005 ? { cash: cashAmt } : {}),
             ...(cardAmt > 0.005 ? { card: cardAmt } : {}),
             ...(voucherAmt > 0.005 ? { storeVoucher: voucherAmt } : {}),
+            ...(loyaltyAmt > 0.005 ? { loyalty: loyaltyAmt } : {}),
+          }
+        : undefined
+    const loyaltyAck =
+      loyaltyPhoneDisplay && (loyaltyPts > 0 || loyaltyAmt > 0.005 || loyaltyPtsEarned > 0)
+        ? {
+            phoneDisplay: loyaltyPhoneDisplay,
+            ...(loyaltyPts > 0 && loyaltyAmt > 0.005 ? { pointsRedeemed: loyaltyPts, amount: loyaltyAmt } : {}),
+            ...(loyaltyPtsEarned > 0 ? { pointsEarned: loyaltyPtsEarned } : {}),
+            ...(typeof sale.loyaltyPointsBalanceAfter === 'number'
+              ? { balanceAfter: sale.loyaltyPointsBalanceAfter }
+              : {}),
           }
         : undefined
     const storeVoucherAck =
@@ -3581,6 +3776,7 @@ export function Register() {
         copyLabel: opts?.copyLabel,
         ...(paymentTenders ? { paymentTenders } : {}),
         ...(storeVoucherAck ? { storeVoucherAck } : {}),
+        ...(loyaltyAck ? { loyaltyAck } : {}),
         accountChargeAck: accountAck,
         refundAck: opts?.refundAck,
         ...(lineItemSections && lineItemSections.length > 0 ? { lineItemSections, lines: [] } : { lines: receiptLines }),
@@ -3594,7 +3790,7 @@ export function Register() {
         cashTenderedLabel: cfg.cashTenderedLabel,
         changeDueLabel: cfg.changeDueLabel,
         thankYouLine: opts?.thankYouLine ?? cfg.thankYouLine,
-        discountTotal: discountTotal > 0.005 ? discountTotal : undefined,
+        discountTotal: (discountTotal ?? 0) > 0.005 ? discountTotal : undefined,
         total,
         tendered,
         changeDue,
@@ -4286,11 +4482,28 @@ export function Register() {
 
             {registerLeftPanel === 'keys' ? (
               <div className="keys-layout">
-                <div className="sku-display" title="SKU, or qty×SKU then ENTER">
-                  <span className="muted">&nbsp;</span>
-                  <strong>{skuInput}</strong>
+                <div
+                  className={`sku-display${loyalty.loyaltyEntryActive ? ' sku-display--loyalty-entry' : ''}`}
+                  title={
+                    loyalty.loyaltyEntryActive
+                      ? 'Loyalty phone entry on customer display — register keys paused'
+                      : 'SKU, or qty×SKU then ENTER'
+                  }
+                >
+                  {loyalty.loyaltyEntryActive ? (
+                    <span className="sku-display-loyalty-hint">
+                      Enter phone on the customer display — register keypad paused
+                    </span>
+                  ) : (
+                    <>
+                      <span className="muted">&nbsp;</span>
+                      <strong>{skuInput}</strong>
+                    </>
+                  )}
                 </div>
-                <div className="keys-buttons-wrap">
+                <div
+                  className={`keys-buttons-wrap${loyalty.loyaltyEntryActive ? ' keys-buttons-wrap--loyalty-paused' : ''}`}
+                >
                   <div className="keys-main-pad">
                     <div className="keys-grid">
                       <button type="button" className="key-btn" onClick={() => pressKey('7')}>7</button>
@@ -4728,6 +4941,14 @@ export function Register() {
                       On account: <strong>{lastOnAccount.toFixed(2)}</strong>
                     </div>
                   ) : null}
+                  {lastLoyaltyDiscount != null && lastLoyaltyDiscount > 0.005 ? (
+                    <div>
+                      Loyalty: <strong>−{lastLoyaltyDiscount.toFixed(2)}</strong>
+                      {lastLoyaltyPoints != null && lastLoyaltyPoints > 0
+                        ? ` (${lastLoyaltyPoints.toLocaleString()} pts)`
+                        : ''}
+                    </div>
+                  ) : null}
                 </div>
                 <div className="change-amount" role="status">
                   Change due {(lastChangeDue ?? 0).toFixed(2)}
@@ -4752,6 +4973,11 @@ export function Register() {
                         On account ({pendingSplit.houseAccountNumber}):{' '}
                         <strong>{pendingSplit.onAccountApplied.toFixed(2)}</strong>
                         {pendingSplit.purchaseOrderNumber ? ` · PO ${pendingSplit.purchaseOrderNumber}` : ''}
+                      </div>
+                    ) : null}
+                    {loyalty.loyaltyDiscount > 0.005 ? (
+                      <div>
+                        Loyalty: <strong>−{loyalty.loyaltyDiscount.toFixed(2)}</strong> ({loyalty.loyaltyPointsRedeem} pts)
                       </div>
                     ) : null}
                   </div>
@@ -5060,7 +5286,51 @@ export function Register() {
                     </div>
                   )}
                 </div>
-                <div className="cart-footer">
+                <div className={`cart-footer${cartFooterCompact ? ' cart-footer--compact' : ''}`}>
+                  {(error || notice || lastSale || offlinePendingCount > 0 || catalogError) && (
+                    <div className="cart-messages cart-messages--footer-top">
+                      {(error || catalogError) && <p className="error">{error ?? catalogError}</p>}
+                      {notice && <p className="success">{notice}</p>}
+                      {offlinePendingCount > 0 && (
+                        <p className="success" role="status">
+                          Offline sync queue: {offlinePendingCount} pending sale{offlinePendingCount === 1 ? '' : 's'}
+                        </p>
+                      )}
+                      {(offlineSyncStatus.lastSuccessAt || offlineSyncStatus.lastError) && (
+                        <p className={offlineSyncStatus.lastError ? 'error' : 'muted'} role="status">
+                          Offline sync:{' '}
+                          {offlineSyncStatus.lastSuccessAt
+                            ? `last success ${new Date(offlineSyncStatus.lastSuccessAt).toLocaleString()}`
+                            : 'no successful sync yet'}
+                          {offlineSyncStatus.lastError ? ` · last error: ${offlineSyncStatus.lastError}` : ''}
+                        </p>
+                      )}
+                      {catalogSnapshotSyncedAt && (
+                        <p className={catalogSnapshotStale ? 'error' : 'muted'} role="status">
+                          Catalog snapshot:{' '}
+                          {catalogSnapshotStale ? 'stale' : 'fresh'} · last sync{' '}
+                          {new Date(catalogSnapshotSyncedAt).toLocaleString()}
+                        </p>
+                      )}
+                      {lastSale && (
+                        <p className="success" role="status">
+                          Sale recorded · total {lastSale.total.toFixed(2)} · thank you
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  {cart.length > 0 && !refundSession ? (
+                    <div className="cart-footer-layout-toggle">
+                      <button
+                        type="button"
+                        className="btn ghost small"
+                        aria-pressed={cartFooterCompact}
+                        onClick={toggleCartFooterCompact}
+                      >
+                        {cartFooterCompact ? 'Spacious cart panel' : 'Compact cart panel'}
+                      </button>
+                    </div>
+                  ) : null}
                   {cart.length > 0 && !refundSession ? (
                     <div className="register-alt-payment-wrap">
                       <button
@@ -5259,9 +5529,55 @@ export function Register() {
                       </p>
                     </>
                   ) : null}
+                  {!refundSession && !showChangeView && cart.length > 0 && loyalty.loyaltyProgram?.enabled ? (
+                    <button
+                      type="button"
+                      className={`btn ghost small register-loyalty-open-btn${
+                        loyalty.loyaltyMasked || loyalty.loyaltyEntryActive
+                          ? ' register-loyalty-open-btn--active'
+                          : ''
+                      }`}
+                      disabled={busy}
+                      onClick={openLoyaltyModal}
+                    >
+                      {loyalty.loyaltyEntryActive
+                        ? 'Loyalty — entering phone on display…'
+                        : loyalty.loyaltyMasked
+                          ? `Loyalty ${loyalty.loyaltyMasked}${
+                              loyalty.loyaltyDiscount > 0.005
+                                ? ` · −R ${loyalty.loyaltyDiscount.toFixed(2)}`
+                                : ` · ${loyalty.loyaltyBalance.toLocaleString()} pts`
+                            }`
+                          : 'Loyalty'}
+                    </button>
+                  ) : null}
                   <div className="total">
-                    {refundSession ? 'Refund total' : 'Total'}{' '}
-                    <strong className="total-amount">{cartTotal.toFixed(2)}</strong>
+                    {refundSession ? (
+                      <>
+                        Refund total <strong className="total-amount">{cartTotal.toFixed(2)}</strong>
+                      </>
+                    ) : loyalty.loyaltyDiscount > 0.005 ? (
+                      <div className="cart-total-stack">
+                        <div className="cart-total-row muted">
+                          <span>Subtotal</span>
+                          <span>{cartTotal.toFixed(2)}</span>
+                        </div>
+                        <div className="cart-total-row cart-total-row--loyalty">
+                          <span>Loyalty</span>
+                          <span>−{loyalty.loyaltyDiscount.toFixed(2)}</span>
+                        </div>
+                        <div className="cart-total-row cart-total-row--due">
+                          <span>Due</span>
+                          <strong className="total-amount">
+                            {(cartTotal - loyalty.loyaltyDiscount).toFixed(2)}
+                          </strong>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        Total <strong className="total-amount">{cartTotal.toFixed(2)}</strong>
+                      </>
+                    )}
                   </div>
                   <div className={`cash-footer${refundSession ? ' refund-cart-checkout-footer' : ''}`}>
                     <button
@@ -5317,38 +5633,6 @@ export function Register() {
                     />
                   ) : null}
                 </div>
-                {(error || notice || lastSale || offlinePendingCount > 0) && (
-                  <div className="cart-messages">
-                    {(error || catalogError) && <p className="error">{error ?? catalogError}</p>}
-                    {notice && <p className="success">{notice}</p>}
-                    {offlinePendingCount > 0 && (
-                      <p className="success" role="status">
-                        Offline sync queue: {offlinePendingCount} pending sale{offlinePendingCount === 1 ? '' : 's'}
-                      </p>
-                    )}
-                    {(offlineSyncStatus.lastSuccessAt || offlineSyncStatus.lastError) && (
-                      <p className={offlineSyncStatus.lastError ? 'error' : 'muted'} role="status">
-                        Offline sync:{' '}
-                        {offlineSyncStatus.lastSuccessAt
-                          ? `last success ${new Date(offlineSyncStatus.lastSuccessAt).toLocaleString()}`
-                          : 'no successful sync yet'}
-                        {offlineSyncStatus.lastError ? ` · last error: ${offlineSyncStatus.lastError}` : ''}
-                      </p>
-                    )}
-                    {catalogSnapshotSyncedAt && (
-                      <p className={catalogSnapshotStale ? 'error' : 'muted'} role="status">
-                        Catalog snapshot:{' '}
-                        {catalogSnapshotStale ? 'stale' : 'fresh'} · last sync{' '}
-                        {new Date(catalogSnapshotSyncedAt).toLocaleString()}
-                      </p>
-                    )}
-                    {lastSale && (
-                      <p className="success" role="status">
-                        Sale recorded · total {lastSale.total.toFixed(2)} · thank you
-                      </p>
-                    )}
-                  </div>
-                )}
               </>
             )}
           </section>
@@ -5498,6 +5782,25 @@ export function Register() {
           onPrintQuote={(id) => printQuoteById(id)}
           saveDisabled={cart.length === 0 || !!activeOpenTabId || !!refundSession}
           loadDisabled={!!activeOpenTabId || !!refundSession}
+        />
+        <LoyaltyModal
+          open={loyaltyModalOpen}
+          onClose={closeLoyaltyModal}
+          busy={busy}
+          cartTotal={cartTotal}
+          program={loyalty.loyaltyProgram}
+          masked={loyalty.loyaltyMasked}
+          balance={loyalty.loyaltyBalance}
+          purchases={loyalty.loyaltyPurchases}
+          purchasesTotal={loyalty.loyaltyPurchasesTotal}
+          purchasesLoading={loyalty.loyaltyPurchasesLoading}
+          pointsRedeem={loyalty.loyaltyPointsRedeem}
+          discount={loyalty.loyaltyDiscount}
+          entryActive={loyalty.loyaltyEntryActive}
+          onStartPhoneEntry={startLoyaltyPhoneFromModal}
+          onCancelPhoneEntry={loyalty.cancelLoyaltyEntry}
+          onRedeemMax={loyalty.applyMaxLoyaltyRedeem}
+          onClear={loyalty.clearLoyalty}
         />
         <LayByModal
           open={layByModalOpen}

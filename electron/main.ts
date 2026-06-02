@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain } from 'electron'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { registerAuthIpc } from './auth-storage'
-import { initCustomerDisplayModule, onAppReadyCustomerDisplay } from './customer-display'
+import { initCustomerDisplayModule, onAppReadyCustomerDisplay, setCustomerDisplayMainWindowRef } from './customer-display'
 import { registerOfflineIpc } from './offline-storage'
 import { buildReceiptEscPos, drawerKick, sendEscPosToPrinter, type PrinterTransport, type ReceiptPayload } from './pos-printer'
 
@@ -155,6 +155,7 @@ function createWindow() {
   } else {
     win.loadFile(path.join(RENDERER_DIST, 'index.html'))
   }
+  setCustomerDisplayMainWindowRef(() => win)
 }
 
 app.on('window-all-closed', () => {

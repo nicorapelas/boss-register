@@ -108,6 +108,13 @@ export interface StoreSettings {
   nextHouseAccountSeq?: number
   productPresets?: ProductPresetsState
   customerDisplay?: CustomerDisplaySettings
+  loyaltyProgram?: {
+    enabled: boolean
+    pointsPerRand: number
+    redeemValuePerPoint: number
+    minRedeemPoints: number
+    maxRedeemPercent: number
+  }
   catalogRevision?: number
   catalogPushedAt?: string | null
 }
@@ -246,6 +253,13 @@ export interface Sale {
   houseAccountNumber?: string
   houseAccountName?: string
   purchaseOrderNumber?: string
+  /** Loyalty redemption on this sale */
+  loyaltyPhone?: string
+  loyaltyPhoneMasked?: string
+  loyaltyPointsRedeemed?: number
+  loyaltyPointsEarned?: number
+  loyaltyDiscountAmount?: number
+  loyaltyPointsBalanceAfter?: number
   createdAt?: string
   /** Server marks partial/full refunds */
   refundStatus?: 'partial' | 'refunded'

@@ -2132,6 +2132,86 @@ html.electron-shell .auth-window-actions button {
   gap: 0.85rem;
 }
 
+.cart-footer--compact {
+  gap: 0.4rem;
+  padding-top: 0.55rem;
+}
+
+.cart-footer-layout-toggle {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.cart-footer-layout-toggle .btn {
+  font-size: 0.8rem;
+}
+
+.cart-messages--footer-top {
+  margin: 0 0 0.15rem;
+}
+
+.cart-messages--footer-top p {
+  margin: 0.2rem 0;
+  font-size: 0.88rem;
+}
+
+.cart-footer--compact .register-alt-payment-wrap {
+  margin-top: 0.15rem;
+  gap: 0.25rem;
+}
+
+.cart-footer--compact .register-loyalty-panel {
+  margin: 0.2rem 0 0.35rem;
+  padding: 0.4rem 0.5rem;
+  gap: 0.3rem;
+}
+
+.cart-footer--compact .total {
+  font-size: 1.15rem;
+}
+
+.cart-footer--compact .total-amount {
+  font-size: 1.3rem;
+}
+
+.cart-footer--compact .checkout-btn {
+  min-height: 50px !important;
+  font-size: 1.1rem !important;
+}
+
+.cart-footer--compact .register-refund-note-field {
+  margin-bottom: 0.2rem;
+}
+
+.cart-total-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  width: 100%;
+  text-align: center;
+}
+
+.cart-total-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.cart-total-row--loyalty {
+  color: #7dd3a8;
+  font-weight: 600;
+}
+
+.cart-total-row--due {
+  font-size: 1.2rem;
+  font-weight: 600;
+  padding-top: 0.15rem;
+  border-top: 1px dashed rgba(255, 255, 255, 0.2);
+}
+
 .register-alt-payment-wrap {
   display: flex;
   flex-direction: column;
@@ -2142,6 +2222,213 @@ html.electron-shell .auth-window-actions button {
 .register-alt-payment-toggle {
   width: 100%;
   text-align: center;
+}
+
+.register-loyalty-panel {
+  margin: 0.5rem 0 0.75rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 8px;
+  border: 1px solid #4a4a4a;
+  background: rgba(255, 255, 255, 0.03);
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.register-loyalty-status {
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1.35;
+}
+
+.register-loyalty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.register-loyalty-panel--redeem-active {
+  border-color: #2d6a4f;
+  background: rgba(45, 106, 79, 0.18);
+}
+
+.register-loyalty-redeem-banner {
+  margin: 0;
+  padding: 0.35rem 0.45rem;
+  border-radius: 6px;
+  font-size: 0.86rem;
+  line-height: 1.35;
+  background: rgba(45, 106, 79, 0.35);
+  color: #d8f3dc;
+}
+
+.register-loyalty-redeem-btn--active {
+  border-color: #52b788 !important;
+  background: rgba(45, 106, 79, 0.35) !important;
+}
+
+.register-loyalty-compact-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  margin: 0;
+  padding: 0.35rem 0.15rem;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.register-loyalty-compact-bar-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.86rem;
+  line-height: 1.3;
+}
+
+.register-loyalty-compact-bar-chevron {
+  flex-shrink: 0;
+  opacity: 0.75;
+  font-size: 0.95rem;
+}
+
+.register-loyalty-panel--compact .register-loyalty-redeem-banner {
+  font-size: 0.8rem;
+  padding: 0.28rem 0.4rem;
+}
+
+.loyalty-modal-dialog {
+  max-width: min(96vw, 38rem);
+}
+
+.loyalty-purchase-history-panel {
+  border: 1px solid #4a4a4a;
+  border-radius: 6px;
+  padding: 0.55rem 0.65rem;
+  max-height: 11rem;
+  overflow-y: auto;
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.loyalty-purchase-history-heading {
+  margin: 0 0 0.45rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.loyalty-purchase-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.loyalty-purchase-list-item {
+  display: grid;
+  grid-template-columns: 5.5rem 1fr auto;
+  grid-template-rows: auto auto;
+  gap: 0.1rem 0.5rem;
+  font-size: 0.8rem;
+  line-height: 1.25;
+}
+
+.loyalty-purchase-list-date {
+  grid-row: 1 / 3;
+  color: var(--pos-muted, #aaa);
+}
+
+.loyalty-purchase-list-sale {
+  font-weight: 500;
+}
+
+.loyalty-purchase-list-total {
+  grid-column: 3;
+  grid-row: 1;
+  text-align: right;
+  font-weight: 600;
+}
+
+.loyalty-purchase-list-pts {
+  grid-column: 2 / 4;
+  grid-row: 2;
+}
+
+.loyalty-purchase-list-refund {
+  grid-column: 3;
+  grid-row: 2;
+  text-align: right;
+}
+
+.loyalty-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.loyalty-modal-hint {
+  margin: 0;
+}
+
+.loyalty-modal-actions {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.loyalty-modal-actions .btn {
+  width: 100%;
+  min-height: 48px;
+  justify-content: center;
+}
+
+.loyalty-modal-footer {
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding-top: 0.65rem;
+  margin-top: 0.25rem;
+  border-top: 1px solid #4a4a4a;
+}
+
+.register-loyalty-open-btn {
+  width: 100%;
+  text-align: center;
+  line-height: 1.3;
+}
+
+.register-loyalty-open-btn--active {
+  border-color: #2d6a4f;
+  background: rgba(45, 106, 79, 0.18);
+}
+
+.sku-display--loyalty-entry {
+  border-color: #2d6a4f;
+  background: rgba(45, 106, 79, 0.2);
+  flex-direction: column;
+  gap: 0.2rem;
+  align-items: center;
+  justify-content: center;
+}
+
+.sku-display-loyalty-hint {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #7dd3a8;
+  letter-spacing: 0.02em;
+}
+
+.keys-buttons-wrap--loyalty-paused {
+  opacity: 0.45;
+  pointer-events: none;
+  user-select: none;
+}
+
+.keys-buttons-wrap--loyalty-paused .keys-grid {
+  filter: grayscale(0.4);
 }
 
 .register-voucher-panel {

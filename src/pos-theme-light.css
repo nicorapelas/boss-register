@@ -112,6 +112,33 @@ html[data-pos-theme='light'] .panel-cart .cart-footer {
   border-top-color: #5c5043;
 }
 
+html[data-pos-theme='light'] .register-loyalty-panel--redeem-active {
+  border-color: #166534;
+  background: rgba(22, 101, 52, 0.12);
+}
+
+html[data-pos-theme='light'] .register-loyalty-redeem-banner {
+  background: rgba(22, 101, 52, 0.15);
+  color: #14532d;
+}
+
+html[data-pos-theme='light'] .cart-total-row--loyalty {
+  color: #15803d;
+}
+
+html[data-pos-theme='light'] .cart-total-row--due {
+  border-top-color: #5c5043;
+}
+
+html[data-pos-theme='light'] .register-loyalty-open-btn--active {
+  border-color: #166534;
+  background: rgba(22, 101, 52, 0.12);
+}
+
+html[data-pos-theme='light'] .loyalty-modal-footer {
+  border-top-color: #5c5043;
+}
+
 html[data-pos-theme='light'] .cart-change-sticky-footer {
   border-top-color: #5c5043;
   background: #f8f3ea;

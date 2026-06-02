@@ -12,12 +12,16 @@ export function clearCustomerDisplaySpotlightSeen(): void {
 export async function publishProductSpotlight(
   product: Product,
   baseSnapshot: CustomerDisplaySnapshot,
+  /** If provided, skip publish when this returns false (e.g. loyalty phone entry started). */
+  shouldPublish?: () => boolean,
 ): Promise<void> {
   if ((product.photoRevision ?? 0) < 1) return
   if (spotlightSeenProductIds.has(product._id)) return
+  if (baseSnapshot.mode === 'loyalty-entry' || baseSnapshot.mode === 'complete') return
   spotlightSeenProductIds.add(product._id)
   try {
     const imageUrl = await fetchProductPhotoObjectUrl(product._id, product.photoRevision ?? 1)
+    if (shouldPublish && !shouldPublish()) return
     publishCustomerDisplay({
       ...baseSnapshot,
       spotlight: { name: product.name, imageUrl },

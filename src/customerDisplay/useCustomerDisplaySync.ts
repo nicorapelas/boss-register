@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { apiFetch } from '../api/client'
 import type { CartLine, Product, StoreSettings } from '../api/types'
 import type { SessionBundle } from '../auth/types'
@@ -28,6 +28,11 @@ type SyncInput = {
   pendingSplit: boolean
   refundSession: boolean
   jobCardLabourActive: boolean
+  loyaltyEntryActive?: boolean
+  loyaltyEntryDisplayValue?: string
+  loyaltyEntryFocusToken?: number
+  loyaltyMasked?: string | null
+  loyaltyPointsBalance?: number | null
 }
 
 export function useCustomerDisplaySettingsLoader(session: SessionBundle | null) {
@@ -50,8 +55,14 @@ export function useCustomerDisplaySettingsLoader(session: SessionBundle | null) 
   }, [session?.accessToken])
 }
 
-export function useCustomerDisplaySync(input: SyncInput): void {
+export function useCustomerDisplaySync(input: SyncInput): { publishNow: () => void } {
   const prevSessionRef = useRef<boolean>(false)
+  const inputRef = useRef(input)
+  inputRef.current = input
+
+  const publishNow = useCallback(() => {
+    publishCustomerDisplay(buildCustomerDisplaySnapshot(inputRef.current))
+  }, [])
 
   useEffect(() => {
     const loggedIn = !!input.session
@@ -63,8 +74,7 @@ export function useCustomerDisplaySync(input: SyncInput): void {
     }
     prevSessionRef.current = loggedIn
 
-    const snapshot = buildCustomerDisplaySnapshot(input)
-    publishCustomerDisplay(snapshot)
+    publishNow()
   }, [
     input.session,
     input.storeName,
@@ -80,7 +90,15 @@ export function useCustomerDisplaySync(input: SyncInput): void {
     input.pendingSplit,
     input.refundSession,
     input.jobCardLabourActive,
+    input.loyaltyEntryActive,
+    input.loyaltyEntryDisplayValue,
+    input.loyaltyEntryFocusToken,
+    input.loyaltyMasked,
+    input.loyaltyPointsBalance,
+    publishNow,
   ])
+
+  return { publishNow }
 }
 
 export function getInitialCustomerDisplayConfig(): CustomerDisplayStoreConfig {

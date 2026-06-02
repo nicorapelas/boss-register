@@ -68,12 +68,27 @@ contextBridge.exposeInMainWorld('electronCustomerDisplay', {
     }>,
   publish: (snapshot: unknown) =>
     ipcRenderer.invoke('customer-display:publish', snapshot) as Promise<{ ok: boolean }>,
+  focusLoyaltyEntry: () =>
+    ipcRenderer.invoke('customer-display:focus-loyalty-entry') as Promise<{ ok: boolean }>,
   test: (mode: 'idle' | 'ready' | 'cart' | 'complete') =>
     ipcRenderer.invoke('customer-display:test', mode) as Promise<{ ok: boolean }>,
   onSnapshot: (listener: (snapshot: unknown) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, snapshot: unknown) => listener(snapshot)
     ipcRenderer.on('customer-display:snapshot', handler)
     return () => ipcRenderer.off('customer-display:snapshot', handler)
+  },
+  onFocusLoyaltyPhone: (listener: () => void) => {
+    const handler = () => listener()
+    ipcRenderer.on('customer-display:focus-loyalty-phone', handler)
+    return () => ipcRenderer.off('customer-display:focus-loyalty-phone', handler)
+  },
+  sendLoyaltyKey: (action: unknown) => {
+    ipcRenderer.send('customer-display:loyalty-key', action)
+  },
+  onLoyaltyKey: (listener: (action: unknown) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, action: unknown) => listener(action)
+    ipcRenderer.on('register:loyalty-key', handler)
+    return () => ipcRenderer.off('register:loyalty-key', handler)
   },
 })
 

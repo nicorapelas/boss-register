@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
 import { resolvePosLogoForBackground } from '../theme/posLogo'
 import { APP_NAME } from '../brand'
 import {
@@ -7,7 +7,41 @@ import {
   type CustomerDisplayMode,
   type CustomerDisplaySnapshot,
 } from '../customerDisplay/types'
+import type { LoyaltyKeyAction } from '../loyalty/types'
 import './CustomerDisplay.css'
+
+const LOYALTY_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', '⌫'] as const
+
+function sendLoyaltyKey(action: LoyaltyKeyAction) {
+  window.electronCustomerDisplay?.sendLoyaltyKey(action)
+}
+
+function handleLoyaltyPhoneKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+  if (e.key >= '0' && e.key <= '9') {
+    e.preventDefault()
+    sendLoyaltyKey({ type: 'digit', digit: e.key })
+    return
+  }
+  if (e.key === 'Backspace') {
+    e.preventDefault()
+    sendLoyaltyKey({ type: 'backspace' })
+    return
+  }
+  if (e.key === 'Delete') {
+    e.preventDefault()
+    sendLoyaltyKey({ type: 'clear' })
+    return
+  }
+  if (e.key === 'Enter') {
+    e.preventDefault()
+    sendLoyaltyKey({ type: 'confirm' })
+    return
+  }
+  if (e.key === 'Escape') {
+    e.preventDefault()
+    sendLoyaltyKey({ type: 'cancel' })
+  }
+}
 
 function formatMoney(n: number): string {
   return `R ${n.toFixed(2)}`
@@ -25,6 +59,7 @@ export function CustomerDisplayPage() {
   const [snapshot, setSnapshot] = useState<CustomerDisplaySnapshot | null>(null)
   const [localMode, setLocalMode] = useState<CustomerDisplayMode | null>(null)
   const [spotlightVisible, setSpotlightVisible] = useState(false)
+  const loyaltyPhoneInputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
     if (!window.electronCustomerDisplay) return
@@ -75,8 +110,67 @@ export function CustomerDisplayPage() {
     [theme.backgroundColor],
   )
 
-  const showSpotlight = spotlightVisible && snapshot?.spotlight && mode !== 'idle'
-  const cartMode = mode === 'cart' || (showSpotlight && (snapshot?.lines?.length ?? 0) > 0)
+  const loyaltyEntryOpen = mode === 'loyalty-entry' && Boolean(snapshot?.loyaltyEntry)
+  const showSpotlight =
+    !loyaltyEntryOpen && spotlightVisible && snapshot?.spotlight && mode !== 'idle'
+  const cartMode =
+    !loyaltyEntryOpen &&
+    (mode === 'cart' || (showSpotlight && (snapshot?.lines?.length ?? 0) > 0))
+
+  const bindLoyaltyPhoneInput = useCallback(
+    (el: HTMLInputElement | null) => {
+      loyaltyPhoneInputRef.current = el
+      if (!el || !loyaltyEntryOpen) return
+      const focus = () => {
+        try {
+          el.focus({ preventScroll: true })
+          const len = el.value.length
+          el.setSelectionRange(len, len)
+        } catch {
+          el.focus()
+        }
+      }
+      focus()
+      requestAnimationFrame(focus)
+      window.setTimeout(focus, 0)
+    },
+    [loyaltyEntryOpen],
+  )
+
+  const refocusLoyaltyPhoneInput = useCallback(() => {
+    const el = loyaltyPhoneInputRef.current
+    if (!el) return
+    try {
+      el.focus({ preventScroll: true })
+      const len = el.value.length
+      el.setSelectionRange(len, len)
+    } catch {
+      el.focus()
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!loyaltyEntryOpen) return
+    const timers: number[] = []
+    const run = () => refocusLoyaltyPhoneInput()
+    run()
+    for (const ms of [50, 150, 350, 700]) {
+      timers.push(window.setTimeout(run, ms))
+    }
+    return () => {
+      for (const t of timers) window.clearTimeout(t)
+    }
+  }, [loyaltyEntryOpen, snapshot?.loyaltyEntryFocusToken, refocusLoyaltyPhoneInput])
+
+  useEffect(() => {
+    if (!window.electronCustomerDisplay?.onFocusLoyaltyPhone) return
+    return window.electronCustomerDisplay.onFocusLoyaltyPhone(() => {
+      refocusLoyaltyPhoneInput()
+      window.setTimeout(refocusLoyaltyPhoneInput, 50)
+      window.setTimeout(refocusLoyaltyPhoneInput, 200)
+      window.setTimeout(refocusLoyaltyPhoneInput, 500)
+    })
+  }, [refocusLoyaltyPhoneInput])
 
   return (
     <div className="customer-display-root" style={style}>
@@ -98,6 +192,88 @@ export function CustomerDisplayPage() {
             <img src={snapshot.idle.imageUrl} alt="" className="customer-display-idle-img" />
           ) : null}
           <p className="customer-display-footer">{snapshot.idle.footerText}</p>
+        </div>
+      ) : null}
+
+      {loyaltyEntryOpen && snapshot?.loyaltyEntry ? (
+        <div className="customer-display-loyalty">
+          <img src={brandLogoSrc} alt={APP_NAME} className="customer-display-brand-logo customer-display-brand-logo--compact" decoding="async" />
+          <h1 className="customer-display-loyalty-title">{snapshot.loyaltyEntry.headline}</h1>
+          <p className="customer-display-loyalty-sub">{snapshot.loyaltyEntry.subtext}</p>
+          <input
+            ref={bindLoyaltyPhoneInput}
+            type="tel"
+            inputMode="numeric"
+            autoComplete="tel"
+            enterKeyHint="done"
+            autoFocus
+            data-loyalty-phone-input
+            aria-label="Cellphone number"
+            className="customer-display-loyalty-value customer-display-loyalty-input"
+            value={snapshot.loyaltyEntry.displayValue}
+            aria-live="polite"
+            onKeyDown={handleLoyaltyPhoneKeyDown}
+            onPaste={(e) => e.preventDefault()}
+            onChange={() => undefined}
+          />
+          <div className="customer-display-loyalty-pad" role="group" aria-label="Phone keypad">
+            {LOYALTY_KEYS.map((key, i) => {
+              if (key === '') {
+                return <span key={`sp-${i}`} className="customer-display-loyalty-key customer-display-loyalty-key--spacer" />
+              }
+              const action: LoyaltyKeyAction =
+                key === '⌫' ? { type: 'backspace' } : { type: 'digit', digit: key }
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  className="customer-display-loyalty-key"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    sendLoyaltyKey(action)
+                    refocusLoyaltyPhoneInput()
+                  }}
+                >
+                  {key}
+                </button>
+              )
+            })}
+          </div>
+          <div className="customer-display-loyalty-actions">
+            <button
+              type="button"
+              className="customer-display-loyalty-action customer-display-loyalty-action--ghost"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                sendLoyaltyKey({ type: 'cancel' })
+                refocusLoyaltyPhoneInput()
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="customer-display-loyalty-action customer-display-loyalty-action--clear"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                sendLoyaltyKey({ type: 'clear' })
+                refocusLoyaltyPhoneInput()
+              }}
+            >
+              Clear
+            </button>
+            <button
+              type="button"
+              className="customer-display-loyalty-action customer-display-loyalty-action--primary"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                sendLoyaltyKey({ type: 'confirm' })
+                refocusLoyaltyPhoneInput()
+              }}
+            >
+              OK
+            </button>
+          </div>
         </div>
       ) : null}
 
@@ -124,6 +300,14 @@ export function CustomerDisplayPage() {
             ))}
           </ul>
           <footer className="customer-display-cart-footer">
+            {snapshot.loyaltyMasked ? (
+              <p className="customer-display-loyalty-linked">
+                Loyalty {snapshot.loyaltyMasked}
+                {snapshot.loyaltyPointsBalance != null
+                  ? ` · ${snapshot.loyaltyPointsBalance.toLocaleString()} pts`
+                  : null}
+              </p>
+            ) : null}
             <div className="customer-display-total-row">
               <span>Total</span>
               <strong>{formatMoney(snapshot.total ?? 0)}</strong>

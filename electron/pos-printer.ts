@@ -76,8 +76,16 @@ export type ReceiptPayload = {
     /** Short centered lines under detail blocks (e.g. attach vs customer copy). */
     hintLines?: string[]
   }
-  /** When multiple tenders apply (cash / card / store voucher), listed under Payment. */
-  paymentTenders?: { cash?: number; card?: number; storeVoucher?: number }
+  /** When multiple tenders apply (cash / card / store voucher / loyalty), listed under Payment. */
+  paymentTenders?: { cash?: number; card?: number; storeVoucher?: number; loyalty?: number }
+  /** Customer-facing loyalty earn/redeem detail (phone masked). */
+  loyaltyAck?: {
+    phoneDisplay: string
+    pointsRedeemed?: number
+    amount?: number
+    pointsEarned?: number
+    balanceAfter?: number
+  }
   /** Customer-facing voucher redemption detail (phone masked). */
   storeVoucherAck?: {
     phoneDisplay: string
@@ -564,13 +572,41 @@ export function buildReceiptEscPos(payload: ReceiptPayload, opts?: { columns?: n
     const cashT = pt.cash && pt.cash > 0.005 ? pt.cash : 0
     const cardT = pt.card && pt.card > 0.005 ? pt.card : 0
     const voucherT = pt.storeVoucher && pt.storeVoucher > 0.005 ? pt.storeVoucher : 0
-    const tenderParts = [cashT > 0.005, cardT > 0.005, voucherT > 0.005].filter(Boolean).length
+    const loyaltyT = pt.loyalty && pt.loyalty > 0.005 ? pt.loyalty : 0
+    const tenderParts = [cashT > 0.005, cardT > 0.005, voucherT > 0.005, loyaltyT > 0.005].filter(Boolean).length
     if (tenderParts >= 2) {
       chunks.push(feed(1))
       chunks.push(pLine('Tenders:'))
       if (cashT > 0.005) chunks.push(totalLine('Cash', money(cashT)))
       if (cardT > 0.005) chunks.push(totalLine('Card', money(cardT)))
       if (voucherT > 0.005) chunks.push(totalLine('Store voucher', money(voucherT)))
+      if (loyaltyT > 0.005) chunks.push(totalLine('Loyalty', money(loyaltyT)))
+    }
+  }
+  const loyaltyAck = payload.loyaltyAck
+  if (loyaltyAck) {
+    const redeemAmt = loyaltyAck.amount ?? 0
+    const redeemPts = loyaltyAck.pointsRedeemed ?? 0
+    const earnPts = loyaltyAck.pointsEarned ?? 0
+    const hasRedeem = redeemAmt > 0.005 && redeemPts > 0
+    const hasEarn = earnPts > 0
+    if (hasRedeem || hasEarn) {
+      chunks.push(feed(1))
+      chunks.push(pLine('-'.repeat(contentCols)))
+      chunks.push(setEmph(true))
+      chunks.push(pLine('LOYALTY'))
+      chunks.push(setEmph(false))
+      chunks.push(pLine(`Member: ${loyaltyAck.phoneDisplay}`))
+      if (hasRedeem) {
+        chunks.push(pLine(`Redeemed: ${redeemPts.toLocaleString()} pts (−${money(redeemAmt)})`))
+      }
+      if (hasEarn) {
+        chunks.push(pLine(`Earned this sale: ${earnPts.toLocaleString()} pts`))
+      }
+      if (typeof loyaltyAck.balanceAfter === 'number' && Number.isFinite(loyaltyAck.balanceAfter)) {
+        chunks.push(totalLine('Points balance:', `${Math.max(0, Math.floor(loyaltyAck.balanceAfter)).toLocaleString()} pts`))
+      }
+      chunks.push(feed(1))
     }
   }
   const svAck = payload.storeVoucherAck
