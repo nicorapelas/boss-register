@@ -1,7 +1,8 @@
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom'
-import { Component, type ErrorInfo, type ReactNode } from 'react'
+import { Component, useEffect, type ErrorInfo, type ReactNode } from 'react'
 import { AuthProvider } from './auth/AuthContext'
 import { PosInactivityLogout } from './auth/PosInactivityLogout'
+import { SignOutAttendanceProvider } from './attendance/SignOutAttendanceContext'
 import { RequireAdmin } from './layouts/RequireAdmin'
 import { RequireAuth } from './layouts/RequireAuth'
 import { Login } from './pages/Login'
@@ -11,6 +12,8 @@ import { TillLayout } from './layouts/TillLayout'
 import { PosSettingsOverlay } from './pages/PosSettingsOverlay'
 import { GlobalPosButtonSound } from './audio/GlobalPosButtonSound'
 import { PosThemeProvider } from './theme/PosThemeContext'
+import { AppLaunchGate } from './components/AppLaunchGate'
+import { hideAppSplash } from './launch/appSplash'
 import './App.css'
 
 type RuntimeErrorBoundaryState = {
@@ -66,6 +69,10 @@ const isCustomerDisplayWindow =
   typeof window !== 'undefined' && window.location.hash.includes('/customer-display')
 
 export default function App() {
+  useEffect(() => {
+    if (isCustomerDisplayWindow) hideAppSplash()
+  }, [])
+
   if (isCustomerDisplayWindow) {
     return <CustomerDisplayPage />
   }
@@ -75,11 +82,13 @@ export default function App() {
       <div className="pos-app-fill pos-touch">
         <GlobalPosButtonSound />
         <AuthProvider>
-          <RuntimeErrorBoundary>
+          <AppLaunchGate>
+            <RuntimeErrorBoundary>
             {/* HashRouter: packaged Electron uses file:// — BrowserRouter + /settings links resolve to file:///settings and break taps / show bogus URLs. */}
             <HashRouter>
-              <PosInactivityLogout />
-              <div className="pos-route">
+              <SignOutAttendanceProvider>
+                <PosInactivityLogout />
+                <div className="pos-route">
                 {/* Keep catalog mounted across login/logout so till cache survives shift changes. */}
                 <CatalogProvider>
                   <Routes>
@@ -96,8 +105,10 @@ export default function App() {
                   </Routes>
                 </CatalogProvider>
               </div>
+              </SignOutAttendanceProvider>
             </HashRouter>
-          </RuntimeErrorBoundary>
+            </RuntimeErrorBoundary>
+          </AppLaunchGate>
         </AuthProvider>
       </div>
     </PosThemeProvider>

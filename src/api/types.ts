@@ -40,6 +40,8 @@ export type CartLine = {
   stockOverrideApproved?: boolean
   stockOverrideScope?: 'offline' | 'online'
   stockOverrideAvailableQty?: number
+  stockOverrideApprovedByUserId?: string
+  stockOverrideApprovedByDisplayName?: string
   /** Refund mode: original sale line index for POST /sales/:id/refund */
   refundSaleLineIndex?: number
   /** Refund mode: max quantity refundable on this line (remaining from server). */
@@ -108,12 +110,18 @@ export interface StoreSettings {
   nextHouseAccountSeq?: number
   productPresets?: ProductPresetsState
   customerDisplay?: CustomerDisplaySettings
+  posLoginMethod?: 'badge' | 'face'
   loyaltyProgram?: {
     enabled: boolean
     pointsPerRand: number
     redeemValuePerPoint: number
     minRedeemPoints: number
     maxRedeemPercent: number
+  }
+  cashRounding?: {
+    enabled?: boolean
+    incrementCents?: 10 | 20 | 50
+    mode?: 'nearest' | 'down' | 'up'
   }
   catalogRevision?: number
   catalogPushedAt?: string | null
@@ -230,6 +238,8 @@ export interface Sale {
   saleId?: string
   /** Register / till code snapshot from POS device config. */
   tillCode?: string
+  /** How the cashier signed in when this sale was recorded. */
+  cashierSignInMethod?: 'badge' | 'face' | 'password' | 'offline_badge' | 'offline_password'
   cashier: string
   items: SaleLine[]
   total: number
@@ -260,6 +270,7 @@ export interface Sale {
   loyaltyPointsEarned?: number
   loyaltyDiscountAmount?: number
   loyaltyPointsBalanceAfter?: number
+  cashRoundingAdjustment?: number
   createdAt?: string
   /** Server marks partial/full refunds */
   refundStatus?: 'partial' | 'refunded'
@@ -408,6 +419,8 @@ export interface OpenTabDetail {
     stockOverrideApproved?: boolean
     stockOverrideScope?: 'offline' | 'online'
     stockOverrideAvailableQty?: number
+    stockOverrideApprovedByUserId?: string
+    stockOverrideApprovedByDisplayName?: string
   }>
   updatedAt?: string
 }

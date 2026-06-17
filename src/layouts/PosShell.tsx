@@ -1,13 +1,16 @@
 import { useCallback, useRef, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useQuitAppConfirm } from '../components/useQuitAppConfirm'
+import { getCachedStaffAttendanceSettings } from '../attendance/attendanceConfigCache'
+import { useSignOutAttendance } from '../attendance/SignOutAttendanceContext'
 import { useAuth } from '../auth/AuthContext'
 import { usePosTheme } from '../theme/PosThemeContext'
 import { APP_NAME } from '../brand'
 import { resolvePosLogoSrc } from '../theme/posLogo'
 import { isPosManager } from '../auth/permissions'
 import { useServerConnection } from '../network/useServerConnection'
-import { IconCloseWindow, IconMinimize } from '../icons/windowChrome'
+import { usePosTerminalHeartbeat } from '../hooks/usePosTerminalHeartbeat'
+import { IconCloseWindow } from '../icons/windowChrome'
 
 const POS_TILL_CODE = (import.meta.env.VITE_POS_TILL_CODE?.trim().toUpperCase() || 'T1').slice(0, 24)
 const APP_VERSION = import.meta.env.VITE_APP_VERSION || '0.0.0'
@@ -44,13 +47,16 @@ export function PosShell({
   /** Block opening settings while a sale is in progress (cart not empty). */
   settingsDisabled?: boolean
 }) {
-  const { session, logout } = useAuth()
+  const { session } = useAuth()
+  const { requestSignOut, requestClockOut } = useSignOutAttendance()
+  const staffAttendanceEnabled = getCachedStaffAttendanceSettings().enabled
   const { theme } = usePosTheme()
   const logoMark = resolvePosLogoSrc(theme)
   const location = useLocation()
   const navigate = useNavigate()
   const isAdmin = isPosManager(session?.user)
   const { disconnected, recovered } = useServerConnection()
+  usePosTerminalHeartbeat(!!session)
   const onSettings = location.pathname === '/settings'
   const shellSub = onSettings ? 'Settings' : 'Register'
   const settingsOpenBlocked = settingsDisabled && !onSettings
@@ -76,9 +82,12 @@ export function PosShell({
     }, 450)
   }, [navigate, onSettings, settingsOpenBlocked])
 
-  function handleSignOut() {
-    if (beforeSignOut && !beforeSignOut()) return
-    void logout()
+  function handleLogOut() {
+    void requestSignOut({ beforeSignOut })
+  }
+
+  function handleClockOut() {
+    void requestClockOut({ beforeSignOut })
   }
 
   return (
@@ -96,8 +105,8 @@ export function PosShell({
         </div>
         <div className="shell-header-center">
           {session ? (
-            <button type="button" className="btn ghost" onClick={handleSignOut}>
-              Sign out
+            <button type="button" className="btn ghost" onClick={handleLogOut}>
+              Log out
             </button>
           ) : null}
         </div>
@@ -120,27 +129,25 @@ export function PosShell({
                 Till {POS_TILL_CODE}
               </span>
               <span className="shell-user">{userLabel}</span>
+              {staffAttendanceEnabled ? (
+                <button
+                  type="button"
+                  className="btn ghost shell-clock-out"
+                  onClick={handleClockOut}
+                >
+                  Clock out
+                </button>
+              ) : null}
               {window.electronApp ? (
-                <>
-                  <button
-                    type="button"
-                    className="btn ghost shell-app-minimize"
-                    aria-label="Minimize"
-                    title="Minimize"
-                    onClick={() => void window.electronApp?.minimize()}
-                  >
-                    <IconMinimize className="shell-window-icon" />
-                  </button>
-                  <button
-                    type="button"
-                    className="btn ghost shell-app-quit"
-                    aria-label="Exit app"
-                    title="Exit app"
-                    onClick={requestQuit}
-                  >
-                    <IconCloseWindow className="shell-window-icon" />
-                  </button>
-                </>
+                <button
+                  type="button"
+                  className="btn ghost shell-app-quit"
+                  aria-label="Exit app"
+                  title="Exit app"
+                  onClick={requestQuit}
+                >
+                  <IconCloseWindow className="shell-window-icon" />
+                </button>
               ) : null}
             </>
           )}

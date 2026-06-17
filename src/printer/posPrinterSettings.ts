@@ -112,3 +112,12 @@ export function writePosPrinterSettings(settings: PosPrinterSettings): void {
   }
 }
 
+/** Open cash drawer before receipt bytes are sent (same printer connection). */
+export async function kickCashDrawerIfConfigured(
+  settings: PosPrinterSettings,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!settings.autoOpenDrawer) return { ok: true }
+  if (typeof window === 'undefined' || !window.electronPos?.kickDrawer) return { ok: true }
+  return window.electronPos.kickDrawer(settings.transport)
+}
+

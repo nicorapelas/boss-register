@@ -1,4 +1,5 @@
 import type { SessionBundle, AuthUser } from './types'
+import type { CashierSignInMethod } from './signInMethod'
 
 type OfflineAuthEntry = {
   method: 'badge' | 'password'
@@ -145,12 +146,13 @@ export function getOfflineLoginCacheStatus(): {
   }
 }
 
-function offlineBundleFromUser(user: AuthUser): SessionBundle {
+function offlineBundleFromUser(user: AuthUser, signInMethod: CashierSignInMethod): SessionBundle {
   return {
     // Placeholder tokens. Online requests will fail/refresh until network is back.
     accessToken: 'offline-session',
     refreshToken: 'offline-session',
     user,
+    signInMethod,
   }
 }
 
@@ -209,7 +211,7 @@ export async function tryOfflinePasswordLogin(email: string, password: string): 
       if ((entry.email ?? '').trim().toLowerCase() !== normalizedEmail) continue
       try {
         if (bcryptCompareSync(password, entry.passwordHash)) {
-          return offlineBundleFromUser(entry.user)
+          return offlineBundleFromUser(entry.user, 'offline_password')
         }
       } catch {
         // Continue to fallback cache.
@@ -227,7 +229,7 @@ export async function tryOfflinePasswordLogin(email: string, password: string): 
     (item) => item.method === 'password' && item.identityHash === identityHash && item.secretHash === secretHash,
   )
   if (!entry || !entry.user.allowOfflineLogin) return null
-  return offlineBundleFromUser(entry.user)
+  return offlineBundleFromUser(entry.user, 'offline_password')
 }
 
 export async function tryOfflineBadgeLogin(badgeCode: string): Promise<SessionBundle | null> {
@@ -236,7 +238,7 @@ export async function tryOfflineBadgeLogin(badgeCode: string): Promise<SessionBu
   for (const entry of packUsers) {
     if (entry.user.allowOfflineLogin !== true) continue
     if (!entry.badgeCode || entry.badgeCode.trim() !== normalizedBadge) continue
-    return offlineBundleFromUser(entry.user)
+    return offlineBundleFromUser(entry.user, 'offline_badge')
   }
 
   const badge = badgeCode.trim()
@@ -246,5 +248,5 @@ export async function tryOfflineBadgeLogin(badgeCode: string): Promise<SessionBu
     (item) => item.method === 'badge' && item.identityHash === identityHash && item.secretHash === secretHash,
   )
   if (!entry || !entry.user.allowOfflineLogin) return null
-  return offlineBundleFromUser(entry.user)
+  return offlineBundleFromUser(entry.user, 'offline_badge')
 }

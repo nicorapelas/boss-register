@@ -31,6 +31,19 @@ import type {
 } from '../api/types'
 import { useCatalog } from '../catalog/CatalogContext'
 import { useAuth } from '../auth/AuthContext'
+import type { CashierSignInMethod } from '../auth/signInMethod'
+import { cashierSignInMethodLabel } from '../auth/signInMethod'
+import { StockOverrideModal, type StockOverrideModalRequest } from '../components/StockOverrideModal'
+import type { StockOverrideApprover } from '../register/managerStockOverrideVerify'
+import { stockOverrideLineFields, stockOverridePayloadFromLine } from '../register/stockOverrideLineFields'
+import {
+  cashRoundingFromSettings,
+  computeCheckoutTenders,
+  DEFAULT_CASH_ROUNDING,
+  maxCardTender,
+  payableCartTotal,
+  type CashRoundingConfig,
+} from '../register/cashRounding'
 import {
   canManageShifts,
   canOverridePriceOnPos,
@@ -70,7 +83,11 @@ import { jobCardCustomerDisplay } from '../utils/openTabDisplay'
 import { playPosKeySound } from '../audio/posKeySound'
 import { PosShell } from '../layouts/PosShell'
 import { usePosTheme } from '../theme/PosThemeContext'
-import { readPosPrinterSettings, type PosPrinterSettings } from '../printer/posPrinterSettings'
+import {
+  kickCashDrawerIfConfigured,
+  readPosPrinterSettings,
+  type PosPrinterSettings,
+} from '../printer/posPrinterSettings'
 import {
   createClientLocalId,
   enqueueOfflineSale,
@@ -128,13 +145,9 @@ type LastReceiptForReprint =
   | { kind: 'sale'; sale: Sale }
   | { kind: 'raw'; payload: ReceiptPrintPayload; successNotice?: string }
 
-type StockOverridePromptState = {
-  open: boolean
-  scope: 'offline' | 'online'
-  productName: string
-  available: number
-  maxUnits: number
-}
+type StockOverrideApproval =
+  | { approved: true; approver: StockOverrideApprover }
+  | { approved: false }
 
 function readStoredLastReceiptSale(): Sale | null {
   try {
@@ -274,6 +287,13 @@ function resolveCashierDisplayName(user: { displayName?: string; email?: string 
     .join(' ')
 }
 
+function appendCashierSignInToSaleBody(
+  body: Record<string, unknown>,
+  signInMethod: CashierSignInMethod | undefined,
+) {
+  if (signInMethod) body.cashierSignInMethod = signInMethod
+}
+
 function cartContributorKey(l: Pick<CartLine, 'addedByUserId' | 'addedByDisplayName'>): string {
   return `${(l.addedByUserId ?? '').trim()}\t${(l.addedByDisplayName ?? '').trim()}`
 }
@@ -308,15 +328,7 @@ function openTabPersistLineBody(l: CartLine) {
     ...(l.addedByUserId ? { addedByUserId: l.addedByUserId } : {}),
     ...(l.addedByDisplayName ? { addedByDisplayName: l.addedByDisplayName } : {}),
     ...(l.addedAt ? { addedAt: l.addedAt } : {}),
-    ...(l.stockOverrideApproved === true
-      ? {
-          stockOverrideApproved: true,
-          ...(l.stockOverrideScope ? { stockOverrideScope: l.stockOverrideScope } : {}),
-          ...(l.stockOverrideAvailableQty !== undefined
-            ? { stockOverrideAvailableQty: l.stockOverrideAvailableQty }
-            : {}),
-        }
-      : {}),
+    ...stockOverridePayloadFromLine(l),
   }
 }
 
@@ -326,15 +338,7 @@ function saleRequestLineBody(l: CartLine) {
     name: l.name,
     quantity: l.quantity,
     unitPrice: l.unitPrice,
-    ...(l.stockOverrideApproved === true
-      ? {
-          stockOverrideApproved: true,
-          ...(l.stockOverrideScope ? { stockOverrideScope: l.stockOverrideScope } : {}),
-          ...(l.stockOverrideAvailableQty !== undefined
-            ? { stockOverrideAvailableQty: l.stockOverrideAvailableQty }
-            : {}),
-        }
-      : {}),
+    ...stockOverridePayloadFromLine(l),
     ...(l.addedByUserId ? { addedByUserId: l.addedByUserId } : {}),
     ...(l.addedByDisplayName ? { addedByDisplayName: l.addedByDisplayName } : {}),
     ...(l.addedAt ? { addedAt: l.addedAt } : {}),
@@ -535,16 +539,9 @@ export function Register() {
   const [onAccountPoKbOpen, setOnAccountPoKbOpen] = useState(false)
   const [houseAccountFormOpen, setHouseAccountFormOpen] = useState(false)
   const [altPaymentExpanded, setAltPaymentExpanded] = useState(false)
-  const [cartFooterCompact, setCartFooterCompact] = useState(() => {
-    try {
-      return sessionStorage.getItem('electropos-cart-footer-compact') !== '0'
-    } catch {
-      return true
-    }
-  })
   const [loyaltyModalOpen, setLoyaltyModalOpen] = useState(false)
-  const cartFooterCompactTouchedRef = useRef(false)
   const [lastOnAccount, setLastOnAccount] = useState<number | null>(null)
+  const [cashRoundingConfig, setCashRoundingConfig] = useState<CashRoundingConfig>(DEFAULT_CASH_ROUNDING)
   const [offlinePendingCount, setOfflinePendingCount] = useState(0)
   const [serverReachable, setServerReachable] = useState(true)
   const [productPhotoViewer, setProductPhotoViewer] = useState<Product | null>(null)
@@ -559,14 +556,8 @@ export function Register() {
   const [offlineReconcileModalOpen, setOfflineReconcileModalOpen] = useState(false)
   const [offlineReconcileItems, setOfflineReconcileItems] = useState<OfflineSyncedItemSummary[]>([])
   const [offlineReconcileSyncedAt, setOfflineReconcileSyncedAt] = useState<string | null>(null)
-  const [stockOverridePrompt, setStockOverridePrompt] = useState<StockOverridePromptState>({
-    open: false,
-    scope: 'offline',
-    productName: '',
-    available: 0,
-    maxUnits: OFFLINE_OVERSALE_MAX_UNITS,
-  })
-  const stockOverrideResolveRef = useRef<((approved: boolean) => void) | null>(null)
+  const [stockOverrideRequest, setStockOverrideRequest] = useState<StockOverrideModalRequest | null>(null)
+  const stockOverrideResolveRef = useRef<((result: StockOverrideApproval) => void) | null>(null)
   const altPaymentsOfflineDisabled = offlineCatalogMode
 
   useEffect(() => subscribeServerReachability(setServerReachable), [])
@@ -609,7 +600,7 @@ export function Register() {
   useEffect(() => {
     return () => {
       if (stockOverrideResolveRef.current) {
-        stockOverrideResolveRef.current(false)
+        stockOverrideResolveRef.current({ approved: false })
         stockOverrideResolveRef.current = null
       }
     }
@@ -1266,25 +1257,36 @@ export function Register() {
     available: number
     maxUnits: number
   }) {
-    return new Promise<boolean>((resolve) => {
-      if (stockOverrideResolveRef.current) stockOverrideResolveRef.current(false)
+    return new Promise<StockOverrideApproval>((resolve) => {
+      if (stockOverrideResolveRef.current) stockOverrideResolveRef.current({ approved: false })
       stockOverrideResolveRef.current = resolve
-      setStockOverridePrompt({
-        open: true,
-        scope: input.scope,
-        productName: input.productName,
-        available: input.available,
-        maxUnits: input.maxUnits,
+      setStockOverrideRequest({
+        ...input,
+        managerScanRequired: !isAdmin,
       })
     })
   }
 
-  function settleStockOverrideConfirmation(approved: boolean) {
-    setStockOverridePrompt((prev) => ({ ...prev, open: false }))
+  function settleStockOverrideApproval(approver: StockOverrideApprover) {
+    setStockOverrideRequest(null)
     const resolve = stockOverrideResolveRef.current
     stockOverrideResolveRef.current = null
-    resolve?.(approved)
+    resolve?.({ approved: true, approver })
   }
+
+  function cancelStockOverrideApproval() {
+    setStockOverrideRequest(null)
+    const resolve = stockOverrideResolveRef.current
+    stockOverrideResolveRef.current = null
+    resolve?.({ approved: false })
+  }
+
+  const stockOverrideSelfApprover: StockOverrideApprover | null = session?.user
+    ? {
+        userId: session.user.id,
+        displayName: resolveCashierDisplayName(session.user) ?? session.user.email,
+      }
+    : null
 
   async function addToCartQty(p: Product, requestedQty: number) {
     if (refundSession) {
@@ -1319,6 +1321,7 @@ export function Register() {
     const currentLineQty = totalCartQtyForProduct(cart, p._id)
     let overrideApproved = false
     let overrideMaxAdd = 0
+    let overrideApprover: StockOverrideApprover | undefined
 
     const needsOverridePrecheck =
       requestedQty > Math.max(0, avail - currentLineQty) &&
@@ -1329,24 +1332,21 @@ export function Register() {
         setError(`Offline strict-stock item blocked: ${p.name}`)
         return
       }
-      if (!isAdmin) {
-        setError(`Insufficient stock for ${p.name}. Manager override required while ${overrideScope}.`)
-        return
-      }
       const allowedTotalQty = Math.max(0, avail) + overrideMaxUnits
       overrideMaxAdd = Math.max(0, allowedTotalQty - currentLineQty)
       if (overrideMaxAdd <= 0) {
         setError(`${overrideScope === 'offline' ? 'Offline' : 'Online'} override limit reached for ${p.name} (max +${overrideMaxUnits}).`)
         return
       }
-      const ok = await requestStockOverrideConfirmation({
+      const approval = await requestStockOverrideConfirmation({
         scope: overrideScope,
         productName: p.name,
         available: Math.max(0, avail),
         maxUnits: overrideMaxUnits,
       })
-      if (!ok) return
+      if (!approval.approved) return
       overrideApproved = true
+      overrideApprover = approval.approver
     }
 
     const approveStockOverride = () => {
@@ -1359,7 +1359,6 @@ export function Register() {
       }
       if (!isAdmin) {
         blockedByPolicy = true
-        setError(`Insufficient stock for ${p.name}. Manager override required while ${overrideScope}.`)
         return false
       }
       const allowedTotalQty = Math.max(0, avail) + overrideMaxUnits
@@ -1401,9 +1400,7 @@ export function Register() {
           const merged = {
             ...line,
             quantity: line.quantity + overrideAdd,
-            stockOverrideApproved: true,
-            stockOverrideScope: overrideScope,
-            stockOverrideAvailableQty: Math.max(0, avail),
+            ...stockOverrideLineFields(overrideScope, avail, overrideApprover),
           }
           const updated = enrichCartLine(p, merged)
           next[i] = updated
@@ -1411,7 +1408,7 @@ export function Register() {
           partialNotice =
             overrideAdd < requestedQty
               ? `${overrideScope === 'offline' ? 'Offline' : 'Online'} override added ${overrideAdd} of ${requestedQty} (limit +${overrideMaxUnits})`
-              : `${overrideScope === 'offline' ? 'Offline' : 'Online'} stock override approved for ${p.name}`
+              : `${overrideScope === 'offline' ? 'Offline' : 'Online'} stock override approved for ${p.name}${overrideApprover ? ` (${overrideApprover.displayName})` : ''}`
           return next
         }
         if (toAdd < requestedQty) {
@@ -1420,9 +1417,7 @@ export function Register() {
             const merged = {
               ...line,
               quantity: line.quantity + overrideAdd,
-              stockOverrideApproved: true,
-              stockOverrideScope: overrideScope,
-              stockOverrideAvailableQty: Math.max(0, avail),
+              ...stockOverrideLineFields(overrideScope, avail, overrideApprover),
             }
             const updated = enrichCartLine(p, merged)
             next[i] = updated
@@ -1452,9 +1447,7 @@ export function Register() {
           name: p.name,
           quantity: overrideAdd,
           unitPrice: p.price,
-          stockOverrideApproved: true,
-          stockOverrideScope: overrideScope,
-          stockOverrideAvailableQty: Math.max(0, avail),
+          ...stockOverrideLineFields(overrideScope, avail, overrideApprover),
           ...stamp,
         }
         const appended = enrichCartLine(p, newLine)
@@ -1462,7 +1455,7 @@ export function Register() {
         partialNotice =
           overrideAdd < requestedQty
             ? `${overrideScope === 'offline' ? 'Offline' : 'Online'} override added ${overrideAdd} of ${requestedQty} (limit +${overrideMaxUnits})`
-            : `${overrideScope === 'offline' ? 'Offline' : 'Online'} stock override approved for ${p.name}`
+            : `${overrideScope === 'offline' ? 'Offline' : 'Online'} stock override approved for ${p.name}${overrideApprover ? ` (${overrideApprover.displayName})` : ''}`
         return [...prev, appended]
       }
       if (toAdd < requestedQty) {
@@ -1474,9 +1467,7 @@ export function Register() {
             name: p.name,
             quantity: overrideAdd,
             unitPrice: p.price,
-            stockOverrideApproved: true,
-            stockOverrideScope: overrideScope,
-            stockOverrideAvailableQty: Math.max(0, avail),
+            ...stockOverrideLineFields(overrideScope, avail, overrideApprover),
             ...stamp,
           }
           const appended = enrichCartLine(p, newLine)
@@ -1560,6 +1551,7 @@ export function Register() {
     const hasOfflineSignalForBump = offlineCatalogMode || !serverReachable
     const overrideScopeForBump: 'offline' | 'online' = hasOfflineSignalForBump ? 'offline' : 'online'
     let overrideApprovedForBump = false
+    let overrideApproverForBump: StockOverrideApprover | undefined
     if (nextTotal > max && delta > 0) {
       const overrideMaxUnits =
         overrideScopeForBump === 'offline' ? OFFLINE_OVERSALE_MAX_UNITS : ONLINE_OVERSALE_MAX_UNITS
@@ -1570,10 +1562,6 @@ export function Register() {
           setError(`Offline strict-stock item blocked: ${p.name}`)
           return
         }
-        if (!isAdmin) {
-          setError(`Insufficient stock for ${p.name}. Manager override required while ${overrideScopeForBump}.`)
-          return
-        }
         const allowedTotalQty = Math.max(0, max) + overrideMaxUnits
         if (nextTotal > allowedTotalQty) {
           setError(
@@ -1581,15 +1569,16 @@ export function Register() {
           )
           return
         }
-        const ok = await requestStockOverrideConfirmation({
+        const approval = await requestStockOverrideConfirmation({
           scope: overrideScopeForBump,
           productName: p.name,
           available: Math.max(0, max),
           maxUnits: overrideMaxUnits,
         })
-        if (!ok) return
+        if (!approval.approved) return
         overrideApprovedForBump = true
-        partialNotice = `${overrideScopeForBump === 'offline' ? 'Offline' : 'Online'} stock override approved for ${p.name}`
+        overrideApproverForBump = approval.approver
+        partialNotice = `${overrideScopeForBump === 'offline' ? 'Offline' : 'Online'} stock override approved for ${p.name}${approval.approver ? ` (${approval.approver.displayName})` : ''}`
       }
     }
 
@@ -1638,11 +1627,6 @@ export function Register() {
           setError(`Offline strict-stock item blocked: ${pLine.name}`)
           return prev
         }
-        if (!isAdmin) {
-          blockedByPolicy = true
-          setError(`Insufficient stock for ${pLine.name}. Manager override required while ${overrideScopeForBump}.`)
-          return prev
-        }
         const allowedTotalQty = Math.max(0, maxUnits) + overrideMaxUnits
         if (nextTotalCart > allowedTotalQty) {
           blockedByPolicy = true
@@ -1656,11 +1640,7 @@ export function Register() {
       return prev.map((l, j) => {
         if (j !== lineIndex) return l
         const overrideFields = overrideApprovedForBump
-          ? {
-              stockOverrideApproved: true as const,
-              stockOverrideScope: overrideScopeForBump,
-              stockOverrideAvailableQty: Math.max(0, maxUnits),
-            }
+          ? stockOverrideLineFields(overrideScopeForBump, maxUnits, overrideApproverForBump)
           : {}
         if (!pLine) {
           return { ...l, quantity: nextQty, ...overrideFields }
@@ -1708,6 +1688,42 @@ export function Register() {
     setLoyaltyModalOpen(false)
   }
 
+  const cartPayable = useMemo(
+    () => payableCartTotal(cartTotal, loyalty.loyaltyDiscount, cashRoundingConfig),
+    [cartTotal, loyalty.loyaltyDiscount, cashRoundingConfig],
+  )
+
+  function resolveSalePaymentMethod(
+    cashApplied: number,
+    cardApplied: number,
+    storeCredit: number,
+    onAccount: number,
+  ): string {
+    const tenderCount = [
+      cashApplied > 0.005,
+      cardApplied > 0.005,
+      storeCredit > 0.005,
+      onAccount > 0.005,
+      loyalty.loyaltyDiscount > 0.005,
+    ].filter(Boolean).length
+    if (tenderCount >= 2 || (cashApplied > 0.005 && cardApplied > 0.005)) return 'split'
+    if (
+      onAccount > 0.005 &&
+      cashApplied < 0.005 &&
+      cardApplied < 0.005 &&
+      storeCredit < 0.005 &&
+      loyalty.loyaltyDiscount < 0.005
+    ) {
+      return 'on_account'
+    }
+    if (cardApplied > 0 && cashApplied > 0) return 'split'
+    if (cardApplied > 0) return 'card'
+    if (cashApplied > 0) return receiptEnabled ? 'cash-receipt' : 'cash-no-receipt'
+    if (storeCredit > 0.005) return 'store_credit'
+    if (loyalty.loyaltyDiscount > 0.005) return 'loyalty'
+    return receiptEnabled ? 'cash-receipt' : 'cash-no-receipt'
+  }
+
   function beginCustomerDisplayLoyaltyPhoneEntry() {
     if (!loyalty.loyaltyProgram?.enabled) {
       setError('Loyalty program is not enabled')
@@ -1729,19 +1745,6 @@ export function Register() {
     beginCustomerDisplayLoyaltyPhoneEntry()
   }
 
-  function toggleCartFooterCompact() {
-    cartFooterCompactTouchedRef.current = true
-    setCartFooterCompact((compact) => {
-      const next = !compact
-      try {
-        sessionStorage.setItem('electropos-cart-footer-compact', next ? '1' : '0')
-      } catch {
-        /* ignore */
-      }
-      return next
-    })
-  }
-
   function onAccountRemainingDueAmount() {
     const total = pendingSplit?.total ?? cartTotal
     const prevCash = pendingSplit?.cashReceived ?? 0
@@ -1760,6 +1763,7 @@ export function Register() {
         if (cancelled) return
         setStoreDisplayName(s.storeName?.trim() || DEFAULT_STORE_NAME)
         setCustomerDisplayConfig(storeConfigFromSettings(s))
+        setCashRoundingConfig(cashRoundingFromSettings(s))
       })
       .catch(() => {
         /* use cache */
@@ -1780,7 +1784,7 @@ export function Register() {
     storeConfig: customerDisplayConfigForTill,
     storeName: storeDisplayName,
     cart,
-    cartTotal,
+    cartTotal: cartPayable.payableTotal,
     productsById,
     showChangeView,
     lastTotal: lastTotal,
@@ -1908,15 +1912,7 @@ export function Register() {
             ...(l.addedByUserId ? { addedByUserId: l.addedByUserId } : {}),
             ...(l.addedByDisplayName ? { addedByDisplayName: l.addedByDisplayName } : {}),
             ...(l.addedAt ? { addedAt: l.addedAt } : {}),
-            ...(l.stockOverrideApproved === true
-              ? {
-                  stockOverrideApproved: true,
-                  ...(l.stockOverrideScope ? { stockOverrideScope: l.stockOverrideScope } : {}),
-                  ...(l.stockOverrideAvailableQty !== undefined
-                    ? { stockOverrideAvailableQty: l.stockOverrideAvailableQty }
-                    : {}),
-                }
-              : {}),
+            ...stockOverridePayloadFromLine(l),
           })
         }),
       )
@@ -2014,15 +2010,7 @@ export function Register() {
           ...(l.addedByUserId ? { addedByUserId: l.addedByUserId } : {}),
           ...(l.addedByDisplayName ? { addedByDisplayName: l.addedByDisplayName } : {}),
           ...(l.addedAt ? { addedAt: l.addedAt } : {}),
-          ...(l.stockOverrideApproved === true
-            ? {
-                stockOverrideApproved: true,
-                ...(l.stockOverrideScope ? { stockOverrideScope: l.stockOverrideScope } : {}),
-                ...(l.stockOverrideAvailableQty !== undefined
-                  ? { stockOverrideAvailableQty: l.stockOverrideAvailableQty }
-                  : {}),
-              }
-            : {}),
+          ...stockOverridePayloadFromLine(l),
         })
       }),
     )
@@ -2214,6 +2202,7 @@ export function Register() {
     payment?: { cashAmount: number; cardAmount: number; tenderedCash?: number; changeDue?: number },
     storeCredit?: { amount: number; phone: string },
     houseAccount?: { id: string; amount: number; purchaseOrderNumber?: string },
+    cashRoundingAdjustment?: number,
   ) {
     if (refundSession) return
     if (cart.length === 0) return
@@ -2266,6 +2255,10 @@ export function Register() {
         body.purchaseOrderNumber = houseAccount.purchaseOrderNumber?.trim()
       }
       loyalty.appendLoyaltyToSaleBody(body)
+      appendCashierSignInToSaleBody(body, session?.signInMethod)
+      if (cashRoundingAdjustment != null && Math.abs(cashRoundingAdjustment) > 0.005) {
+        body.cashRoundingAdjustment = round2(cashRoundingAdjustment)
+      }
       const sale = await apiFetch<Sale>('/sales', {
         method: 'POST',
         body: JSON.stringify(body),
@@ -2303,6 +2296,10 @@ export function Register() {
           body.purchaseOrderNumber = houseAccount.purchaseOrderNumber?.trim()
         }
         loyalty.appendLoyaltyToSaleBody(body)
+        appendCashierSignInToSaleBody(body, session?.signInMethod)
+        if (cashRoundingAdjustment != null && Math.abs(cashRoundingAdjustment) > 0.005) {
+          body.cashRoundingAdjustment = round2(cashRoundingAdjustment)
+        }
         try {
           await enqueueOfflineSale(clientLocalId, body)
           applyOfflineStockDeduction(soldLines)
@@ -2313,6 +2310,7 @@ export function Register() {
             _id: `offline-${clientLocalId}`,
             saleId: clientLocalId.slice(-10),
             tillCode: POS_TILL_CODE,
+            cashierSignInMethod: session?.signInMethod,
             cashier: String(session?.user?.id ?? ''),
             items: saleItemsForOfflineReceiptPreview(cart, products, previewJobLabour),
             total: roundCartMoney(
@@ -2348,6 +2346,9 @@ export function Register() {
                   loyaltyPointsRedeemed: loyalty.loyaltyPointsRedeem,
                   loyaltyPhoneMasked: loyalty.loyaltyMasked ?? undefined,
                 }
+              : {}),
+            ...(cashRoundingAdjustment != null && Math.abs(cashRoundingAdjustment) > 0.005
+              ? { cashRoundingAdjustment: round2(cashRoundingAdjustment) }
               : {}),
           }
           setLastSale(queuedSale)
@@ -2386,7 +2387,8 @@ export function Register() {
   ) {
     const loyaltyAmt = Number(sale.loyaltyDiscountAmount ?? 0)
     const loyaltyPts = Math.floor(Number(sale.loyaltyPointsRedeemed ?? 0))
-    setLastTotal(grossTotal)
+    const roundingAdj = Number(sale.cashRoundingAdjustment ?? 0)
+    setLastTotal(round2(grossTotal + roundingAdj))
     setLastLoyaltyDiscount(loyaltyAmt > 0.005 ? loyaltyAmt : null)
     setLastLoyaltyPoints(loyaltyPts > 0 ? loyaltyPts : null)
     setLastTendered(tenders.tendered)
@@ -2410,8 +2412,22 @@ export function Register() {
     const oaNum = pendingSplit?.houseAccountNumber ?? ''
     const oaName = pendingSplit?.houseAccountName ?? ''
     const poNumber = pendingSplit?.purchaseOrderNumber ?? ''
-    const due = round2(total - prevCash - prevCard - prevSc - prevOa - loyalty.loyaltyDiscount)
-    if (due <= 0.005) {
+
+    const tenderBase = {
+      merchandiseTotal: total,
+      loyaltyDiscount: loyalty.loyaltyDiscount,
+      storeCredit: prevSc,
+      onAccount: prevOa,
+      config: cashRoundingConfig,
+    }
+
+    const dueState = computeCheckoutTenders({
+      ...tenderBase,
+      cashReceived: prevCash,
+      cardReceived: prevCard,
+    })
+
+    if (dueState.amountDue <= 0.005) {
       if (loyalty.loyaltyDiscount <= 0.005) {
         setError('No outstanding amount due')
         return
@@ -2437,23 +2453,28 @@ export function Register() {
       return
     }
 
-    const entered = parseTenderedInput(skuInputRef.current, due)
+    const cardMax = maxCardTender({ ...tenderBase, cardReceived: prevCard })
+    const fallbackDue = method === 'cash' ? dueState.amountDue : cardMax
+    const entered = parseTenderedInput(skuInputRef.current, fallbackDue)
     if (!Number.isFinite(entered) || entered <= 0) {
       setError(`Enter ${method} amount on keypad before pressing ${method.toUpperCase()}`)
       return
     }
 
-    if (method === 'card' && entered > due) {
-      setError(`Card amount cannot exceed amount due (${due.toFixed(2)})`)
+    if (method === 'card' && entered > cardMax + 0.01) {
+      setError(`Card amount cannot exceed amount due (${cardMax.toFixed(2)})`)
       return
     }
 
     const nextCash = round2(prevCash + (method === 'cash' ? entered : 0))
     const nextCard = round2(prevCard + (method === 'card' ? entered : 0))
-    const covered = round2(nextCash + nextCard + prevSc + prevOa + loyalty.loyaltyDiscount)
-    const remaining = round2(total - covered)
+    const state = computeCheckoutTenders({
+      ...tenderBase,
+      cashReceived: nextCash,
+      cardReceived: nextCard,
+    })
 
-    if (remaining > 0) {
+    if (!state.isComplete) {
       setPendingSplit({
         total,
         cashReceived: nextCash,
@@ -2465,60 +2486,39 @@ export function Register() {
         houseAccountNumber: oaNum,
         houseAccountName: oaName,
         purchaseOrderNumber: poNumber,
-        amountDue: remaining,
+        amountDue: state.amountDue,
       })
       setSkuInput('')
       return
     }
 
-    const coveredTotal = round2(nextCash + nextCard + prevSc + prevOa + loyalty.loyaltyDiscount)
-    const change = round2(Math.max(0, coveredTotal - total))
-    const remainingAfterScOa = round2(total - prevSc - prevOa - loyalty.loyaltyDiscount)
-    const cardApplied = round2(Math.min(nextCard, remainingAfterScOa))
-    const cashApplied = round2(Math.max(0, remainingAfterScOa - cardApplied))
-    const tenderCount = [cashApplied > 0.005, cardApplied > 0.005, prevSc > 0.005, prevOa > 0.005, loyalty.loyaltyDiscount > 0.005].filter(
-      Boolean,
-    ).length
-    const paymentMethod =
-      tenderCount >= 2 || (cashApplied > 0.005 && cardApplied > 0.005)
-        ? 'split'
-        : prevOa > 0.005 && cashApplied < 0.005 && cardApplied < 0.005 && prevSc < 0.005 && loyalty.loyaltyDiscount < 0.005
-          ? 'on_account'
-          : cardApplied > 0 && cashApplied > 0
-            ? 'split'
-            : cardApplied > 0
-              ? 'card'
-              : cashApplied > 0
-                ? receiptEnabled
-                  ? 'cash-receipt'
-                  : 'cash-no-receipt'
-                : prevSc > 0.005
-                  ? 'store_credit'
-                  : loyalty.loyaltyDiscount > 0.005
-                    ? 'loyalty'
-                  : receiptEnabled
-                    ? 'cash-receipt'
-                    : 'cash-no-receipt'
+    const paymentMethod = resolveSalePaymentMethod(
+      state.cashAmount,
+      state.cardAmount,
+      prevSc,
+      prevOa,
+    )
 
     const sale = await submitSale(
       paymentMethod,
       {
-        cashAmount: cashApplied,
-        cardAmount: cardApplied,
+        cashAmount: state.cashAmount,
+        cardAmount: state.cardAmount,
         tenderedCash: nextCash,
-        changeDue: change,
+        changeDue: state.changeDue,
       },
       prevSc > 0 ? { amount: prevSc, phone: storeCreditPhone } : undefined,
       prevOa > 0 && oaId ? { id: oaId, amount: prevOa, purchaseOrderNumber: poNumber } : undefined,
+      state.cashRoundingAdjustment,
     )
     if (!sale) return
     loyalty.clearLoyalty()
     applySaleCompleteTotals(sale, total, {
       tendered: nextCash,
-      cardAmount: cardApplied,
+      cardAmount: state.cardAmount,
       storeCredit: prevSc > 0 ? prevSc : null,
       onAccount: prevOa > 0 ? prevOa : null,
-      changeDue: change,
+      changeDue: state.changeDue,
     })
     setSkuInput('')
     setHouseAccountForCheckout(null)
@@ -2654,9 +2654,17 @@ export function Register() {
     }
 
     const newSc = round2(amt)
-    const amountDue = round2(total - prevCash - prevCard - newSc - prevOa - loyalty.loyaltyDiscount)
+    const checkoutState = computeCheckoutTenders({
+      merchandiseTotal: total,
+      loyaltyDiscount: loyalty.loyaltyDiscount,
+      storeCredit: newSc,
+      onAccount: prevOa,
+      cashReceived: prevCash,
+      cardReceived: prevCard,
+      config: cashRoundingConfig,
+    })
 
-    if (amountDue > 0.02) {
+    if (!checkoutState.isComplete) {
       setPendingSplit({
         total,
         cashReceived: prevCash,
@@ -2668,59 +2676,40 @@ export function Register() {
         houseAccountNumber: oaNum,
         houseAccountName: oaName,
         purchaseOrderNumber: poNumber,
-        amountDue,
+        amountDue: checkoutState.amountDue,
       })
       setVoucherAmountStr('')
       setVoucherFormOpen(false)
       return
     }
 
-    const nextCash = prevCash
-    const nextCard = prevCard
-    const coveredTotal = round2(nextCash + nextCard + newSc + prevOa + loyalty.loyaltyDiscount)
-    const change = round2(Math.max(0, coveredTotal - total))
-    const remainingAfterScOa = round2(total - newSc - prevOa - loyalty.loyaltyDiscount)
-    const cardApplied = round2(Math.min(nextCard, remainingAfterScOa))
-    const cashApplied = round2(Math.max(0, remainingAfterScOa - cardApplied))
-
-    const tenderCount = [cashApplied > 0.005, cardApplied > 0.005, newSc > 0.005, prevOa > 0.005].filter(Boolean)
-      .length
-    const paymentMethod =
-      tenderCount >= 2 || (cashApplied > 0.005 && cardApplied > 0.005)
-        ? 'split'
-        : prevOa > 0.005 && cashApplied < 0.005 && cardApplied < 0.005 && newSc < 0.005
-          ? 'on_account'
-          : cardApplied > 0 && cashApplied > 0
-            ? 'split'
-            : cardApplied > 0
-              ? 'card'
-              : cashApplied > 0
-                ? receiptEnabled
-                  ? 'cash-receipt'
-                  : 'cash-no-receipt'
-                : newSc > 0.005
-                  ? 'store_credit'
-                  : 'on_account'
+    const paymentMethod = resolveSalePaymentMethod(
+      checkoutState.cashAmount,
+      checkoutState.cardAmount,
+      newSc,
+      prevOa,
+    )
 
     const sale = await submitSale(
       paymentMethod,
       {
-        cashAmount: cashApplied,
-        cardAmount: cardApplied,
-        tenderedCash: nextCash,
-        changeDue: change,
+        cashAmount: checkoutState.cashAmount,
+        cardAmount: checkoutState.cardAmount,
+        tenderedCash: prevCash,
+        changeDue: checkoutState.changeDue,
       },
       newSc > 0 ? { amount: newSc, phone } : undefined,
       prevOa > 0 && oaId ? { id: oaId, amount: prevOa, purchaseOrderNumber: poNumber } : undefined,
+      checkoutState.cashRoundingAdjustment,
     )
     if (!sale) return
     loyalty.clearLoyalty()
     applySaleCompleteTotals(sale, total, {
-      tendered: nextCash,
-      cardAmount: cardApplied,
+      tendered: prevCash,
+      cardAmount: checkoutState.cardAmount,
       storeCredit: newSc > 0 ? newSc : null,
       onAccount: prevOa > 0 ? prevOa : null,
-      changeDue: change,
+      changeDue: checkoutState.changeDue,
     })
     setSkuInput('')
     setVoucherFormOpen(false)
@@ -2775,65 +2764,47 @@ export function Register() {
     }
 
     const newOa = round2(amt)
-    const amountDue = round2(total - prevCash - prevCard - prevSc - newOa - loyalty.loyaltyDiscount)
-    if (amountDue > 0.02) {
+    const checkoutState = computeCheckoutTenders({
+      merchandiseTotal: total,
+      loyaltyDiscount: loyalty.loyaltyDiscount,
+      storeCredit: prevSc,
+      onAccount: newOa,
+      cashReceived: prevCash,
+      cardReceived: prevCard,
+      config: cashRoundingConfig,
+    })
+    if (!checkoutState.isComplete) {
       setError('Insufficient available account credit. Take an account payment first.')
       return
     }
 
-    const nextCash = prevCash
-    const nextCard = prevCard
-    const coveredTotal = round2(nextCash + nextCard + prevSc + newOa + loyalty.loyaltyDiscount)
-    const change = round2(Math.max(0, coveredTotal - total))
-    const remainingAfterScOa = round2(total - prevSc - newOa - loyalty.loyaltyDiscount)
-    const cardApplied = round2(Math.min(nextCard, remainingAfterScOa))
-    const cashApplied = round2(Math.max(0, remainingAfterScOa - cardApplied))
-
-    const tenderCount = [
-      cashApplied > 0.005,
-      cardApplied > 0.005,
-      prevSc > 0.005,
-      newOa > 0.005,
-      loyalty.loyaltyDiscount > 0.005,
-    ].filter(Boolean).length
-    const paymentMethod =
-      tenderCount >= 2 || (cashApplied > 0.005 && cardApplied > 0.005)
-        ? 'split'
-        : newOa > 0.005 && cashApplied < 0.005 && cardApplied < 0.005 && prevSc < 0.005 && loyalty.loyaltyDiscount < 0.005
-          ? 'on_account'
-          : cardApplied > 0 && cashApplied > 0
-            ? 'split'
-            : cardApplied > 0
-              ? 'card'
-              : cashApplied > 0
-                ? receiptEnabled
-                  ? 'cash-receipt'
-                  : 'cash-no-receipt'
-                : prevSc > 0.005
-                  ? 'store_credit'
-                  : loyalty.loyaltyDiscount > 0.005
-                    ? 'loyalty'
-                    : 'on_account'
+    const paymentMethod = resolveSalePaymentMethod(
+      checkoutState.cashAmount,
+      checkoutState.cardAmount,
+      prevSc,
+      newOa,
+    )
 
     const sale = await submitSale(
       paymentMethod,
       {
-        cashAmount: cashApplied,
-        cardAmount: cardApplied,
-        tenderedCash: nextCash,
-        changeDue: change,
+        cashAmount: checkoutState.cashAmount,
+        cardAmount: checkoutState.cardAmount,
+        tenderedCash: prevCash,
+        changeDue: checkoutState.changeDue,
       },
       prevSc > 0 ? { amount: prevSc, phone: pendingSplit?.storeCreditPhone ?? '' } : undefined,
       newOa > 0 ? { id: acct._id, amount: newOa, purchaseOrderNumber: poNumber } : undefined,
+      checkoutState.cashRoundingAdjustment,
     )
     if (!sale) return
     loyalty.clearLoyalty()
     applySaleCompleteTotals(sale, total, {
-      tendered: nextCash,
-      cardAmount: cardApplied,
+      tendered: prevCash,
+      cardAmount: checkoutState.cardAmount,
       storeCredit: prevSc > 0 ? prevSc : null,
       onAccount: newOa > 0 ? newOa : null,
-      changeDue: change,
+      changeDue: checkoutState.changeDue,
     })
     setSkuInput('')
     setHouseAccountFormOpen(false)
@@ -2952,7 +2923,7 @@ export function Register() {
     setSkuInput('')
   }
 
-  async function importShopAssistCart(scannedToken?: string) {
+  async function importShopAssistCart(scannedToken: string) {
     if (refundSession) {
       setError('Exit refund mode before importing a ShopAssist cart')
       return
@@ -2963,8 +2934,8 @@ export function Register() {
     }
     if (cartRef.current.length > 0 && !window.confirm('Import ShopAssist cart into the current cart?')) return
 
-    const token = scannedToken ?? window.prompt('Scan or paste the ShopAssist cart QR code') ?? ''
-    if (!token?.trim()) return
+    const token = scannedToken.trim()
+    if (!token) return
 
     setBusy(true)
     setError(null)
@@ -3674,7 +3645,9 @@ export function Register() {
     const loyaltyDiscountAmt = slice ? 0 : Math.max(0, Number(sale.loyaltyDiscountAmount ?? 0))
     const merchandiseTotal = slice ? slice.refundTotal : (sale.total ?? gross)
     const lineDiscountTotal = slice ? 0 : Math.max(0, gross - merchandiseTotal)
-    const total = slice ? slice.refundTotal : round2(Math.max(0, gross - loyaltyDiscountAmt))
+    const cashRoundingAdj = slice ? 0 : Number(sale.cashRoundingAdjustment ?? 0)
+    const totalBeforeRounding = slice ? slice.refundTotal : round2(Math.max(0, gross - loyaltyDiscountAmt))
+    const total = slice ? slice.refundTotal : round2(totalBeforeRounding + cashRoundingAdj)
     const discountTotal =
       lineDiscountTotal + loyaltyDiscountAmt > 0.005 ? round2(lineDiscountTotal + loyaltyDiscountAmt) : undefined
     const vatRate = Number(cfg.vatRatePct || 0)
@@ -3767,6 +3740,8 @@ export function Register() {
         receiptTitle: opts?.receiptTitle ?? cfg.receiptTitle,
         receiptNumberPrefix: opts?.receiptNumberPrefix,
         cashierName: resolveCashierDisplayName(session?.user),
+        cashierSignInLabel:
+          cashierSignInMethodLabel(sale.cashierSignInMethod ?? session?.signInMethod) || undefined,
         tillNumber: POS_TILL_CODE,
         tillLabel: cfg.tillLabel,
         slipLabel: cfg.slipLabel,
@@ -3791,6 +3766,7 @@ export function Register() {
         changeDueLabel: cfg.changeDueLabel,
         thankYouLine: opts?.thankYouLine ?? cfg.thankYouLine,
         discountTotal: (discountTotal ?? 0) > 0.005 ? discountTotal : undefined,
+        cashRoundingAdjustment: Math.abs(cashRoundingAdj) > 0.005 ? cashRoundingAdj : undefined,
         total,
         tendered,
         changeDue,
@@ -3931,12 +3907,12 @@ export function Register() {
         note: ackNoteParts.join(' · '),
       },
     })
+    if (settings.autoOpenDrawer && (refundCash > 0.005 || refundCard > 0.005)) {
+      const d = await kickCashDrawerIfConfigured(settings)
+      if (!d.ok) return { ok: false, error: d.error ?? 'Refund saved, but drawer failed to open' }
+    }
     const r = await window.electronPos.printReceipt(p.transport, p.receipt, { columns: p.columns, cut: p.cut })
     if (!r.ok) return { ok: false, error: r.error ?? 'Refund receipt print failed' }
-    if (settings.autoOpenDrawer && (refundCash > 0.005 || refundCard > 0.005)) {
-      const d = await window.electronPos.kickDrawer(settings.transport)
-      if (!d.ok) return { ok: false, error: d.error ?? 'Refund saved, receipt printed, but drawer failed to open' }
-    }
     return { ok: true }
   }
 
@@ -3988,6 +3964,10 @@ export function Register() {
   }): Promise<{ ok: boolean; error?: string; payload: ReceiptPrintPayload }> {
     const p = houseAccountPaymentReceiptPayload(input)
     if (!window.electronPos) return { ok: true, payload: p }
+    if (input.method === 'cash') {
+      const d = await kickCashDrawerIfConfigured(printerSettings)
+      if (!d.ok) return { ok: false, error: d.error ?? 'Drawer failed to open', payload: p }
+    }
     const r = await window.electronPos.printReceipt(p.transport, p.receipt, { columns: p.columns, cut: p.cut })
     if (!r.ok) return { ok: false, error: r.error ?? 'Account payment receipt print failed', payload: p }
     return { ok: true, payload: p }
@@ -4234,12 +4214,12 @@ export function Register() {
     if (!window.electronPos) return
     try {
       const settings = readPosPrinterSettings()
-      if (settings.autoPrintReceipt && receiptEnabled) {
-        await printSaleReceiptsToDevice(sale)
-      }
       const pm = (sale.paymentMethod ?? '').toLowerCase()
       if (settings.autoOpenDrawer && pm !== 'on_account') {
-        await window.electronPos.kickDrawer(settings.transport)
+        await kickCashDrawerIfConfigured(settings)
+      }
+      if (settings.autoPrintReceipt && receiptEnabled) {
+        await printSaleReceiptsToDevice(sale)
       }
     } catch {
       // Silent: do not block checkout UX.
@@ -4314,13 +4294,6 @@ export function Register() {
         payload: printed.payload,
         successNotice: 'Account payment receipt printed',
       })
-      if (window.electronPos && houseAccountPaymentMethod === 'cash') {
-        const settings = readPosPrinterSettings()
-        if (settings.autoOpenDrawer) {
-          const d = await window.electronPos.kickDrawer(settings.transport)
-          if (!d.ok) setError(d.error ?? 'Payment saved, but drawer failed to open')
-        }
-      }
       setNotice(
         `Account ${updated.accountNumber} paid ${amount.toFixed(2)} · Remaining balance ${updated.balance.toFixed(2)}`,
       )
@@ -4559,21 +4532,6 @@ export function Register() {
                         }}
                       >
                         TABS
-                      </button>
-                      <button
-                        type="button"
-                        className="key-btn key-btn-fn"
-                        disabled={!!refundSession || busy || offlineCatalogMode || !serverReachable}
-                        title={
-                          refundSession
-                            ? 'Finish refund first'
-                            : offlineCatalogMode || !serverReachable
-                              ? 'ShopAssist import needs the server connection'
-                              : 'Scan ShopAssist cart QR'
-                        }
-                        onClick={() => void importShopAssistCart()}
-                      >
-                        SHOPASSIST
                       </button>
                       {canRefund ? (
                         <button
@@ -5286,7 +5244,7 @@ export function Register() {
                     </div>
                   )}
                 </div>
-                <div className={`cart-footer${cartFooterCompact ? ' cart-footer--compact' : ''}`}>
+                <div className="cart-footer">
                   {(error || notice || lastSale || offlinePendingCount > 0 || catalogError) && (
                     <div className="cart-messages cart-messages--footer-top">
                       {(error || catalogError) && <p className="error">{error ?? catalogError}</p>}
@@ -5319,18 +5277,6 @@ export function Register() {
                       )}
                     </div>
                   )}
-                  {cart.length > 0 && !refundSession ? (
-                    <div className="cart-footer-layout-toggle">
-                      <button
-                        type="button"
-                        className="btn ghost small"
-                        aria-pressed={cartFooterCompact}
-                        onClick={toggleCartFooterCompact}
-                      >
-                        {cartFooterCompact ? 'Spacious cart panel' : 'Compact cart panel'}
-                      </button>
-                    </div>
-                  ) : null}
                   {cart.length > 0 && !refundSession ? (
                     <div className="register-alt-payment-wrap">
                       <button
@@ -5556,21 +5502,51 @@ export function Register() {
                       <>
                         Refund total <strong className="total-amount">{cartTotal.toFixed(2)}</strong>
                       </>
-                    ) : loyalty.loyaltyDiscount > 0.005 ? (
+                    ) : loyalty.loyaltyDiscount > 0.005 || cartPayable.cashRoundingAdjustment > 0.005 ? (
                       <div className="cart-total-stack">
                         <div className="cart-total-row muted">
                           <span>Subtotal</span>
                           <span>{cartTotal.toFixed(2)}</span>
                         </div>
-                        <div className="cart-total-row cart-total-row--loyalty">
-                          <span>Loyalty</span>
-                          <span>−{loyalty.loyaltyDiscount.toFixed(2)}</span>
+                        {loyalty.loyaltyDiscount > 0.005 ? (
+                          <div className="cart-total-row cart-total-row--loyalty">
+                            <span>Loyalty</span>
+                            <span>−{loyalty.loyaltyDiscount.toFixed(2)}</span>
+                          </div>
+                        ) : null}
+                        {cartPayable.cashRoundingAdjustment > 0.005 ? (
+                          <div className="cart-total-row muted">
+                            <span>Cash rounding</span>
+                            <span>+{cartPayable.cashRoundingAdjustment.toFixed(2)}</span>
+                          </div>
+                        ) : null}
+                        {cartPayable.cashRoundingAdjustment < -0.005 ? (
+                          <div className="cart-total-row muted">
+                            <span>Cash rounding</span>
+                            <span>{cartPayable.cashRoundingAdjustment.toFixed(2)}</span>
+                          </div>
+                        ) : null}
+                        <div className="cart-total-row cart-total-row--due">
+                          <span>{cashRoundingConfig.enabled ? 'Cash due' : 'Due'}</span>
+                          <strong className="total-amount">{cartPayable.payableTotal.toFixed(2)}</strong>
+                        </div>
+                      </div>
+                    ) : cashRoundingConfig.enabled && Math.abs(cartPayable.cashRoundingAdjustment) > 0.005 ? (
+                      <div className="cart-total-stack">
+                        <div className="cart-total-row muted">
+                          <span>Subtotal</span>
+                          <span>{cartTotal.toFixed(2)}</span>
+                        </div>
+                        <div className="cart-total-row muted">
+                          <span>Cash rounding</span>
+                          <span>
+                            {cartPayable.cashRoundingAdjustment > 0 ? '+' : ''}
+                            {cartPayable.cashRoundingAdjustment.toFixed(2)}
+                          </span>
                         </div>
                         <div className="cart-total-row cart-total-row--due">
-                          <span>Due</span>
-                          <strong className="total-amount">
-                            {(cartTotal - loyalty.loyaltyDiscount).toFixed(2)}
-                          </strong>
+                          <span>Cash due</span>
+                          <strong className="total-amount">{cartPayable.payableTotal.toFixed(2)}</strong>
                         </div>
                       </div>
                     ) : (
@@ -5638,51 +5614,12 @@ export function Register() {
           </section>
         </div>
         </div>
-        {stockOverridePrompt.open ? (
-          <div
-            className="open-tabs-backdrop"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="stock-override-title"
-            onMouseDown={(e) => {
-              if (e.target === e.currentTarget) settleStockOverrideConfirmation(false)
-            }}
-          >
-            <div className="open-tabs-dialog quotes-modal-dialog" style={{ maxWidth: 'min(96vw, 28rem)' }}>
-              <div className="open-tabs-header">
-                <h2 id="stock-override-title">
-                  {stockOverridePrompt.scope === 'offline' ? 'Offline' : 'Online'} stock override
-                </h2>
-                <button
-                  type="button"
-                  className="btn ghost open-tabs-close"
-                  onClick={() => settleStockOverrideConfirmation(false)}
-                >
-                  Close
-                </button>
-              </div>
-              <div className="quotes-modal-body">
-                <p>
-                  <strong>{stockOverridePrompt.productName}</strong> has insufficient stock.
-                </p>
-                <p className="muted" style={{ marginBottom: '0.5rem' }}>
-                  Available: {stockOverridePrompt.available}
-                </p>
-                <p className="muted">
-                  Manager can exceed stock by up to <strong>{stockOverridePrompt.maxUnits}</strong> units.
-                </p>
-              </div>
-              <div className="open-tabs-header" style={{ justifyContent: 'flex-end', gap: '0.5rem' }}>
-                <button type="button" className="btn ghost" onClick={() => settleStockOverrideConfirmation(false)}>
-                  Cancel
-                </button>
-                <button type="button" className="btn primary" onClick={() => settleStockOverrideConfirmation(true)}>
-                  Approve override
-                </button>
-              </div>
-            </div>
-          </div>
-        ) : null}
+        <StockOverrideModal
+          request={stockOverrideRequest}
+          selfApprover={stockOverrideSelfApprover}
+          onClose={cancelStockOverrideApproval}
+          onApproved={settleStockOverrideApproval}
+        />
         {productPhotoViewer ? (
           <div
             className="open-tabs-backdrop"

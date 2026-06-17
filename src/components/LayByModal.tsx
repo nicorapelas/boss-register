@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { apiFetch } from '../api/client'
 import type { CartLine, LayByDetail, LayByListItem, LayByPaymentResponse, StoreSettings } from '../api/types'
-import { readPosPrinterSettings } from '../printer/posPrinterSettings'
+import { kickCashDrawerIfConfigured, readPosPrinterSettings } from '../printer/posPrinterSettings'
 import { ScreenKeyboard, type ScreenKeyboardAction } from './ScreenKeyboard'
 
 type LayByKbField =
@@ -355,6 +355,11 @@ export function LayByModal({ open, onClose, cart, cartTotal, isAdmin, receiptEna
       setPrintNotice(`${input.successMessage} (web preview)`)
       return
     }
+    const cashTendered = input.payment?.tenderedCash ?? 0
+    if (cashTendered > 0.005) {
+      const d = await kickCashDrawerIfConfigured(settings)
+      if (!d.ok) throw new Error(d.error ?? 'Drawer open failed')
+    }
     const labels = ['CUSTOMER COPY', 'ATTACH TO ITEM'] as const
     for (const copyLabel of labels) {
       const payload = buildLayByReceiptPayload({ ...input, copyLabel })
@@ -367,15 +372,6 @@ export function LayByModal({ open, onClose, cart, cartTotal, isAdmin, receiptEna
       }
     }
     setPrintNotice(input.successMessage)
-  }
-
-  async function openDrawerForLayByCash(cashTendered: number) {
-    if (cashTendered <= 0.005) return
-    if (!window.electronPos) return
-    const settings = readPosPrinterSettings()
-    if (!settings.autoOpenDrawer) return
-    const r = await window.electronPos.kickDrawer(settings.transport)
-    if (!r.ok) throw new Error(r.error ?? 'Drawer open failed')
   }
 
   async function openDetail(id: string) {
@@ -454,7 +450,6 @@ export function LayByModal({ open, onClose, cart, cartTotal, isAdmin, receiptEna
         thankYouLine: 'LAY-BY AGREEMENT CREATED',
         successMessage: 'Lay-by receipt printed',
       })
-      await openDrawerForLayByCash(cash)
       onCreated()
       onClose()
     } catch (err) {
@@ -498,7 +493,6 @@ export function LayByModal({ open, onClose, cart, cartTotal, isAdmin, receiptEna
         thankYouLine: 'LAY-BY PAYMENT RECEIVED',
         successMessage: 'Lay-by payment receipt printed',
       })
-      await openDrawerForLayByCash(d.paymentTenderedCash ?? cash)
       setSelected(d)
       setPayCash('')
       setPayCard('')

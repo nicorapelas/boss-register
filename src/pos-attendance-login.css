@@ -1,0 +1,153 @@
+/* Login staff clock — import after theme sheets. */
+
+.auth-screen-layout--portrait {
+  flex-direction: column;
+  align-items: stretch;
+  max-width: 420px;
+  gap: 0.65rem;
+}
+
+.auth-screen-layout--portrait .auth-panel-main {
+  flex: 0 1 auto;
+  max-width: none;
+}
+
+.auth-screen .staff-clock-panel.staff-clock-panel--active,
+.auth-screen .staff-clock-panel.staff-clock-panel--compact {
+  border: 2px solid #22c55e;
+  box-shadow:
+    inset 0 0 0 1px rgba(34, 197, 94, 0.2),
+    0 0 0 3px rgba(34, 197, 94, 0.35);
+}
+
+.staff-clock-panel--compact {
+  padding: 0.65rem 0.85rem;
+  margin: 0;
+  width: 100%;
+  max-width: none;
+}
+
+.staff-clock-compact-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.staff-clock-compact-main {
+  flex: 1 1 140px;
+  min-width: 0;
+}
+
+.staff-clock-panel--compact .staff-clock-title {
+  margin: 0 0 0.25rem;
+  font-size: 0.95rem;
+}
+
+.staff-clock-panel--compact .staff-clock-scan-badge {
+  margin: 0;
+  font-size: 0.65rem;
+  padding: 0.15rem 0.45rem;
+}
+
+.staff-clock-compact-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 0 0 auto;
+}
+
+.staff-clock-badge-input--compact {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+  opacity: 0;
+}
+
+.staff-clock-face-toggle {
+  min-height: 2rem;
+  padding: 0.25rem 0.55rem;
+  font-size: 0.8rem;
+}
+
+.staff-clock-pending {
+  margin-top: 0.55rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.staff-clock-pending-label {
+  display: block;
+  margin: 0 0 0.35rem;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.staff-clock-pending-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.5rem;
+}
+
+.staff-clock-pending-item {
+  font-size: 0.82rem;
+  padding: 0.12rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.15);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.staff-clock-pending-role {
+  font-size: 0.75rem;
+}
+
+.staff-clock-face-wrap--compact {
+  margin-top: 0.5rem;
+  max-height: 220px;
+  overflow: hidden;
+}
+
+.staff-clock-panel--compact .staff-clock-feedback {
+  margin: 0.4rem 0 0;
+  font-size: 0.8rem;
+}
+
+.staff-clock-panel--compact .staff-clock-offline {
+  margin: 0.35rem 0 0;
+  font-size: 0.78rem;
+}
+
+.staff-clock-scan-badge {
+  display: inline-block;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #052e16;
+  background: #86efac;
+  border: 1px solid #22c55e;
+}
+
+html[data-pos-theme='light'] .staff-clock-scan-badge {
+  color: #052e16;
+  background: #bbf7d0;
+  border-color: #16a34a;
+}
+
+html[data-pos-theme='light'] .staff-clock-pending-item {
+  background: rgba(92, 80, 67, 0.12);
+  border-color: rgba(92, 80, 67, 0.25);
+}

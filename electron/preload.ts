@@ -4,7 +4,6 @@ contextBridge.exposeInMainWorld('electronPlatform', process.platform)
 
 contextBridge.exposeInMainWorld('electronApp', {
   quit: () => ipcRenderer.invoke('app:quit'),
-  minimize: () => ipcRenderer.invoke('app:minimize'),
 })
 
 contextBridge.exposeInMainWorld('ipcRenderer', {

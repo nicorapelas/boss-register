@@ -10,11 +10,15 @@
     "build": "tsc && vite build",
     "release": "npm run build && electron-builder",
     "deploy:posiflex": "./scripts/deploy-posiflex.sh",
+    "deploy:pos:ncr": "./scripts/deploy-pos-ncr.sh",
+    "deploy:pos:all": "./scripts/deploy-pos-all.sh",
+    "deploy:pos": "./scripts/deploy-pos-terminal.sh",
     "test": "vitest run --environment jsdom",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@vladmandic/face-api": "^1.7.15",
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^12.9.0",
     "react": "^18.2.0",

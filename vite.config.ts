@@ -20,6 +20,7 @@ export default defineConfig(({ mode }) => {
       'import.meta.env.VITE_APP_VERSION': JSON.stringify(appVersion),
     },
     optimizeDeps: {
+      include: ['@vladmandic/face-api'],
       esbuildOptions: {
         target: 'es2020',
       },

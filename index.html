@@ -8,8 +8,45 @@
       content="width=device-width, initial-scale=1.0, viewport-fit=cover"
     />
     <title>CogniPOS — Register</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #350d66;
+      }
+
+      #app-splash {
+        position: fixed;
+        inset: 0;
+        z-index: 99999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #350d66;
+        transition: opacity 0.28s ease;
+      }
+
+      #app-splash img {
+        display: block;
+        width: min(34vw, 220px);
+        height: auto;
+        max-height: 34vh;
+        object-fit: contain;
+        user-select: none;
+        -webkit-user-drag: none;
+      }
+
+      #app-splash.app-splash--hidden {
+        opacity: 0;
+        pointer-events: none;
+      }
+    </style>
   </head>
   <body>
+    <div id="app-splash" role="status" aria-live="polite" aria-label="Loading CogniPOS Register">
+      <img src="/appIcon.png" alt="" decoding="async" />
+    </div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

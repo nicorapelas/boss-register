@@ -12,6 +12,7 @@ import {
   apiFetch,
   configureApiAuth,
   loginBadgeRequest,
+  loginFaceRequest,
   loginRequest,
   logoutRequest,
   refreshRequest,
@@ -25,12 +26,12 @@ import {
 } from './offlineAuth'
 import { loadStoredSession, persistSession } from './session'
 import type { SessionBundle } from './types'
-
 type AuthContextValue = {
   session: SessionBundle | null
   loading: boolean
   login: (email: string, password: string) => Promise<void>
   loginWithBadge: (badgeCode: string) => Promise<void>
+  loginWithFace: (embedding: number[]) => Promise<void>
   logout: () => Promise<void>
 }
 
@@ -86,6 +87,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         accessToken: data.accessToken,
         refreshToken: data.refreshToken,
         user: data.user,
+        signInMethod: s.signInMethod,
       }
       await syncOfflineLoginPack(next.accessToken)
       setSession(next)
@@ -127,6 +129,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         accessToken: data.accessToken,
         refreshToken: data.refreshToken,
         user: data.user,
+        signInMethod: 'password',
       }
       await rememberPasswordLogin(email, password, data.user)
       await syncOfflineLoginPack(bundle.accessToken)
@@ -147,6 +150,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  const loginWithFace = useCallback(async (embedding: number[]) => {
+    if (!navigator.onLine) {
+      throw new Error('Face login requires an online connection. Use badge login while offline.')
+    }
+    const data = await loginFaceRequest(embedding)
+    const bundle: SessionBundle = {
+      accessToken: data.accessToken,
+      refreshToken: data.refreshToken,
+      user: data.user,
+      signInMethod: 'face',
+    }
+    await syncOfflineLoginPack(bundle.accessToken)
+    setSession(bundle)
+    await persistSession(bundle)
+  }, [])
+
   const loginWithBadge = useCallback(async (badgeCode: string) => {
     try {
       const data = await loginBadgeRequest(badgeCode)
@@ -154,6 +173,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         accessToken: data.accessToken,
         refreshToken: data.refreshToken,
         user: data.user,
+        signInMethod: 'badge',
       }
       await rememberBadgeLogin(badgeCode, data.user)
       await syncOfflineLoginPack(bundle.accessToken)
@@ -185,8 +205,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const value = useMemo(
-    () => ({ session, loading, login, loginWithBadge, logout }),
-    [session, loading, login, loginWithBadge, logout],
+    () => ({ session, loading, login, loginWithBadge, loginWithFace, logout }),
+    [session, loading, login, loginWithBadge, loginWithFace, logout],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

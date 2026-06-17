@@ -1,3 +1,5 @@
+import type { CashierSignInMethod } from './signInMethod'
+
 export interface AuthUser {
   id: string
   email: string
@@ -11,6 +13,8 @@ export interface SessionBundle {
   accessToken: string
   refreshToken: string
   user: AuthUser
+  /** Set when the cashier signs in; sent on each sale for receipt / audit. */
+  signInMethod?: CashierSignInMethod
 }
 
 export interface AuthResponse {

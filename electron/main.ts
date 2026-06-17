@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, session } from 'electron'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { registerAuthIpc } from './auth-storage'
@@ -18,6 +18,17 @@ process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL
   ? path.join(process.env.APP_ROOT, 'public')
   : RENDERER_DIST
 
+const MEDIA_PERMISSIONS = new Set(['media', 'camera', 'microphone', 'videoCapture', 'audioCapture'])
+
+function allowMediaPermission(permission: string): boolean {
+  return MEDIA_PERMISSIONS.has(permission)
+}
+
+if (process.platform === 'linux') {
+  // Ubuntu 22.04+ / Lubuntu: PipeWire camera path for Chromium getUserMedia.
+  app.commandLine.appendSwitch('enable-features', 'WebRTCPipeWireCapturer')
+}
+
 registerAuthIpc()
 registerOfflineIpc()
 initCustomerDisplayModule({
@@ -28,11 +39,6 @@ initCustomerDisplayModule({
 
 ipcMain.handle('app:quit', () => {
   app.quit()
-})
-
-ipcMain.handle('app:minimize', (event) => {
-  const w = BrowserWindow.fromWebContents(event.sender)
-  if (w && !w.isDestroyed()) w.minimize()
 })
 
 function parseTransport(raw: unknown): PrinterTransport | null {
@@ -139,7 +145,8 @@ function createWindow() {
     minWidth: 800,
     minHeight: 560,
     fullscreen: true,
-    icon: path.join(process.env.APP_ROOT, 'src/assets/logo-text_bottom1-dark.png'),
+    backgroundColor: '#350d66',
+    icon: path.join(process.env.APP_ROOT, 'src/assets/appIcon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
     },
@@ -148,6 +155,12 @@ function createWindow() {
 
   win.webContents.on('did-finish-load', () => {
     win?.webContents.send('main-process-message', new Date().toLocaleString())
+    win?.focus()
+    win?.webContents.focus()
+  })
+
+  win.on('focus', () => {
+    if (win && !win.isDestroyed()) win.webContents.focus()
   })
 
   if (VITE_DEV_SERVER_URL) {
@@ -172,6 +185,10 @@ app.on('activate', () => {
 })
 
 app.whenReady().then(() => {
+  session.defaultSession.setPermissionCheckHandler((_wc, permission) => allowMediaPermission(permission))
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
+    callback(allowMediaPermission(permission))
+  })
   createWindow()
   onAppReadyCustomerDisplay()
 })

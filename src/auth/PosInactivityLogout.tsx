@@ -1,10 +1,10 @@
 import { useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
 import {
   posSaleBlocksInactivityLogout,
   subscribePosSaleInactivityGuard,
 } from '../register/posSaleInactivityGuard'
 import { useAuth } from './AuthContext'
+import { useSignOutAttendance } from '../attendance/SignOutAttendanceContext'
 
 /** Sign out when the till has no pointer/keyboard activity for this long. */
 export const POS_INACTIVITY_LOGOUT_MS = 20_000
@@ -17,8 +17,8 @@ const ACTIVITY_EVENTS = ['pointerdown', 'pointermove', 'keydown', 'touchstart', 
  * a split payment is in progress.
  */
 export function PosInactivityLogout() {
-  const { session, loading, logout } = useAuth()
-  const navigate = useNavigate()
+  const { session, loading } = useAuth()
+  const { requestSignOut } = useSignOutAttendance()
 
   useEffect(() => {
     if (loading || !session) return
@@ -35,10 +35,7 @@ export function PosInactivityLogout() {
         armTimer()
         return
       }
-      void (async () => {
-        await logout()
-        navigate('/login', { replace: true })
-      })()
+      void requestSignOut()
     }
 
     const onActivity = () => {
@@ -62,7 +59,7 @@ export function PosInactivityLogout() {
         window.removeEventListener(event, onActivity, { capture: true })
       }
     }
-  }, [loading, session, logout, navigate])
+  }, [loading, session, requestSignOut])
 
   return null
 }

@@ -1,0 +1,332 @@
+/* Cosmic theme — Pop!_OS Cosmic dark palette: charcoal neutrals with cyan & indigo accents. */
+
+html[data-pos-theme='cosmic'] .shell {
+  background: linear-gradient(155deg, #161616 0%, #262626 38%, #2e2e2e 100%);
+}
+
+html[data-pos-theme='cosmic'] .shell-header {
+  border-bottom-color: #63d0df;
+  background: linear-gradient(90deg, rgba(38, 38, 38, 0.95) 0%, rgba(46, 46, 46, 0.92) 100%);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.45);
+}
+
+html[data-pos-theme='cosmic'] .shell-user {
+  color: #dedede;
+}
+
+html[data-pos-theme='cosmic'] .shell-sub {
+  color: #9e9e9e;
+}
+
+html[data-pos-theme='cosmic'] .muted {
+  color: #9e9e9e;
+}
+
+html[data-pos-theme='cosmic'] .panel {
+  background: rgba(38, 38, 38, 0.88);
+  border-color: #484848;
+  box-shadow: 0 2px 0 rgba(99, 208, 223, 0.2);
+}
+
+html[data-pos-theme='cosmic'] .form input {
+  border-color: #484848;
+  background: #161616;
+  color: #dedede;
+}
+
+html[data-pos-theme='cosmic'] .search {
+  border-color: #484848;
+  background: #161616;
+  color: #dedede;
+}
+
+html[data-pos-theme='cosmic'] .product-row {
+  border-color: #63d0df;
+  background: rgba(27, 27, 27, 0.75);
+}
+
+html[data-pos-theme='cosmic'] .product-meta,
+html[data-pos-theme='cosmic'] .product-price {
+  color: #dedede;
+}
+
+html[data-pos-theme='cosmic'] .table th,
+html[data-pos-theme='cosmic'] .table td {
+  border-bottom-color: #484848;
+}
+
+html[data-pos-theme='cosmic'] .screen-keyboard {
+  border-color: #48b9c7;
+  background: rgba(22, 22, 22, 0.95);
+}
+
+html[data-pos-theme='cosmic'] .screen-keyboard-key {
+  border-color: #63d0df;
+  background: #1b1b1b;
+  color: #dedede;
+}
+
+html[data-pos-theme='cosmic'] .screen-keyboard-key-done {
+  background: #92cf9c;
+  border-color: #5edb8c;
+  color: #fff;
+}
+
+html[data-pos-theme='cosmic'] .sku-display {
+  border-color: #cf7dff;
+  background: #161616;
+  color: #dedede;
+}
+
+html[data-pos-theme='cosmic'] .key-btn {
+  border-color: #cf7dff;
+  background: #262626;
+  color: #dedede;
+}
+
+html[data-pos-theme='cosmic'] .key-btn-danger {
+  background: linear-gradient(180deg, #ef4444 0%, #dc2626 100%);
+  border-color: #b91c1c;
+  color: #fff;
+}
+
+html[data-pos-theme='cosmic'] .key-btn-primary,
+html[data-pos-theme='cosmic'] .key-btn-enter {
+  background: linear-gradient(180deg, #63d0df 0%, #48b9c7 100%);
+  border-color: #3e88ff;
+  color: #fff;
+}
+
+html[data-pos-theme='cosmic'] .key-btn-receipt-on {
+  background: linear-gradient(180deg, #5edb8c 0%, #92cf9c 100%);
+  border-color: #5edb8c;
+  color: #9e9e9e;
+}
+
+html[data-pos-theme='cosmic'] .key-btn-receipt-off {
+  background: rgba(22, 22, 22, 0.92);
+  border-color: #484848;
+  color: #a5b4fc;
+}
+
+html[data-pos-theme='cosmic'] .panel-cart .cart-footer {
+  border-top-color: #48b9c7;
+}
+
+html[data-pos-theme='cosmic'] .cart-change-sticky-footer {
+  border-top-color: #48b9c7;
+  background: rgba(49, 46, 129, 0.85);
+}
+
+html[data-pos-theme='cosmic'] .cart-line {
+  border-color: #63d0df;
+  background: rgba(22, 78, 99, 0.45);
+}
+
+html[data-pos-theme='cosmic'] .cart-line-discount-badge {
+  background: #3e88ff;
+  color: #fff;
+}
+
+html[data-pos-theme='cosmic'] .cart-line-sub {
+  color: #9e9e9e;
+}
+
+html[data-pos-theme='cosmic'] .stepper {
+  border-color: #484848;
+  background: #161616;
+}
+
+html[data-pos-theme='cosmic'] .stepper-btn:active {
+  background: rgba(99, 208, 223, 0.25);
+}
+
+html[data-pos-theme='cosmic'] .register-voucher-input {
+  border-color: #ffad00;
+  background: #161616;
+  color: #ffffff;
+}
+
+html[data-pos-theme='cosmic'] .register-voucher-panel {
+  border-top-color: #ffad00;
+  border-bottom-color: #ffad00;
+}
+
+html[data-pos-theme='cosmic'] .open-tabs-dialog {
+  background: rgba(49, 46, 129, 0.95);
+  border-color: #63d0df;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.65);
+}
+
+html[data-pos-theme='cosmic'] .open-tabs-li {
+  border-color: #484848;
+  background: rgba(27, 27, 27, 0.7);
+}
+
+html[data-pos-theme='cosmic'] .open-tabs-input {
+  border-color: #484848;
+  background: #161616;
+  color: #dedede;
+}
+
+html[data-pos-theme='cosmic'] .layby-summary {
+  border-color: #63d0df;
+}
+
+html[data-pos-theme='cosmic'] .layby-cancel {
+  border-top-color: #63d0df;
+}
+
+html[data-pos-theme='cosmic'] .btn:not(.primary):not(.ghost) {
+  background: #262626;
+  border-color: #a1c0eb;
+  color: #ffffff;
+}
+
+html[data-pos-theme='cosmic'] .btn:not(.primary):not(.ghost):active:not(:disabled) {
+  background: #2e2e2e;
+}
+
+html[data-pos-theme='cosmic'] .btn.ghost {
+  color: #dedede;
+  border-color: #63d0df;
+}
+
+html[data-pos-theme='cosmic'] .btn.primary {
+  background: linear-gradient(180deg, #3e88ff 0%, #3e88ff 100%);
+  border-color: #3e88ff;
+  color: #fff;
+}
+
+html[data-pos-theme='cosmic'] .pos-touch {
+  -webkit-tap-highlight-color: rgba(99, 208, 223, 0.2);
+}
+
+html[data-pos-theme='cosmic'] .panel-cart .cart-lines::-webkit-scrollbar-thumb,
+html[data-pos-theme='cosmic'] .panel-products .product-list::-webkit-scrollbar-thumb,
+html[data-pos-theme='cosmic'] .presets-screen::-webkit-scrollbar-thumb,
+html[data-pos-theme='cosmic'] .screen-keyboard::-webkit-scrollbar-thumb,
+html[data-pos-theme='cosmic'] .panel-products .keys-buttons-wrap::-webkit-scrollbar-thumb,
+html[data-pos-theme='cosmic'] .panel-products .keys-function-pad::-webkit-scrollbar-thumb,
+html[data-pos-theme='cosmic'] .panel-products .keys-layout::-webkit-scrollbar-thumb,
+html[data-pos-theme='cosmic'] .cart-change-view::-webkit-scrollbar-thumb,
+html[data-pos-theme='cosmic'] .cart-change-scroll::-webkit-scrollbar-thumb,
+html[data-pos-theme='cosmic'] .register-voucher-screen-kb::-webkit-scrollbar-thumb,
+html[data-pos-theme='cosmic'] .open-tabs-dialog::-webkit-scrollbar-thumb,
+html[data-pos-theme='cosmic'] .quotes-modal-scroll::-webkit-scrollbar-thumb,
+html[data-pos-theme='cosmic'] .quotes-modal-form::-webkit-scrollbar-thumb,
+html[data-pos-theme='cosmic'] .layby-modal-scroll::-webkit-scrollbar-thumb,
+html[data-pos-theme='cosmic'] .assign-preset-modal-scroll::-webkit-scrollbar-thumb,
+html[data-pos-theme='cosmic'] .assign-preset-screen-keyboard::-webkit-scrollbar-thumb,
+html[data-pos-theme='cosmic'] .pos-settings-page::-webkit-scrollbar-thumb {
+  background: rgba(99, 208, 223, 0.4);
+}
+
+html[data-pos-theme='cosmic'] .panel-cart .cart-lines::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='cosmic'] .panel-products .product-list::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='cosmic'] .presets-screen::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='cosmic'] .screen-keyboard::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='cosmic'] .panel-products .keys-buttons-wrap::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='cosmic'] .panel-products .keys-function-pad::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='cosmic'] .panel-products .keys-layout::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='cosmic'] .cart-change-view::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='cosmic'] .cart-change-scroll::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='cosmic'] .register-voucher-screen-kb::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='cosmic'] .open-tabs-dialog::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='cosmic'] .quotes-modal-scroll::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='cosmic'] .quotes-modal-form::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='cosmic'] .layby-modal-scroll::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='cosmic'] .assign-preset-modal-scroll::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='cosmic'] .assign-preset-screen-keyboard::-webkit-scrollbar-thumb:hover,
+html[data-pos-theme='cosmic'] .pos-settings-page::-webkit-scrollbar-thumb:hover {
+  background: rgba(99, 208, 223, 0.6);
+}
+
+html[data-pos-theme='cosmic'] .pos-settings-section {
+  border-color: #484848;
+  background: rgba(27, 27, 27, 0.65);
+}
+
+html[data-pos-theme='cosmic'] .pos-settings-input,
+html[data-pos-theme='cosmic'] .pos-settings-select {
+  border-color: #484848;
+  background: #161616;
+  color: #dedede;
+}
+
+html[data-pos-theme='cosmic'] .pos-settings-check input {
+  accent-color: #cf7dff;
+}
+
+html[data-pos-theme='cosmic'] .pos-theme-option {
+  border-color: #484848;
+  background: #161616;
+  color: #dedede;
+}
+
+html[data-pos-theme='cosmic'] .pos-theme-option:hover {
+  border-color: #63d0df;
+  background: rgba(22, 78, 99, 0.55);
+}
+
+html[data-pos-theme='cosmic'] .pos-theme-option--selected {
+  border-color: #ffad00;
+  box-shadow: 0 0 0 2px rgba(255, 173, 0, 0.35);
+  background: rgba(62, 136, 255, 0.25);
+  color: #ffffff;
+}
+
+html[data-pos-theme='cosmic'] .pos-theme-option .pos-theme-option-hint {
+  color: #9e9e9e;
+}
+
+html[data-pos-theme='cosmic'] .btn.danger {
+  background: #dc2626;
+  border-color: #b91c1c;
+  color: #fff;
+}
+
+html[data-pos-theme='cosmic'] .assign-preset-input,
+html[data-pos-theme='cosmic'] .assign-preset-select {
+  border-color: #484848;
+  background: #161616;
+  color: #dedede;
+}
+
+html[data-pos-theme='cosmic'] .assign-preset-modal .assign-preset-actions {
+  border-top-color: #484848;
+}
+
+html[data-pos-theme='cosmic'] .preset-nav-tile,
+html[data-pos-theme='cosmic'] .preset-item-tile {
+  border-color: #63d0df;
+  background: #1b1b1b;
+  color: #dedede;
+}
+
+html[data-pos-theme='cosmic'] .preset-item-tile--stale {
+  background: rgba(22, 22, 22, 0.88);
+}
+
+html[data-pos-theme='cosmic'] .success {
+  color: #92cf9c;
+}
+
+html[data-pos-theme='cosmic'] .error {
+  color: #fda1a0;
+}
+
+/* Cash payment — emerald green (matches keyboard “done” / teal accent family) */
+html[data-pos-theme='cosmic'] .btn.checkout-btn.cash-checkout-btn {
+  background: linear-gradient(180deg, #92cf9c 0%, #92cf9c 100%);
+  border-color: #5edb8c;
+  color: #9e9e9e;
+}
+
+html[data-pos-theme='cosmic'] .btn.checkout-btn.cash-checkout-btn:hover:not(:disabled) {
+  filter: brightness(1.07);
+}
+
+html[data-pos-theme='cosmic'] .btn.checkout-btn.cash-checkout-btn:active:not(:disabled) {
+  filter: brightness(0.95);
+}

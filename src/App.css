@@ -34,6 +34,15 @@
   -webkit-overflow-scrolling: touch;
 }
 
+.pos-route .screen.auth-screen.auth-screen--face.auth-screen--with-clock {
+  overflow-y: auto;
+}
+
+.pos-route .screen.auth-screen.auth-screen--face {
+  overflow: hidden;
+  padding: 1rem 1.25rem;
+}
+
 .shell {
   min-height: 0;
   flex: 1;
@@ -71,7 +80,8 @@ html.electron-shell .shell-header {
 html.electron-shell .shell-header :is(a, button, input, select, textarea),
 html.electron-shell .shell-header .shell-header-center,
 html.electron-shell .shell-header .shell-user,
-html.electron-shell .shell-header .shell-till-badge {
+html.electron-shell .shell-header .shell-till-badge,
+html.electron-shell .shell-header .shell-actions {
   -webkit-app-region: no-drag;
 }
 
@@ -148,15 +158,6 @@ html.electron-shell .auth-window-actions button {
   gap: 0.75rem;
   justify-self: end;
   min-width: 0;
-}
-
-.shell-app-minimize {
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0.35rem 0.5rem;
-  min-width: 2.5rem;
 }
 
 .shell-app-quit {
@@ -640,7 +641,165 @@ html.electron-shell .auth-window-actions button {
 
 
 .auth-screen .panel {
+  max-width: 420px;
+}
+
+.auth-screen--with-clock {
+  align-items: stretch;
+}
+
+.auth-screen-layout {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 0.75rem;
+  width: 100%;
+  max-width: 420px;
+  margin: 0 auto;
+  padding: 0 0.75rem;
+  box-sizing: border-box;
+}
+
+.staff-clock-panel {
+  flex: 0 0 auto;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+}
+
+.auth-screen--with-clock .auth-screen-layout > .auth-panel-main {
+  flex: 0 1 auto;
+  width: 100%;
+  max-width: none;
+}
+
+.staff-clock-title {
+  margin: 0 0 0.35rem;
+  font-size: 1.15rem;
+}
+
+.staff-clock-lead {
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+  line-height: 1.35;
+}
+
+.staff-clock-badge-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 0.65rem;
+  font-size: 0.9rem;
+}
+
+.staff-clock-badge-input {
+  position: static;
+  opacity: 1;
+  pointer-events: auto;
+  width: 100%;
+  margin: 0;
+}
+
+.staff-clock-mode-btn {
+  width: 100%;
+  margin-bottom: 0.5rem;
+}
+
+.staff-clock-face-wrap {
+  margin-top: 0.25rem;
+}
+
+.staff-clock-feedback {
+  margin: 0.5rem 0 0;
+  font-size: 0.88rem;
+}
+
+.staff-clock-offline {
+  margin: 0 0 0.65rem;
+}
+
+.attendance-signout-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.stock-override-scan-hint {
+  margin: 0.75rem 0 0.35rem;
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.stock-override-modal-footer {
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.stock-override-modal-actions {
+  margin-top: 0.5rem;
+}
+
+.stock-override-face-wrap {
+  margin-top: 0.65rem;
+}
+
+.stock-override-error {
+  margin: 0.65rem 0 0;
+}
+
+.auth-screen--face .auth-panel--face {
   max-width: 380px;
+  max-height: calc(100vh - 2rem);
+  max-height: calc(100dvh - 2rem);
+  padding: 1rem 1.15rem;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.auth-screen--face .auth-panel--face h1 {
+  margin: 0 0 0.35rem;
+  text-align: center;
+  font-size: 1.5rem;
+}
+
+.auth-screen--face .auth-panel--face > .muted {
+  margin: 0 0 0.25rem;
+  text-align: center;
+  font-size: 0.88rem;
+  line-height: 1.3;
+}
+
+.auth-offline-hint-compact {
+  margin: 0 0 0.5rem !important;
+  text-align: center;
+  font-size: 0.75rem;
+  line-height: 1.2;
+}
+
+.auth-face-panel-wrap {
+  flex-shrink: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.auth-badge-scan-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+  opacity: 0;
+}
+
+.auth-screen--face .auth-brand-logo-wrap {
+  height: 4.5rem;
+  margin: 0 auto 0.5rem;
 }
 
 .auth-brand-logo-wrap {
@@ -659,16 +818,6 @@ html.electron-shell .auth-window-actions button {
   max-height: 100%;
   max-width: min(100%, 31.044195rem);
   object-fit: contain;
-}
-
-.auth-app-minimize {
-  width: 100%;
-  box-sizing: border-box;
-  margin-top: 0.35rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0.45rem 0.75rem;
 }
 
 .auth-app-quit {
@@ -1153,6 +1302,10 @@ html.electron-shell .auth-window-actions button {
   max-width: min(100%, 28rem);
 }
 
+.pos-touch .auth-screen--face .auth-panel--face {
+  max-width: min(100%, 28rem);
+}
+
 .pos-touch h1 {
   font-size: 1.85rem;
 }
@@ -1274,8 +1427,9 @@ html.electron-shell .auth-window-actions button {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
-  border-top: 1px solid #4a4a4a;
-  padding: 0.45rem 0 0.2rem;
+  border: 1px solid #4a4a4a;
+  border-radius: 12px;
+  padding: 0.45rem 0.4rem 0.2rem;
   margin-top: 0.35rem;
   background: #141414;
 }
@@ -2129,21 +2283,8 @@ html.electron-shell .auth-window-actions button {
 .cart-footer {
   flex-direction: column;
   align-items: stretch;
-  gap: 0.85rem;
-}
-
-.cart-footer--compact {
   gap: 0.4rem;
   padding-top: 0.55rem;
-}
-
-.cart-footer-layout-toggle {
-  display: flex;
-  justify-content: flex-end;
-}
-
-.cart-footer-layout-toggle .btn {
-  font-size: 0.8rem;
 }
 
 .cart-messages--footer-top {
@@ -2155,31 +2296,31 @@ html.electron-shell .auth-window-actions button {
   font-size: 0.88rem;
 }
 
-.cart-footer--compact .register-alt-payment-wrap {
+.cart-footer .register-alt-payment-wrap {
   margin-top: 0.15rem;
   gap: 0.25rem;
 }
 
-.cart-footer--compact .register-loyalty-panel {
+.cart-footer .register-loyalty-panel {
   margin: 0.2rem 0 0.35rem;
   padding: 0.4rem 0.5rem;
   gap: 0.3rem;
 }
 
-.cart-footer--compact .total {
+.cart-footer .total {
   font-size: 1.15rem;
 }
 
-.cart-footer--compact .total-amount {
+.cart-footer .total-amount {
   font-size: 1.3rem;
 }
 
-.cart-footer--compact .checkout-btn {
+.cart-footer .checkout-btn {
   min-height: 50px !important;
   font-size: 1.1rem !important;
 }
 
-.cart-footer--compact .register-refund-note-field {
+.cart-footer .register-refund-note-field {
   margin-bottom: 0.2rem;
 }
 
@@ -2363,6 +2504,110 @@ html.electron-shell .auth-window-actions button {
   grid-column: 3;
   grid-row: 2;
   text-align: right;
+}
+
+.face-login-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  align-items: stretch;
+}
+
+.face-login-preview-card {
+  border: 1px solid #4a4a4a;
+  border-radius: 8px;
+  padding: 0.4rem 0.5rem 0.45rem;
+  background: rgba(255, 255, 255, 0.03);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.face-login-preview-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.3rem;
+  margin-bottom: 0.35rem;
+  width: 100%;
+}
+
+.face-login-preview-pill {
+  font-size: 0.72rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid #4a4a4a;
+  white-space: nowrap;
+}
+
+.face-login-preview-pill--live {
+  border-color: rgba(50, 190, 110, 0.7);
+  color: rgba(85, 220, 145, 0.95);
+}
+
+.face-login-preview-pill--error {
+  border-color: rgba(255, 100, 100, 0.7);
+  color: rgba(255, 140, 140, 0.95);
+}
+
+.face-login-preview-wrap {
+  position: relative;
+  width: 100%;
+  max-width: 11rem;
+  margin: 0 auto;
+  flex-shrink: 0;
+}
+
+.face-login-video {
+  width: 100%;
+  max-width: 11rem;
+  max-height: 8.25rem;
+  height: auto;
+  border-radius: 6px;
+  background: #111;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  display: block;
+  transform: scaleX(-1);
+}
+
+.face-login-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  width: 100%;
+}
+
+.face-login-btn {
+  width: 100%;
+  min-height: 2.5rem;
+  margin: 0;
+}
+
+.face-login-inline-error {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.25;
+}
+
+.face-login-preview-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+  border-radius: 8px;
+  font-size: 0.9rem;
+}
+
+.face-login-status {
+  text-align: center;
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.2;
+  min-height: 0;
 }
 
 .loyalty-modal-body {
@@ -2792,7 +3037,7 @@ html.electron-shell .auth-window-actions button {
   overflow-x: hidden;
   margin-top: 0.35rem;
   margin-bottom: 0.65rem;
-  padding: 0.3rem 0 0.2rem;
+  padding: 0.3rem 0.35rem 0.2rem;
 }
 
 .open-tabs-screen-keyboard .screen-keyboard-row {

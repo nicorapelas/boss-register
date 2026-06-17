@@ -27,6 +27,8 @@ export type ReceiptPayload = {
   /** When false, suppress standalone "<prefix> <receiptNumber>" line (used for lay-by barcode slips). */
   showReceiptNumberLine?: boolean
   cashierName?: string
+  /** e.g. Badge scan, Face recognition */
+  cashierSignInLabel?: string
   tillNumber?: string
   tillLabel?: string
   slipLabel?: string
@@ -44,6 +46,8 @@ export type ReceiptPayload = {
   }>
   subtotal: number
   discountTotal?: number
+  /** Cash rounding adjustment (+ / −) when SA coin rounding applies. */
+  cashRoundingAdjustment?: number
   taxTotal?: number
   vatRatePct?: number
   vatLabel?: string
@@ -210,6 +214,24 @@ function setAlign(align: 'left' | 'center' | 'right'): Buffer {
   return cmd([ESC, 0x61, n])
 }
 
+/** Shift the whole print area right (helps 80mm receipts that sit too far left). */
+function setLeftMarginDots(dots: number): Buffer {
+  const n = Math.max(0, Math.min(65535, Math.round(dots)))
+  return cmd([GS, 0x4c, n & 0xff, (n >> 8) & 0xff])
+}
+
+function receiptSidePad(columns: number): number {
+  if (columns >= 46) return 3
+  if (columns >= 42) return 2
+  return 1
+}
+
+function receiptLeftMarginDots(columns: number): number {
+  if (columns >= 46) return 48
+  if (columns >= 42) return 40
+  return 28
+}
+
 function setEmph(on: boolean): Buffer {
   return cmd([ESC, 0x45, on ? 1 : 0])
 }
@@ -248,12 +270,13 @@ export function buildReceiptEscPos(payload: ReceiptPayload, opts?: { columns?: n
   const requestedColumns = opts?.columns ?? 42
   const columns = Math.max(32, Math.min(requestedColumns, 48))
   const cut = opts?.cut ?? true
-  const sidePad = columns >= 46 ? 1 : 0
+  const sidePad = receiptSidePad(columns)
   const contentCols = Math.max(24, columns - sidePad * 2)
   const pLine = (text = '') => line(`${' '.repeat(sidePad)}${padRight(text, contentCols)}${' '.repeat(sidePad)}`)
 
   const chunks: Buffer[] = []
   chunks.push(cmd([ESC, 0x40])) // Initialize
+  chunks.push(setLeftMarginDots(receiptLeftMarginDots(columns)))
   chunks.push(feed(1)) // Prevent first header line from clipping at paper top
   // Centered block: store identity + doc title + receipt/quote number (short lines — full-width pLine would defeat ESC/POS centering).
   chunks.push(setAlign('center'))
@@ -303,6 +326,9 @@ export function buildReceiptEscPos(payload: ReceiptPayload, opts?: { columns?: n
   const dt = new Date(payload.timestampIso)
   if (payload.cashierName || payload.tillNumber || payload.receiptNumber) {
     if (payload.cashierName) chunks.push(pLine(`Cashier ${payload.cashierName}`))
+    if (payload.cashierSignInLabel?.trim()) {
+      chunks.push(pLine(`Sign-in ${payload.cashierSignInLabel.trim()}`))
+    }
     const tillLabel = payload.tillLabel ?? 'Till No'
     const slipLabel = payload.slipLabel ?? 'Slip No'
     const tillPart = payload.tillNumber ? ` ${payload.tillNumber}` : ''
@@ -562,6 +588,10 @@ export function buildReceiptEscPos(payload: ReceiptPayload, opts?: { columns?: n
   }
   if (payload.discountTotal && payload.discountTotal > 0.005) {
     chunks.push(totalLine('Discounts', `-${money(payload.discountTotal)}`))
+  }
+  if (typeof payload.cashRoundingAdjustment === 'number' && Math.abs(payload.cashRoundingAdjustment) > 0.005) {
+    const sign = payload.cashRoundingAdjustment > 0 ? '+' : ''
+    chunks.push(totalLine('Cash rounding', `${sign}${money(payload.cashRoundingAdjustment)}`))
   }
   chunks.push(setEmph(true))
   chunks.push(totalLine(payload.totalDueLabel ?? 'TOTAL DUE:', money(payload.total)))

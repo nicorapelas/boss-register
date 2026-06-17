@@ -42,6 +42,10 @@ export function markServerUnreachable() {
   setServerReachable(false)
 }
 
+export function isServerReachable() {
+  return serverReachable
+}
+
 export function getServerHealthUrl(): string | null {
   const b = base()
   if (!b) return null
@@ -70,7 +74,11 @@ function isPublicAuthPath(path: string) {
     path.startsWith('/auth/login') ||
     path.startsWith('/auth/login-badge') ||
     path.startsWith('/auth/register') ||
-    path.startsWith('/auth/refresh')
+    path.startsWith('/auth/refresh') ||
+    path.startsWith('/attendance/clock-badge') ||
+    path.startsWith('/attendance/clock-face') ||
+    path.startsWith('/attendance/pending') ||
+    path.startsWith('/settings/pos-login')
   )
 }
 
@@ -260,6 +268,86 @@ export async function loginBadgeRequest(badgeCode: string) {
   return apiFetch<AuthResponse>('/auth/login-badge', {
     method: 'POST',
     body: JSON.stringify({ badgeCode }),
+  })
+}
+
+export async function loginFaceRequest(embedding: number[]) {
+  return apiFetch<AuthResponse>('/auth/login-face', {
+    method: 'POST',
+    body: JSON.stringify({ embedding }),
+  })
+}
+
+export type PosLoginConfig = {
+  posLoginMethod: 'badge' | 'face'
+  storeName?: string
+  staffAttendance?: StaffAttendanceSettings
+}
+
+export type StaffAttendanceSettings = {
+  enabled: boolean
+  logoutClockOutPromptEnabled: boolean
+  logoutPromptAfterMinutes: number
+}
+
+export type AttendanceClockResponse = {
+  action: 'clock_in' | 'clock_out'
+  displayName: string
+  userId: string
+  session: {
+    id: string
+    userId: string
+    status: 'open' | 'closed'
+    clockInAt: string
+    clockOutAt: string | null
+    clockInMethod: 'badge' | 'face' | 'manual'
+    clockOutMethod: 'badge' | 'face' | 'manual' | null
+    tillCode: string | null
+  }
+}
+
+export type AttendanceMyStatus = {
+  clockedIn: boolean
+  clockInAt: string | null
+  elapsedMinutes: number
+  attendance: StaffAttendanceSettings
+}
+
+export type AttendancePendingStaff = {
+  id: string
+  displayName: string
+  roleName?: string
+}
+
+export async function fetchAttendancePending() {
+  return apiFetch<{ pending: AttendancePendingStaff[] }>('/attendance/pending')
+}
+
+export async function fetchPosLoginConfig(): Promise<PosLoginConfig> {
+  return apiFetch<PosLoginConfig>('/settings/pos-login')
+}
+
+export async function attendanceClockBadge(badgeCode: string, tillCode?: string) {
+  return apiFetch<AttendanceClockResponse>('/attendance/clock-badge', {
+    method: 'POST',
+    body: JSON.stringify({ badgeCode, tillCode }),
+  })
+}
+
+export async function attendanceClockFace(embedding: number[], tillCode?: string) {
+  return apiFetch<AttendanceClockResponse>('/attendance/clock-face', {
+    method: 'POST',
+    body: JSON.stringify({ embedding, tillCode }),
+  })
+}
+
+export async function fetchAttendanceMyStatus() {
+  return apiFetch<AttendanceMyStatus>('/attendance/my-status')
+}
+
+export async function attendanceClockOutSelf() {
+  return apiFetch<{ session: AttendanceClockResponse['session'] }>('/attendance/clock-out-self', {
+    method: 'POST',
   })
 }
 

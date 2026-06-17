@@ -69,7 +69,8 @@ html[data-pos-theme='lego'] .table td {
 }
 
 html[data-pos-theme='lego'] .screen-keyboard {
-  border-top: 4px solid #d01012;
+  border: 4px solid #d01012;
+  border-radius: 12px;
   background: #0f172a;
 }
 

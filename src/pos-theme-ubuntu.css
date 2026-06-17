@@ -56,7 +56,7 @@ html[data-pos-theme='ubuntu'] .table td {
 }
 
 html[data-pos-theme='ubuntu'] .screen-keyboard {
-  border-top-color: #06b6d4;
+  border-color: #06b6d4;
   background: rgba(30, 27, 75, 0.9);
 }
 

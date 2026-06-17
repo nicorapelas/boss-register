@@ -12,6 +12,7 @@ const POS_THEME_CUSTOMER_DISPLAY: Record<
   elon: { backgroundColor: '#0a1628', accentColor: '#b22234', textColor: '#f8fafc' },
   lego: { backgroundColor: '#0c1929', accentColor: '#ffd502', textColor: '#fffef5' },
   jacobs: { backgroundColor: '#ffffff', accentColor: '#0909e8', textColor: '#000000' },
+  cosmic: { backgroundColor: '#161616', accentColor: '#63d0df', textColor: '#dedede' },
 }
 
 /** Per-till: customer display colours follow POS Appearance (overrides Back Office theme colours). */

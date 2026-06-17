@@ -55,7 +55,8 @@ html[data-pos-theme='light'] .table td {
 }
 
 html[data-pos-theme='light'] .screen-keyboard {
-  border-top-color: #5c5043;
+  border-color: #5c5043;
+  border-width: 3px;
   background: #c4b6a2;
 }
 
@@ -424,7 +425,6 @@ html[data-pos-theme='light'] :is(
 
 html[data-pos-theme='light'] :is(
   .shell-header,
-  .screen-keyboard,
   .panel-cart .cart-footer,
   .cart-change-sticky-footer,
   .register-voucher-panel,
