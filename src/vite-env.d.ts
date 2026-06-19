@@ -26,7 +26,13 @@ interface Window {
     printReceipt: (
       transport: unknown,
       receipt: unknown,
-      opts?: { columns?: number; cut?: boolean },
+      opts?: {
+        columns?: number
+        cut?: boolean
+        printDensity?: 'light' | 'normal' | 'dark'
+        lineSpacing?: number
+        headerBold?: boolean
+      },
     ) => Promise<{ ok: boolean; error?: string }>
   }
   electronOffline?: {

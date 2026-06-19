@@ -4,7 +4,7 @@ import path from 'node:path'
 import { registerAuthIpc } from './auth-storage'
 import { initCustomerDisplayModule, onAppReadyCustomerDisplay, setCustomerDisplayMainWindowRef } from './customer-display'
 import { registerOfflineIpc } from './offline-storage'
-import { buildReceiptEscPos, drawerKick, sendEscPosToPrinter, type PrinterTransport, type ReceiptPayload } from './pos-printer'
+import { buildReceiptEscPos, drawerKick, sendEscPosToPrinter, type PrintDensity, type PrinterTransport, type ReceiptPayload } from './pos-printer'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -79,9 +79,26 @@ ipcMain.handle('pos:drawer:kick', async (_evt, args: { transport: unknown } | un
   }
 })
 
+function parsePrintDensity(value: unknown): PrintDensity | undefined {
+  return value === 'light' || value === 'normal' || value === 'dark' ? value : undefined
+}
+
 ipcMain.handle(
   'pos:receipt:print',
-  async (_evt, args: { transport: unknown; receipt: unknown; columns?: unknown; cut?: unknown } | undefined) => {
+  async (
+    _evt,
+    args:
+      | {
+          transport: unknown
+          receipt: unknown
+          columns?: unknown
+          cut?: unknown
+          printDensity?: unknown
+          lineSpacing?: unknown
+          headerBold?: unknown
+        }
+      | undefined,
+  ) => {
     try {
       const transport = parseTransport(args?.transport)
       if (!transport) return { ok: false, error: 'Invalid printer transport' }
@@ -89,11 +106,15 @@ ipcMain.handle(
       const receipt = args.receipt as ReceiptPayload
       const columns = typeof args.columns === 'number' && Number.isFinite(args.columns) ? args.columns : undefined
       const cut = typeof args.cut === 'boolean' ? args.cut : undefined
+      const printDensity = parsePrintDensity(args?.printDensity)
+      const lineSpacing =
+        typeof args.lineSpacing === 'number' && Number.isFinite(args.lineSpacing) ? args.lineSpacing : undefined
+      const headerBold = typeof args.headerBold === 'boolean' ? args.headerBold : undefined
       const now = new Date().toISOString()
       console.log(
-        `[pos-print] ${now} request kind=${transport.kind} columns=${columns ?? 'default'} cut=${cut ?? 'default'} receiptNo=${receipt.receiptNumber ?? 'n/a'} lines=${Array.isArray(receipt.lines) ? receipt.lines.length : 0}`,
+        `[pos-print] ${now} request kind=${transport.kind} columns=${columns ?? 'default'} cut=${cut ?? 'default'} density=${printDensity ?? 'default'} receiptNo=${receipt.receiptNumber ?? 'n/a'} lines=${Array.isArray(receipt.lines) ? receipt.lines.length : 0}`,
       )
-      const bytes = buildReceiptEscPos(receipt, { columns, cut })
+      const bytes = buildReceiptEscPos(receipt, { columns, cut, printDensity, lineSpacing, headerBold })
       console.log(`[pos-print] ${now} encodedBytes=${bytes.length}`)
       await sendEscPosToPrinter(transport, bytes)
       console.log(`[pos-print] ${now} print-success kind=${transport.kind}`)

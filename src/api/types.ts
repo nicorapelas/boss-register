@@ -298,6 +298,58 @@ export interface SaleRefundPreview {
   }
 }
 
+export interface SaleExchangeEligibility {
+  eligible: boolean
+  daysSinceSale: number
+  maxDays: number
+  adminBypassAvailable: boolean
+}
+
+export interface SaleExchangePreview {
+  sale: Sale
+  return: {
+    refundedTotal: number
+    remainingTotal: number
+    lines: Array<{ index: number; soldQty: number; refundedQty: number; remainingQty: number }>
+  }
+  eligibility: SaleExchangeEligibility
+}
+
+export type SaleExchangeSettlementKind =
+  | 'even'
+  | 'customer_pays_cash'
+  | 'customer_receives_cash'
+  | 'customer_receives_store_credit'
+
+export interface SaleExchangeSettlement {
+  exchangeId: string
+  returnTotal: number
+  newTotal: number
+  netAmount: number
+  cashPaidIn: number
+  cashPaidOut: number
+  storeCreditIssued: number
+  reversedStoreCredit: number
+  reversedOnAccount: number
+}
+
+/** Summary row from GET /sales/adjustment-lookup (POS sale picker). */
+export interface SaleAdjustmentLookupRow {
+  _id: string
+  saleId?: string
+  tillCode?: string
+  total: number
+  paymentMethod?: string
+  refundStatus?: 'partial' | 'refunded'
+  createdAt?: string
+  items: Array<{ name: string; quantity: number }>
+}
+
+export interface SaleAdjustmentLookupResponse {
+  total: number
+  sales: SaleAdjustmentLookupRow[]
+}
+
 export interface ShiftCashDifference {
   kind: 'over' | 'under'
   amount: number

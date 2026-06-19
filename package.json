@@ -13,6 +13,8 @@
     "deploy:pos:ncr": "./scripts/deploy-pos-ncr.sh",
     "deploy:pos:all": "./scripts/deploy-pos-all.sh",
     "deploy:pos": "./scripts/deploy-pos-terminal.sh",
+    "install:pos-autostart": "./scripts/install-pos-autostart.sh",
+    "install:pos-autostart:all": "./scripts/install-pos-autostart-all.sh",
     "test": "vitest run --environment jsdom",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview"

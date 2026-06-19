@@ -40,12 +40,15 @@ export function PosShell({
   children,
   beforeSignOut,
   settingsDisabled = false,
+  headerBanner,
 }: {
   children: ReactNode
   /** Return false to keep the session (e.g. cart not empty). */
   beforeSignOut?: () => boolean
   /** Block opening settings while a sale is in progress (cart not empty). */
   settingsDisabled?: boolean
+  /** Optional full-width strip under the header bar (e.g. sale on hold). */
+  headerBanner?: ReactNode
 }) {
   const { session } = useAuth()
   const { requestSignOut, requestClockOut } = useSignOutAttendance()
@@ -93,65 +96,72 @@ export function PosShell({
   return (
     <>
     <div className="shell">
-      <header className="shell-header">
-        <div className="shell-brand">
-          <Link to="/" className="shell-brand-link" aria-label="CogniPOS — Home">
-            <img src={logoMark} alt={APP_NAME} className="shell-brand-logo" decoding="async" />
-          </Link>
-          <span className="shell-sub">{shellSub}</span>
-          <span className="shell-version" title="App version">
-            v{APP_VERSION}
-          </span>
+      <header className={`shell-header${headerBanner ? ' shell-header--with-banner' : ''}`}>
+        <div className="shell-header-bar">
+          <div className="shell-brand">
+            <Link to="/" className="shell-brand-link" aria-label="CogniPOS — Home">
+              <img src={logoMark} alt={APP_NAME} className="shell-brand-logo" decoding="async" />
+            </Link>
+            <span className="shell-sub">{shellSub}</span>
+            <span className="shell-version" title="App version">
+              v{APP_VERSION}
+            </span>
+          </div>
+          <div className="shell-header-center">
+            {session ? (
+              <button type="button" className="btn ghost" onClick={handleLogOut}>
+                Log out
+              </button>
+            ) : null}
+          </div>
+          <div className="shell-actions">
+            {session && (
+              <>
+                {isAdmin && (
+                  <button
+                    type="button"
+                    className="btn ghost shell-settings-link"
+                    aria-label={settingsToggleLabel}
+                    title={settingsToggleLabel}
+                    disabled={settingsOpenBlocked}
+                    onClick={toggleSettings}
+                  >
+                    <CogIcon />
+                  </button>
+                )}
+                <span className="shell-till-badge" title="POS till code">
+                  Till {POS_TILL_CODE}
+                </span>
+                <span className="shell-user">{userLabel}</span>
+                {staffAttendanceEnabled ? (
+                  <button
+                    type="button"
+                    className="btn ghost shell-clock-out"
+                    onClick={handleClockOut}
+                  >
+                    Clock out
+                  </button>
+                ) : null}
+                {window.electronApp ? (
+                  <button
+                    type="button"
+                    className="btn ghost shell-app-quit"
+                    aria-label="Exit app"
+                    title="Exit app"
+                    onClick={requestQuit}
+                  >
+                    <IconCloseWindow className="shell-window-icon" />
+                  </button>
+                ) : null}
+              </>
+            )}
+          </div>
         </div>
-        <div className="shell-header-center">
-          {session ? (
-            <button type="button" className="btn ghost" onClick={handleLogOut}>
-              Log out
-            </button>
-          ) : null}
-        </div>
-        <div className="shell-actions">
-          {session && (
-            <>
-              {isAdmin && (
-                <button
-                  type="button"
-                  className="btn ghost shell-settings-link"
-                  aria-label={settingsToggleLabel}
-                  title={settingsToggleLabel}
-                  disabled={settingsOpenBlocked}
-                  onClick={toggleSettings}
-                >
-                  <CogIcon />
-                </button>
-              )}
-              <span className="shell-till-badge" title="POS till code">
-                Till {POS_TILL_CODE}
-              </span>
-              <span className="shell-user">{userLabel}</span>
-              {staffAttendanceEnabled ? (
-                <button
-                  type="button"
-                  className="btn ghost shell-clock-out"
-                  onClick={handleClockOut}
-                >
-                  Clock out
-                </button>
-              ) : null}
-              {window.electronApp ? (
-                <button
-                  type="button"
-                  className="btn ghost shell-app-quit"
-                  aria-label="Exit app"
-                  title="Exit app"
-                  onClick={requestQuit}
-                >
-                  <IconCloseWindow className="shell-window-icon" />
-                </button>
-              ) : null}
-            </>
-          )}
-        </div>
+        {headerBanner ? (
+          <div className="shell-header-banner shell-header-banner--held-sale" role="status" aria-live="polite">
+            {headerBanner}
+          </div>
+        ) : null}
       </header>
       {disconnected ? (
         <div className="server-connection-banner server-connection-banner--offline" role="status" aria-live="polite">

@@ -103,6 +103,17 @@ export type ReceiptPayload = {
     amount: number
     purchaseOrderNumber?: string
   }
+  /** Printed before thank-you: exchange acknowledgement + signature lines. */
+  exchangeAck?: {
+    returnTotal: number
+    newTotal: number
+    netAmount: number
+    cashPaidIn: number
+    cashPaidOut: number
+    storeCreditIssued?: number
+    storeCreditPhoneDisplay?: string
+    note?: string
+  }
   /** Printed before thank-you: refund acknowledgement + signature lines. */
   refundAck?: {
     refundTotal: number
@@ -236,6 +247,25 @@ function setEmph(on: boolean): Buffer {
   return cmd([ESC, 0x45, on ? 1 : 0])
 }
 
+export type PrintDensity = 'light' | 'normal' | 'dark'
+
+/** ESC 7 — heating dots / time / interval (lower heat = lighter print, less smear). */
+function setPrintDensity(mode: PrintDensity): Buffer {
+  const presets: Record<PrintDensity, [number, number, number]> = {
+    light: [7, 48, 6],
+    normal: [7, 80, 2],
+    dark: [15, 100, 2],
+  }
+  const [n1, n2, n3] = presets[mode] ?? presets.normal
+  return cmd([ESC, 0x37, n1, n2, n3])
+}
+
+/** ESC 3 n — line spacing in dots (higher = more vertical gap). */
+function setLineSpacingDots(dots: number): Buffer {
+  const n = Math.max(20, Math.min(64, Math.round(dots)))
+  return cmd([ESC, 0x33, n])
+}
+
 function feed(lines = 1): Buffer {
   return cmd([ESC, 0x64, Math.max(0, Math.min(255, lines))])
 }
@@ -243,6 +273,14 @@ function feed(lines = 1): Buffer {
 function cutPartial(): Buffer {
   // GS V 1 : partial cut (common)
   return cmd([GS, 0x56, 0x01])
+}
+
+/** Blank lines before cutter so the last text line is not at the tear edge (RP-630 / 80mm). */
+const RECEIPT_CUT_FEED_LINES = 8
+
+function appendReceiptCut(chunks: Buffer[], cut: boolean): void {
+  chunks.push(feed(RECEIPT_CUT_FEED_LINES))
+  if (cut) chunks.push(cutPartial())
 }
 
 function barcodeCode39(value: string): Buffer {
@@ -266,10 +304,21 @@ export function drawerKick(): Buffer {
   return cmd([ESC, 0x70, 0x00, 0x19, 0xfa])
 }
 
-export function buildReceiptEscPos(payload: ReceiptPayload, opts?: { columns?: number; cut?: boolean }): Buffer {
+export type ReceiptEscPosBuildOpts = {
+  columns?: number
+  cut?: boolean
+  printDensity?: PrintDensity
+  lineSpacing?: number
+  headerBold?: boolean
+}
+
+export function buildReceiptEscPos(payload: ReceiptPayload, opts?: ReceiptEscPosBuildOpts): Buffer {
   const requestedColumns = opts?.columns ?? 42
   const columns = Math.max(32, Math.min(requestedColumns, 48))
   const cut = opts?.cut ?? true
+  const printDensity = opts?.printDensity ?? 'normal'
+  const lineSpacing = opts?.lineSpacing ?? 36
+  const headerBold = opts?.headerBold !== false
   const sidePad = receiptSidePad(columns)
   const contentCols = Math.max(24, columns - sidePad * 2)
   const pLine = (text = '') => line(`${' '.repeat(sidePad)}${padRight(text, contentCols)}${' '.repeat(sidePad)}`)
@@ -277,30 +326,33 @@ export function buildReceiptEscPos(payload: ReceiptPayload, opts?: { columns?: n
   const chunks: Buffer[] = []
   chunks.push(cmd([ESC, 0x40])) // Initialize
   chunks.push(setLeftMarginDots(receiptLeftMarginDots(columns)))
-  chunks.push(feed(1)) // Prevent first header line from clipping at paper top
+  chunks.push(setLineSpacingDots(lineSpacing))
+  chunks.push(setPrintDensity(printDensity))
+  // Some ESC/POS printers leak a stray byte (e.g. '0' from ESC 7 n2=48) — feed before header text.
+  chunks.push(feed(2))
   // Centered block: store identity + doc title + receipt/quote number (short lines — full-width pLine would defeat ESC/POS centering).
   chunks.push(setAlign('center'))
   const headerLines = payload.headerLines?.filter((x) => x.trim().length > 0) ?? []
   if (headerLines.length > 0) {
-    chunks.push(setEmph(true))
+    if (headerBold) chunks.push(setEmph(true))
     chunks.push(line(headerLines[0]))
-    chunks.push(setEmph(false))
+    if (headerBold) chunks.push(setEmph(false))
     for (const h of headerLines.slice(1)) {
       chunks.push(line(h))
     }
   } else if (payload.storeName) {
-    chunks.push(setEmph(true))
+    if (headerBold) chunks.push(setEmph(true))
     chunks.push(line(payload.storeName))
-    chunks.push(setEmph(false))
+    if (headerBold) chunks.push(setEmph(false))
   } else {
-    chunks.push(setEmph(true))
+    if (headerBold) chunks.push(setEmph(true))
     chunks.push(line('CogniPOS'))
-    chunks.push(setEmph(false))
+    if (headerBold) chunks.push(setEmph(false))
   }
   if (payload.phone) chunks.push(line(`TEL ${payload.phone}`))
   if (payload.vatNumber) chunks.push(line(`VAT ${payload.vatNumber}`))
   if (payload.receiptTitle) {
-    const boldQuotation = payload.receiptTitle.trim().toUpperCase() === 'QUOTATION'
+    const boldQuotation = headerBold && payload.receiptTitle.trim().toUpperCase() === 'QUOTATION'
     if (boldQuotation) chunks.push(setEmph(true))
     chunks.push(line(payload.receiptTitle))
     if (boldQuotation) chunks.push(setEmph(false))
@@ -331,11 +383,13 @@ export function buildReceiptEscPos(payload: ReceiptPayload, opts?: { columns?: n
     }
     const tillLabel = payload.tillLabel ?? 'Till No'
     const slipLabel = payload.slipLabel ?? 'Slip No'
-    const tillPart = payload.tillNumber ? ` ${payload.tillNumber}` : ''
-    const slipPart = payload.receiptNumber ? ` ${payload.receiptNumber}` : ''
-    chunks.push(
-      pLine(`${tillLabel}${tillPart}  ${slipLabel}${slipPart} ${formatDdMmYyyy(dt)} ${formatReceiptTime(dt)}`),
-    )
+    if (payload.tillNumber) {
+      chunks.push(pLine(`${tillLabel} ${payload.tillNumber}`))
+    }
+    if (payload.receiptNumber && !showReceiptNumberLine) {
+      chunks.push(pLine(`${slipLabel} ${payload.receiptNumber}`))
+    }
+    chunks.push(pLine(`${formatDdMmYyyy(dt)} ${formatReceiptTime(dt)}`))
   } else {
     chunks.push(pLine(`${formatDdMmYyyy(dt)} ${formatReceiptTime(dt)}`))
   }
@@ -385,11 +439,7 @@ export function buildReceiptEscPos(payload: ReceiptPayload, opts?: { columns?: n
     chunks.push(feed(2))
     chunks.push(setAlign('center'))
     chunks.push(pLine(payload.thankYouLine ?? 'THANK YOU'))
-    chunks.push(feed(4))
-    if (cut) {
-      chunks.push(cutPartial())
-      chunks.push(feed(1))
-    }
+    appendReceiptCut(chunks, cut)
     return Buffer.concat(chunks)
   }
 
@@ -525,11 +575,7 @@ export function buildReceiptEscPos(payload: ReceiptPayload, opts?: { columns?: n
     chunks.push(feed(2))
     chunks.push(setAlign('center'))
     chunks.push(pLine(payload.thankYouLine ?? 'SHIFT SUMMARY'))
-    chunks.push(feed(4))
-    if (cut) {
-      chunks.push(cutPartial())
-      chunks.push(feed(1))
-    }
+    appendReceiptCut(chunks, cut)
     return Buffer.concat(chunks)
   }
 
@@ -687,6 +733,42 @@ export function buildReceiptEscPos(payload: ReceiptPayload, opts?: { columns?: n
     chunks.push(feed(1))
     chunks.push(pLine('Print name: ______________________________'))
   }
+  const exchangeAck = payload.exchangeAck
+  if (exchangeAck) {
+    chunks.push(feed(1))
+    chunks.push(pLine('-'.repeat(contentCols)))
+    chunks.push(setEmph(true))
+    chunks.push(pLine('EXCHANGE ACKNOWLEDGEMENT'))
+    chunks.push(setEmph(false))
+    chunks.push(pLine(`Return value: ${money(exchangeAck.returnTotal)}`))
+    chunks.push(pLine(`Replacement value: ${money(exchangeAck.newTotal)}`))
+    chunks.push(pLine(`Net: ${money(exchangeAck.netAmount)}`))
+    if (exchangeAck.cashPaidIn > 0.005) {
+      chunks.push(pLine(`Cash received: ${money(exchangeAck.cashPaidIn)}`))
+    }
+    if (exchangeAck.cashPaidOut > 0.005) {
+      chunks.push(pLine(`Cash paid out: ${money(exchangeAck.cashPaidOut)}`))
+    }
+    if (typeof exchangeAck.storeCreditIssued === 'number' && exchangeAck.storeCreditIssued > 0.005) {
+      chunks.push(pLine(`Store credit issued: ${money(exchangeAck.storeCreditIssued)}`))
+    }
+    if (exchangeAck.storeCreditPhoneDisplay?.trim()) {
+      chunks.push(pLine(`Account: ${exchangeAck.storeCreditPhoneDisplay.trim()}`))
+    }
+    if (exchangeAck.note?.trim()) {
+      for (const w of wrapText(`Note: ${exchangeAck.note.trim()}`, contentCols)) {
+        chunks.push(pLine(w))
+      }
+    }
+    chunks.push(feed(1))
+    chunks.push(pLine('I confirm the exchange above.'))
+    chunks.push(feed(2))
+    chunks.push(pLine('Signature: ________________________________'))
+    chunks.push(feed(1))
+    chunks.push(pLine('Print name: ______________________________'))
+    chunks.push(feed(1))
+    chunks.push(pLine('Phone: _________________________________'))
+  }
   const refundAck = payload.refundAck
   if (refundAck && refundAck.refundTotal > 0.005) {
     chunks.push(feed(1))
@@ -721,11 +803,7 @@ export function buildReceiptEscPos(payload: ReceiptPayload, opts?: { columns?: n
   chunks.push(feed(2))
   chunks.push(setAlign('center'))
   chunks.push(pLine(payload.thankYouLine ?? 'THANK YOU'))
-  chunks.push(feed(4)) // extra bottom margin (~25px) before cutter
-  if (cut) {
-    chunks.push(cutPartial())
-    chunks.push(feed(1))
-  }
+  appendReceiptCut(chunks, cut)
   return Buffer.concat(chunks)
 }
 

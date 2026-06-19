@@ -1,27 +1,27 @@
-import type { SaleRefundPreview } from '../api/types'
+import type { SaleExchangePreview } from '../api/types'
 import { SaleAdjustIdModal } from './SaleAdjustIdModal'
 
-export type RefundSaleIdModalProps = {
+export type ExchangeSaleIdModalProps = {
   open: boolean
   onClose: () => void
-  onSaleLoaded: (data: SaleRefundPreview, enteredSaleId: string) => void
+  onSaleLoaded: (data: SaleExchangePreview, enteredSaleId: string) => void
   canBrowseSalesDirectly: boolean
   tillCode?: string
 }
 
-export function RefundSaleIdModal({
+export function ExchangeSaleIdModal({
   open,
   onClose,
   onSaleLoaded,
   canBrowseSalesDirectly,
   tillCode,
-}: RefundSaleIdModalProps) {
+}: ExchangeSaleIdModalProps) {
   return (
     <SaleAdjustIdModal
-      mode="refund"
+      mode="exchange"
       open={open}
       onClose={onClose}
-      onRefundLoaded={onSaleLoaded}
+      onExchangeLoaded={onSaleLoaded}
       canBrowseSalesDirectly={canBrowseSalesDirectly}
       tillCode={tillCode}
     />

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { apiFetch } from '../api/client'
 import type { CartLine, Product, StoreSettings } from '../api/types'
 import type { SessionBundle } from '../auth/types'
@@ -55,6 +55,31 @@ export function useCustomerDisplaySettingsLoader(session: SessionBundle | null) 
   }, [session?.accessToken])
 }
 
+function customerDisplaySyncKey(input: SyncInput): string {
+  const cartSig = input.cart.map((l) => `${l.productId}\t${l.quantity}\t${l.name}`).join('\n')
+  return JSON.stringify({
+    loggedIn: !!input.session,
+    storeName: input.storeName,
+    idleHeadline: input.storeConfig.idle.headline,
+    idleSubtext: input.storeConfig.idle.subtext,
+    cartSig,
+    cartTotal: input.cartTotal,
+    showChangeView: input.showChangeView,
+    lastTotal: input.lastTotal,
+    lastChangeDue: input.lastChangeDue,
+    lastCardAmount: input.lastCardAmount,
+    lastTendered: input.lastTendered,
+    pendingSplit: input.pendingSplit,
+    refundSession: input.refundSession,
+    jobCardLabourActive: input.jobCardLabourActive,
+    loyaltyEntryActive: input.loyaltyEntryActive,
+    loyaltyEntryDisplayValue: input.loyaltyEntryDisplayValue,
+    loyaltyEntryFocusToken: input.loyaltyEntryFocusToken,
+    loyaltyMasked: input.loyaltyMasked,
+    loyaltyPointsBalance: input.loyaltyPointsBalance,
+  })
+}
+
 export function useCustomerDisplaySync(input: SyncInput): { publishNow: () => void } {
   const prevSessionRef = useRef<boolean>(false)
   const inputRef = useRef(input)
@@ -64,24 +89,13 @@ export function useCustomerDisplaySync(input: SyncInput): { publishNow: () => vo
     publishCustomerDisplay(buildCustomerDisplaySnapshot(inputRef.current))
   }, [])
 
-  useEffect(() => {
-    const loggedIn = !!input.session
-    if (prevSessionRef.current && !loggedIn) {
-      clearCustomerDisplaySpotlightSeen()
-    }
-    if (!prevSessionRef.current && loggedIn) {
-      clearCustomerDisplaySpotlightSeen()
-    }
-    prevSessionRef.current = loggedIn
-
-    publishNow()
-  }, [
+  const displaySyncKey = useMemo(() => customerDisplaySyncKey(input), [
     input.session,
     input.storeName,
-    input.storeConfig,
+    input.storeConfig.idle.headline,
+    input.storeConfig.idle.subtext,
     input.cart,
     input.cartTotal,
-    input.productsById,
     input.showChangeView,
     input.lastTotal,
     input.lastChangeDue,
@@ -95,8 +109,20 @@ export function useCustomerDisplaySync(input: SyncInput): { publishNow: () => vo
     input.loyaltyEntryFocusToken,
     input.loyaltyMasked,
     input.loyaltyPointsBalance,
-    publishNow,
   ])
+
+  useEffect(() => {
+    const loggedIn = !!input.session
+    if (prevSessionRef.current && !loggedIn) {
+      clearCustomerDisplaySpotlightSeen()
+    }
+    if (!prevSessionRef.current && loggedIn) {
+      clearCustomerDisplaySpotlightSeen()
+    }
+    prevSessionRef.current = loggedIn
+
+    publishNow()
+  }, [displaySyncKey, publishNow])
 
   return { publishNow }
 }

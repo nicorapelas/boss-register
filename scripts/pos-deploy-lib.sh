@@ -45,6 +45,77 @@ exit 0
 REMOTE
 }
 
+pos_install_autostart_remote() {
+  local ssh_opts="$1"
+  local user="$2"
+  local host="$3"
+  local display="${4:-:0}"
+  local xauthority="${5:-/home/${user}/.Xauthority}"
+
+  local remote_app="/home/${user}/electropos-new.AppImage"
+  local remote_launch="/home/${user}/cognipos-launch.sh"
+  local remote_autostart="/home/${user}/.config/autostart/cognipos-register.desktop"
+  local remote_icon="/home/${user}/.local/share/icons/electropos-pos.png"
+  local remote_log="/home/${user}/electropos.log"
+
+  echo "== Install login autostart on ${user}@${host} =="
+  ssh $ssh_opts "${user}@${host}" "
+    set -e
+    mkdir -p \"\$HOME/.config/autostart\"
+    cat > \"$remote_launch\" <<'LAUNCH'
+#!/usr/bin/env bash
+set -euo pipefail
+APP=\"REMOTE_APP\"
+LOG=\"REMOTE_LOG\"
+export DISPLAY=\"REMOTE_DISPLAY\"
+export XAUTHORITY=\"REMOTE_XAUTHORITY\"
+
+if pgrep -f 'electropos-new.AppImage' >/dev/null 2>&1; then
+  exit 0
+fi
+
+x_num=\"\${DISPLAY#:}\"
+x_num=\"\${x_num%%.*}\"
+for _ in \$(seq 1 90); do
+  if [ -S \"/tmp/.X11-unix/X\${x_num}\" ]; then
+    break
+  fi
+  sleep 1
+done
+sleep 3
+
+if [ ! -x \"\$APP\" ]; then
+  echo \"[\$(date -Is)] CogniPOS autostart: AppImage missing: \$APP\" >> \"\$LOG\"
+  exit 1
+fi
+
+nohup \"\$APP\" --no-sandbox --disable-gpu >> \"\$LOG\" 2>&1 < /dev/null &
+LAUNCH
+    sed -i \
+      -e 's|REMOTE_APP|${remote_app}|g' \
+      -e 's|REMOTE_LOG|${remote_log}|g' \
+      -e 's|REMOTE_DISPLAY|${display}|g' \
+      -e 's|REMOTE_XAUTHORITY|${xauthority}|g' \
+      \"$remote_launch\"
+    chmod +x \"$remote_launch\"
+    cat > \"$remote_autostart\" <<AUTOSTART
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=CogniPOS Register
+Comment=Launch CogniPOS Register when you log in
+Exec=${remote_launch}
+Icon=${remote_icon}
+Terminal=false
+Categories=Office;PointOfSale;
+X-GNOME-Autostart-enabled=true
+X-GNOME-Autostart-Delay=5
+AUTOSTART
+    chmod 644 \"$remote_autostart\"
+    echo \"Autostart installed: $remote_autostart\"
+  "
+}
+
 pos_install_remote() {
   local ssh_opts="$1"
   local user="$2"
@@ -99,6 +170,63 @@ DESKTOP
     echo REMOTE_LOG:
     tail -n 25 /home/${user}/electropos.log || true
   "
+  pos_install_autostart_remote "$ssh_opts" "$user" "$host" "$display" "$xauthority"
+}
+
+pos_install_ncr_printer_udev() {
+  local ssh_opts="$1"
+  local user="$2"
+  local host="$3"
+  local rules_src="$4"
+
+  if [[ ! -f "$rules_src" ]]; then
+    echo "WARN: udev rules not found: $rules_src" >&2
+    return 0
+  fi
+
+  echo "== Install NCR receipt printer udev rule on ${user}@${host} =="
+  scp $ssh_opts "$rules_src" "${user}@${host}:/tmp/99-ncr-pos-printer.rules"
+  ssh $ssh_opts "${user}@${host}" '
+    if sudo -n true 2>/dev/null; then
+      sudo install -m 644 /tmp/99-ncr-pos-printer.rules /etc/udev/rules.d/99-ncr-pos-printer.rules
+      sudo udevadm control --reload-rules
+      sudo udevadm trigger --subsystem-match=usb
+      rm -f /tmp/99-ncr-pos-printer.rules
+      echo "NCR printer udev rule installed"
+    else
+      echo "NOTE: sudo password required to install udev rule. On the NCR run:"
+      echo "  sudo install -m 644 /tmp/99-ncr-pos-printer.rules /etc/udev/rules.d/99-ncr-pos-printer.rules"
+      echo "  sudo udevadm control --reload-rules && sudo udevadm trigger --subsystem-match=usb"
+    fi
+  '
+}
+
+pos_install_ncr_line_display_udev() {
+  local ssh_opts="$1"
+  local user="$2"
+  local host="$3"
+  local rules_src="$4"
+
+  if [[ ! -f "$rules_src" ]]; then
+    echo "WARN: udev rules not found: $rules_src" >&2
+    return 0
+  fi
+
+  echo "== Install NCR line display udev rule on ${user}@${host} =="
+  scp $ssh_opts "$rules_src" "${user}@${host}:/tmp/99-ncr-line-display.rules"
+  ssh $ssh_opts "${user}@${host}" '
+    if sudo -n true 2>/dev/null; then
+      sudo install -m 644 /tmp/99-ncr-line-display.rules /etc/udev/rules.d/99-ncr-line-display.rules
+      sudo udevadm control --reload-rules
+      sudo udevadm trigger --subsystem-match=hidraw
+      rm -f /tmp/99-ncr-line-display.rules
+      echo "udev rule installed"
+    else
+      echo "NOTE: sudo password required to install udev rule. On the NCR run:"
+      echo "  sudo install -m 644 /tmp/99-ncr-line-display.rules /etc/udev/rules.d/99-ncr-line-display.rules"
+      echo "  sudo udevadm control --reload-rules && sudo udevadm trigger --subsystem-match=hidraw"
+    fi
+  '
 }
 
 pos_deploy_one_terminal() {

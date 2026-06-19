@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { apiFetch } from '../api/client'
 import type { CartLine, LayByDetail, LayByListItem, LayByPaymentResponse, StoreSettings } from '../api/types'
-import { kickCashDrawerIfConfigured, readPosPrinterSettings } from '../printer/posPrinterSettings'
+import { kickCashDrawerIfConfigured, readPosPrinterSettings, receiptPrintOpts, type ReceiptPrintOpts } from '../printer/posPrinterSettings'
 import { ScreenKeyboard, type ScreenKeyboardAction } from './ScreenKeyboard'
 
 type LayByKbField =
@@ -284,15 +284,12 @@ export function LayByModal({ open, onClose, cart, cartTotal, isAdmin, receiptEna
   }): {
     transport: unknown
     receipt: unknown
-    columns: number
-    cut: boolean
-  } {
+  } & ReceiptPrintOpts {
     const printerSettings = readPosPrinterSettings()
     const cfg = printerSettings.receiptConfig
     return {
       transport: printerSettings.transport,
-      columns: printerSettings.columns,
-      cut: printerSettings.cut,
+      ...receiptPrintOpts(printerSettings),
       receipt: {
         headerLines: [
           cfg.headerLine1,
@@ -363,10 +360,7 @@ export function LayByModal({ open, onClose, cart, cartTotal, isAdmin, receiptEna
     const labels = ['CUSTOMER COPY', 'ATTACH TO ITEM'] as const
     for (const copyLabel of labels) {
       const payload = buildLayByReceiptPayload({ ...input, copyLabel })
-      const r = await window.electronPos.printReceipt(payload.transport, payload.receipt, {
-        columns: payload.columns,
-        cut: payload.cut,
-      })
+      const r = await window.electronPos.printReceipt(payload.transport, payload.receipt, receiptPrintOpts(settings))
       if (!r.ok) {
         throw new Error(r.error ?? 'Lay-by receipt print failed')
       }

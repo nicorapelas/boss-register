@@ -1,0 +1,3 @@
+# NCR RealPOS XR7 integrated 2×20 USB customer display (0404:035f).
+# nico is in plugdev on Lubuntu; uaccess alone did not grant access on this till.
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="0404", ATTRS{idProduct}=="035f", MODE="0660", GROUP="plugdev"

@@ -3,12 +3,25 @@ export type PrinterTransport =
   | { kind: 'lan'; host: string; port: number }
   | { kind: 'serial'; path: string; baudRate: number }
 
+export type PrintDensity = 'light' | 'normal' | 'dark'
+
+export type ReceiptPrintOpts = {
+  columns: number
+  cut: boolean
+  printDensity: PrintDensity
+  lineSpacing: number
+  headerBold: boolean
+}
+
 export type PosPrinterSettings = {
   autoPrintReceipt: boolean
   autoOpenDrawer: boolean
   transport: PrinterTransport
   columns: number
   cut: boolean
+  printDensity: PrintDensity
+  lineSpacing: number
+  headerBold: boolean
   receiptConfig: {
     headerLine1: string
     headerLine2: string
@@ -30,6 +43,8 @@ export type PosPrinterSettings = {
 }
 
 const STORAGE_KEY = 'electropos-pos-printer-settings'
+/** Register quick-toggle — survives logout on this till (separate from settings autoPrintReceipt). */
+const REGISTER_RECEIPT_ENABLED_KEY = 'electropos-register-receipt-enabled'
 
 export const DEFAULT_PRINTER_SETTINGS: PosPrinterSettings = {
   autoPrintReceipt: true,
@@ -37,6 +52,9 @@ export const DEFAULT_PRINTER_SETTINGS: PosPrinterSettings = {
   transport: { kind: 'serial', path: '/dev/ttyS0', baudRate: 38400 },
   columns: 42,
   cut: true,
+  printDensity: 'normal',
+  lineSpacing: 36,
+  headerBold: true,
   receiptConfig: {
     headerLine1: 'JACOBS CYCLES',
     headerLine2: 'HALITE STREET',
@@ -93,6 +111,13 @@ export function readPosPrinterSettings(): PosPrinterSettings {
       }
     }
     if (typeof next.columns !== 'number' || !Number.isFinite(next.columns) || next.columns < 24) next.columns = 48
+    if (next.printDensity !== 'light' && next.printDensity !== 'normal' && next.printDensity !== 'dark') {
+      next.printDensity = DEFAULT_PRINTER_SETTINGS.printDensity
+    }
+    if (typeof next.lineSpacing !== 'number' || !Number.isFinite(next.lineSpacing) || next.lineSpacing < 20) {
+      next.lineSpacing = DEFAULT_PRINTER_SETTINGS.lineSpacing
+    }
+    if (typeof next.headerBold !== 'boolean') next.headerBold = DEFAULT_PRINTER_SETTINGS.headerBold
     next.receiptConfig = {
       ...DEFAULT_PRINTER_SETTINGS.receiptConfig,
       ...(parsed.receiptConfig ?? {}),
@@ -109,6 +134,36 @@ export function writePosPrinterSettings(settings: PosPrinterSettings): void {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(settings))
   } catch {
     // ignore
+  }
+}
+
+/** Register RECEIPT ON/OFF toggle — persisted per till across cashier logout. */
+export function readRegisterReceiptEnabled(): boolean {
+  try {
+    const raw = localStorage.getItem(REGISTER_RECEIPT_ENABLED_KEY)
+    if (raw === '0' || raw === 'false') return false
+    if (raw === '1' || raw === 'true') return true
+  } catch {
+    // ignore
+  }
+  return readPosPrinterSettings().autoPrintReceipt
+}
+
+export function writeRegisterReceiptEnabled(enabled: boolean): void {
+  try {
+    localStorage.setItem(REGISTER_RECEIPT_ENABLED_KEY, enabled ? '1' : '0')
+  } catch {
+    // ignore
+  }
+}
+
+export function receiptPrintOpts(settings: PosPrinterSettings): ReceiptPrintOpts {
+  return {
+    columns: settings.columns,
+    cut: settings.cut,
+    printDensity: settings.printDensity,
+    lineSpacing: settings.lineSpacing,
+    headerBold: settings.headerBold,
   }
 }
 

@@ -1,6 +1,14 @@
 import { app, BrowserWindow, ipcMain, screen } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
+import {
+  findNcrLineDisplayPath,
+  getNcrLineDisplayDebug,
+  listNcrLineDisplays,
+  publishNcrLineDisplaySnapshot,
+  resetNcrLineDisplayState,
+  testNcrLineDisplay,
+} from './ncr-line-display'
 
 export type DisplayBounds = {
   x: number
@@ -9,11 +17,17 @@ export type DisplayBounds = {
   height: number
 }
 
+export type CustomerDisplayDriver = 'monitor' | 'ncr-2x20'
+
 export type CustomerDisplayTillSettings = {
   enabled: boolean
+  /** Second monitor (HTML) or NCR integrated 2×20 line display. */
+  driver: CustomerDisplayDriver
   displayId: number | null
   /** Stable fallback when OS assigns a new display id after reboot (common on Linux). */
   displayBounds: DisplayBounds | null
+  /** /dev/hidraw* path; null = auto-detect NCR 0404:035f. */
+  lineDisplayPath: string | null
 }
 
 export type CustomerDisplaySnapshot = {
@@ -51,8 +65,10 @@ export type CustomerDisplaySnapshot = {
 
 const DEFAULT_TILL: CustomerDisplayTillSettings = {
   enabled: false,
+  driver: 'monitor',
   displayId: null,
   displayBounds: null,
+  lineDisplayPath: null,
 }
 
 let customerWin: BrowserWindow | null = null
@@ -91,16 +107,33 @@ function parseDisplayBounds(raw: unknown): DisplayBounds | null {
   return { x, y, width, height }
 }
 
+function parseDriver(raw: unknown): CustomerDisplayDriver {
+  return raw === 'ncr-2x20' ? 'ncr-2x20' : 'monitor'
+}
+
+function parseLineDisplayPath(raw: unknown): string | null {
+  if (raw === null || raw === undefined || raw === '') return null
+  if (typeof raw !== 'string' || !raw.startsWith('/dev/hidraw')) return null
+  return raw
+}
+
 function normalizeTillSettings(raw: unknown): CustomerDisplayTillSettings {
   if (!raw || typeof raw !== 'object') return { ...DEFAULT_TILL }
   const o = raw as Record<string, unknown>
+  const driver = parseDriver(o.driver)
   const displayId = parseDisplayId(o.displayId)
   const displayBounds = parseDisplayBounds(o.displayBounds)
   return {
     enabled: o.enabled === true,
-    displayId,
-    displayBounds: displayId == null ? null : displayBounds,
+    driver,
+    displayId: driver === 'monitor' ? displayId : null,
+    displayBounds: driver === 'monitor' && displayId != null ? displayBounds : null,
+    lineDisplayPath: driver === 'ncr-2x20' ? parseLineDisplayPath(o.lineDisplayPath) : null,
   }
+}
+
+function resolvedLineDisplayPath(): string | null {
+  return tillSettings.lineDisplayPath ?? findNcrLineDisplayPath()
 }
 
 export function initCustomerDisplayModule(opts: {
@@ -176,7 +209,7 @@ function placeCustomerWindowOnDisplay(display: Electron.Display): void {
 }
 
 function createCustomerWindow(): void {
-  if (!tillSettings.enabled) return
+  if (!tillSettings.enabled || tillSettings.driver !== 'monitor') return
   const display = pickDisplay()
   if (!display) return
 
@@ -235,7 +268,7 @@ function clearPlacementRetries(): void {
 
 function scheduleCustomerDisplayPlacement(): void {
   clearPlacementRetries()
-  if (!tillSettings.enabled) return
+  if (!tillSettings.enabled || tillSettings.driver !== 'monitor') return
   const tryPlace = () => createCustomerWindow()
   tryPlace()
   placementRetryTimers.push(setTimeout(tryPlace, 800))
@@ -243,11 +276,33 @@ function scheduleCustomerDisplayPlacement(): void {
 }
 
 function syncCustomerWindow(): void {
-  if (tillSettings.enabled) scheduleCustomerDisplayPlacement()
+  if (tillSettings.enabled && tillSettings.driver === 'monitor') scheduleCustomerDisplayPlacement()
   else {
     clearPlacementRetries()
     destroyCustomerWindow()
   }
+}
+
+function publishLineDisplaySnapshot(snapshot: CustomerDisplaySnapshot): void {
+  const devicePath = resolvedLineDisplayPath()
+  if (!devicePath) {
+    console.warn('[customer-display] NCR line display enabled but device not found')
+    return
+  }
+  console.info(
+    '[customer-display] line publish',
+    snapshot.mode,
+    'lines=',
+    snapshot.lines?.length ?? 0,
+    'total=',
+    snapshot.total ?? null,
+  )
+  void publishNcrLineDisplaySnapshot(devicePath, snapshot)
+}
+
+function handleCustomerDisplayPublish(snapshot: unknown): void {
+  if (!snapshot || typeof snapshot !== 'object') return
+  publishCustomerDisplaySnapshot(snapshot as CustomerDisplaySnapshot)
 }
 
 const FOCUS_LOYALTY_PHONE_SCRIPT = `(() => {
@@ -304,7 +359,7 @@ function sendFocusLoyaltyPhoneToCustomerWindow(win: BrowserWindow): void {
 }
 
 export function focusCustomerDisplayLoyaltyEntry(): void {
-  if (!tillSettings.enabled) return
+  if (!tillSettings.enabled || tillSettings.driver !== 'monitor') return
   if (!customerWin || customerWin.isDestroyed()) createCustomerWindow()
   if (customerWin && !customerWin.isDestroyed()) {
     sendFocusLoyaltyPhoneToCustomerWindow(customerWin)
@@ -313,6 +368,11 @@ export function focusCustomerDisplayLoyaltyEntry(): void {
 
 export function publishCustomerDisplaySnapshot(snapshot: CustomerDisplaySnapshot): void {
   if (!tillSettings.enabled) return
+  if (tillSettings.driver === 'ncr-2x20') {
+    publishLineDisplaySnapshot(snapshot)
+    lastPublishedMode = snapshot.mode
+    return
+  }
   const enteringLoyalty = snapshot.mode === 'loyalty-entry' && lastPublishedMode !== 'loyalty-entry'
   const focusToken = snapshot.loyaltyEntryFocusToken ?? 0
   const focusTokenBumped =
@@ -349,24 +409,45 @@ function registerCustomerDisplayIpc(): void {
     }))
   })
 
+  ipcMain.handle('customer-display:list-line-displays', () => listNcrLineDisplays())
+
   ipcMain.handle('customer-display:get-till-settings', () => ({ ...tillSettings }))
 
   ipcMain.handle('customer-display:set-till-settings', (_evt, raw: unknown) => {
     tillSettings = normalizeTillSettings(raw)
     saveTillSettings()
+    if (tillSettings.driver === 'ncr-2x20') {
+      resetNcrLineDisplayState()
+    }
     syncCustomerWindow()
     return { ok: true, settings: { ...tillSettings } }
   })
 
+  ipcMain.on('customer-display:publish', (_evt, snapshot: unknown) => {
+    handleCustomerDisplayPublish(snapshot)
+  })
+
   ipcMain.handle('customer-display:publish', (_evt, snapshot: unknown) => {
-    if (!snapshot || typeof snapshot !== 'object') return { ok: false }
-    publishCustomerDisplaySnapshot(snapshot as CustomerDisplaySnapshot)
+    handleCustomerDisplayPublish(snapshot)
     return { ok: true }
   })
+
+  ipcMain.handle('customer-display:get-line-display-debug', () => getNcrLineDisplayDebug())
 
   ipcMain.handle('customer-display:focus-loyalty-entry', () => {
     focusCustomerDisplayLoyaltyEntry()
     return { ok: true }
+  })
+
+  ipcMain.handle('customer-display:test-line-display', async () => {
+    const devicePath = resolvedLineDisplayPath()
+    if (!devicePath) return { ok: false, error: 'NCR line display not found' }
+    try {
+      await testNcrLineDisplay(devicePath)
+      return { ok: true, path: devicePath }
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : 'Line display test failed' }
+    }
   })
 
   ipcMain.handle('customer-display:test', (_evt, mode: unknown) => {
@@ -414,8 +495,10 @@ function registerCustomerDisplayIpc(): void {
   })
 }
 
+export { findNcrLineDisplayPath, listNcrLineDisplays }
+
 export function onAppReadyCustomerDisplay(): void {
   screen.on('display-added', () => syncCustomerWindow())
   screen.on('display-removed', () => syncCustomerWindow())
-  if (tillSettings.enabled) scheduleCustomerDisplayPlacement()
+  if (tillSettings.enabled && tillSettings.driver === 'monitor') scheduleCustomerDisplayPlacement()
 }
