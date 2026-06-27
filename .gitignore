@@ -14,6 +14,8 @@ dist-electron
 release
 *.local
 .env
+temp/
+*.tsbuildinfo
 
 # Editor directories and files
 .vscode/*
