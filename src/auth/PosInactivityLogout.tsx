@@ -13,8 +13,8 @@ const ACTIVITY_EVENTS = ['pointerdown', 'pointermove', 'keydown', 'touchstart', 
 
 /**
  * Auto-logout for shared tills: clears the session after idle timeout so the next
- * cashier must scan a badge or sign in again. Skipped while the cart has lines or
- * a split payment is in progress.
+ * cashier must scan a badge or sign in again. Skipped while the cart has lines, a
+ * sale is on hold, or a split payment is in progress.
  */
 export function PosInactivityLogout() {
   const { session, loading } = useAuth()

@@ -288,6 +288,8 @@ export type StaffAttendanceSettings = {
   enabled: boolean
   logoutClockOutPromptEnabled: boolean
   logoutPromptAfterMinutes: number
+  autoClockOutEnabled: boolean
+  autoClockOutTime: string
 }
 
 export type AttendanceClockResponse = {
@@ -301,7 +303,7 @@ export type AttendanceClockResponse = {
     clockInAt: string
     clockOutAt: string | null
     clockInMethod: 'badge' | 'face' | 'manual'
-    clockOutMethod: 'badge' | 'face' | 'manual' | null
+    clockOutMethod: 'badge' | 'face' | 'manual' | 'auto_sale' | null
     tillCode: string | null
   }
 }

@@ -1,10 +1,26 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { apiFetch } from '../api/client'
-import type { CartLine, LayByDetail, LayByListItem, LayByPaymentResponse, StoreSettings } from '../api/types'
-import { kickCashDrawerIfConfigured, readPosPrinterSettings, receiptPrintOpts, type ReceiptPrintOpts } from '../printer/posPrinterSettings'
+import type { CartLine, LayByCancelResponse, LayByDetail, LayByListItem, LayByPaymentResponse, StoreSettings } from '../api/types'
+import {
+  computeLayByCancelSettlement,
+  type LayByCancelMode,
+  type LayByCancelSettlement,
+} from '../utils/laybyCancelSettlement'
+import {
+  kickCashDrawerIfConfigured,
+  readPosPrinterSettings,
+  receiptPrintOpts,
+  type ReceiptPrintOpts,
+} from '../printer/posPrinterSettings'
+
+export type LayByReceiptPrintPayload = {
+  transport: unknown
+  receipt: unknown
+} & ReceiptPrintOpts
 import { ScreenKeyboard, type ScreenKeyboardAction } from './ScreenKeyboard'
 
 type LayByKbField =
+  | 'searchQ'
   | 'customerName'
   | 'phone'
   | 'depositPct'
@@ -20,9 +36,11 @@ export type LayByModalProps = {
   cart: CartLine[]
   cartTotal: number
   isAdmin: boolean
-  receiptEnabled: boolean
+  canCancelLayBy: boolean
   tillCode: string
   onCreated: () => void
+  /** Called after a lay-by installment payment receipt is built (for Print Last). */
+  onPaymentReceiptPrinted?: (payloads: LayByReceiptPrintPayload[], successNotice: string) => void
 }
 
 function round2(n: number) {
@@ -34,11 +52,21 @@ function vatFromIncl(totalIncl: number, vatRate: number) {
   return round2(totalIncl - net)
 }
 
-export function LayByModal({ open, onClose, cart, cartTotal, isAdmin, receiptEnabled, tillCode, onCreated }: LayByModalProps) {
+export function LayByModal({
+  open,
+  onClose,
+  cart,
+  cartTotal,
+  isAdmin,
+  canCancelLayBy,
+  tillCode,
+  onCreated,
+  onPaymentReceiptPrinted,
+}: LayByModalProps) {
   const [settings, setSettings] = useState<StoreSettings | null>(null)
   const [list, setList] = useState<LayByListItem[]>([])
   const [loading, setLoading] = useState(false)
-  const [view, setView] = useState<'list' | 'new' | 'detail'>('list')
+  const [view, setView] = useState<'list' | 'new' | 'detail' | 'cancel'>('list')
   const [selected, setSelected] = useState<LayByDetail | null>(null)
   const [busy, setBusy] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
@@ -57,8 +85,12 @@ export function LayByModal({ open, onClose, cart, cartTotal, isAdmin, receiptEna
   const [payCash, setPayCash] = useState('')
   const [payCard, setPayCard] = useState('')
 
-  const [cancelMode, setCancelMode] = useState<'full_refund' | 'percent_refund' | 'store_credit'>('full_refund')
+  const [cancelMode, setCancelMode] = useState<LayByCancelMode>('full_refund')
   const [cancelPct, setCancelPct] = useState('')
+  const [cancelStep, setCancelStep] = useState<'summary' | 'mode' | 'preview' | 'payout' | 'done'>('summary')
+  const [cancelSettlement, setCancelSettlement] = useState<LayByCancelSettlement | null>(null)
+  const [cancelSuccess, setCancelSuccess] = useState<string | null>(null)
+  const [drawerNotice, setDrawerNotice] = useState<string | null>(null)
 
   const [layByScreenKbOpen, setLayByScreenKbOpen] = useState(false)
   const layByKbFieldRef = useRef<LayByKbField>('customerName')
@@ -74,6 +106,18 @@ export function LayByModal({ open, onClose, cart, cartTotal, isAdmin, receiptEna
   const cancelPctInputRef = useRef<HTMLInputElement | null>(null)
 
   const vatRate = settings?.vatRate ?? 0.14
+
+  const cancelPreview = useMemo(() => {
+    if (!selected || view !== 'cancel') return null
+    const pct =
+      cancelMode === 'percent_refund' ? Number(cancelPct.replace(',', '.')) : undefined
+    return computeLayByCancelSettlement({
+      mode: cancelMode,
+      amountPaid: selected.amountPaid,
+      payments: selected.payments,
+      percent: pct,
+    })
+  }, [selected, view, cancelMode, cancelPct])
 
   const depositPercent = useMemo(() => {
     if (typeof depositPct === 'number' && Number.isFinite(depositPct)) return depositPct
@@ -118,6 +162,12 @@ export function LayByModal({ open, onClose, cart, cartTotal, isAdmin, receiptEna
     setSearchQ('')
     setLayByScreenKbOpen(false)
     setLayByKbLayout('full')
+    setCancelMode('full_refund')
+    setCancelPct('')
+    setCancelStep('summary')
+    setCancelSettlement(null)
+    setCancelSuccess(null)
+    setDrawerNotice(null)
     void refresh()
   }, [open])
 
@@ -137,14 +187,22 @@ export function LayByModal({ open, onClose, cart, cartTotal, isAdmin, receiptEna
   }, [])
 
   useEffect(() => {
-    if (!open || view === 'list') {
+    if (!open) {
       setLayByScreenKbOpen(false)
       if (layByKbBlurTimerRef.current) {
         clearTimeout(layByKbBlurTimerRef.current)
         layByKbBlurTimerRef.current = null
       }
     }
-  }, [open, view])
+  }, [open])
+
+  useEffect(() => {
+    setLayByScreenKbOpen(false)
+    if (layByKbBlurTimerRef.current) {
+      clearTimeout(layByKbBlurTimerRef.current)
+      layByKbBlurTimerRef.current = null
+    }
+  }, [view])
 
   useEffect(() => {
     if (!open) return
@@ -164,7 +222,9 @@ export function LayByModal({ open, onClose, cart, cartTotal, isAdmin, receiptEna
 
   function scrollLayByFieldIntoView(field: LayByKbField) {
     const target =
-      field === 'customerName'
+      field === 'searchQ'
+        ? searchInputRef.current
+        : field === 'customerName'
         ? customerNameInputRef.current
         : field === 'phone'
           ? phoneInputRef.current
@@ -209,7 +269,16 @@ export function LayByModal({ open, onClose, cart, cartTotal, isAdmin, receiptEna
   function handleLayByScreenKeyboardAction(action: ScreenKeyboardAction) {
     const f = layByKbFieldRef.current
     if (action.type === 'enter' || action.type === 'done') {
+      if (f === 'searchQ' && action.type === 'enter') {
+        void refresh()
+      }
       setLayByScreenKbOpen(false)
+      return
+    }
+    if (f === 'searchQ') {
+      if (action.type === 'char') setSearchQ((s) => s + action.char)
+      else if (action.type === 'backspace') setSearchQ((s) => s.slice(0, -1))
+      else if (action.type === 'space') setSearchQ((s) => s + ' ')
       return
     }
     if (f === 'customerName') {
@@ -250,7 +319,7 @@ export function LayByModal({ open, onClose, cart, cartTotal, isAdmin, receiptEna
 
   function layByKbHandlers(which: LayByKbField) {
     function layoutForField(field: LayByKbField): 'full' | 'decimal' | 'tel' | 'numeric' {
-      if (field === 'customerName') return 'full'
+      if (field === 'searchQ' || field === 'customerName') return 'full'
       if (field === 'phone') return 'tel'
       if (field === 'depositPct') return 'numeric'
       return 'decimal'
@@ -281,10 +350,7 @@ export function LayByModal({ open, onClose, cart, cartTotal, isAdmin, receiptEna
     thankYouLine: string
     timestampIso?: string
     copyLabel?: string
-  }): {
-    transport: unknown
-    receipt: unknown
-  } & ReceiptPrintOpts {
+  }): LayByReceiptPrintPayload {
     const printerSettings = readPosPrinterSettings()
     const cfg = printerSettings.receiptConfig
     return {
@@ -344,28 +410,30 @@ export function LayByModal({ open, onClose, cart, cartTotal, isAdmin, receiptEna
     thankYouLine: string
     successMessage: string
     timestampIso?: string
-  }) {
-    if (!receiptEnabled) return
+    /** Installment payments always print, ignoring printer auto-print setting. */
+    alwaysPrint?: boolean
+  }): Promise<{ payloads: LayByReceiptPrintPayload[]; successMessage: string } | null> {
     const settings = readPosPrinterSettings()
-    if (!settings.autoPrintReceipt) return
+    if (!input.alwaysPrint && !settings.autoPrintReceipt) return null
+    const labels = ['CUSTOMER COPY', 'ATTACH TO ITEM'] as const
+    const payloads = labels.map((copyLabel) => buildLayByReceiptPayload({ ...input, copyLabel }))
     if (!window.electronPos) {
       setPrintNotice(`${input.successMessage} (web preview)`)
-      return
+      return { payloads, successMessage: input.successMessage }
     }
     const cashTendered = input.payment?.tenderedCash ?? 0
     if (cashTendered > 0.005) {
       const d = await kickCashDrawerIfConfigured(settings)
       if (!d.ok) throw new Error(d.error ?? 'Drawer open failed')
     }
-    const labels = ['CUSTOMER COPY', 'ATTACH TO ITEM'] as const
-    for (const copyLabel of labels) {
-      const payload = buildLayByReceiptPayload({ ...input, copyLabel })
+    for (const payload of payloads) {
       const r = await window.electronPos.printReceipt(payload.transport, payload.receipt, receiptPrintOpts(settings))
       if (!r.ok) {
         throw new Error(r.error ?? 'Lay-by receipt print failed')
       }
     }
     setPrintNotice(input.successMessage)
+    return { payloads, successMessage: input.successMessage }
   }
 
   async function openDetail(id: string) {
@@ -475,7 +543,7 @@ export function LayByModal({ open, onClose, cart, cartTotal, isAdmin, receiptEna
         (d.paymentAppliedCash ?? 0) + (d.paymentAppliedCard ?? 0) + (d.paymentAppliedStoreCredit ?? 0),
       )
       const ch = d.paymentChangeDue ?? 0
-      await printLayByReceipt({
+      const printed = await printLayByReceipt({
         detail: d,
         paymentLabel: `Installment ${applied.toFixed(2)} (cash ${(d.paymentAppliedCash ?? 0).toFixed(2)}, card ${(d.paymentAppliedCard ?? 0).toFixed(2)})`,
         payment: {
@@ -486,7 +554,11 @@ export function LayByModal({ open, onClose, cart, cartTotal, isAdmin, receiptEna
         receiptNumber: d.layByNumber,
         thankYouLine: 'LAY-BY PAYMENT RECEIVED',
         successMessage: 'Lay-by payment receipt printed',
+        alwaysPrint: true,
       })
+      if (printed) {
+        onPaymentReceiptPrinted?.(printed.payloads, printed.successMessage)
+      }
       setSelected(d)
       setPayCash('')
       setPayCard('')
@@ -506,6 +578,128 @@ export function LayByModal({ open, onClose, cart, cartTotal, isAdmin, receiptEna
     }
   }
 
+  function beginCancelWizard() {
+    if (!selected || !canCancelLayBy) return
+    setFormError(null)
+    setCancelSuccess(null)
+    setDrawerNotice(null)
+    setCancelMode('full_refund')
+    setCancelPct('')
+    setCancelStep('summary')
+    setCancelSettlement(null)
+    setView('cancel')
+  }
+
+  function cancelWizardBack() {
+    setFormError(null)
+    setLayByScreenKbOpen(false)
+    if (cancelStep === 'summary') {
+      setView('detail')
+      return
+    }
+    if (cancelStep === 'mode') {
+      setCancelStep('summary')
+      return
+    }
+    if (cancelStep === 'preview') {
+      setCancelStep('mode')
+      return
+    }
+    if (cancelStep === 'payout' || cancelStep === 'done') {
+      setView('list')
+      setSelected(null)
+      return
+    }
+  }
+
+  function cancelModeLabel(mode: LayByCancelMode): string {
+    if (mode === 'full_refund') return 'Full refund (cash/card back)'
+    if (mode === 'percent_refund') return 'Percentage refund (cash/card back)'
+    return 'Store voucher / credit (no cash from till)'
+  }
+
+  function cancelPercentValid(): boolean {
+    if (cancelMode !== 'percent_refund') return true
+    const pct = Number(cancelPct.replace(',', '.'))
+    return Number.isFinite(pct) && pct > 0 && pct <= 100
+  }
+
+  function cancelPreviewValid(): boolean {
+    if (!cancelPreview || !selected) return false
+    if (!cancelPercentValid()) return false
+    if (selected.amountPaid > 0.005 && cancelPreview.refundTotal < 0.005 && cancelMode !== 'full_refund') {
+      return false
+    }
+    return true
+  }
+
+  function buildCancelSuccessMessage(settlement: LayByCancelSettlement, phone: string): string {
+    const parts: string[] = [`Lay-by cancelled.`]
+    if (settlement.refundCash > 0.005) parts.push(`Cash refund R ${settlement.refundCash.toFixed(2)}`)
+    if (settlement.refundCard > 0.005) parts.push(`Card refund R ${settlement.refundCard.toFixed(2)}`)
+    const credit = round2(settlement.storeCreditIssued + settlement.storeCreditRestored)
+    if (credit > 0.005) parts.push(`Store credit R ${credit.toFixed(2)} on ${phone}`)
+    if (parts.length === 1 && settlement.refundTotal < 0.005) {
+      parts.push('No refund due (nothing paid).')
+    }
+    return parts.join(' · ')
+  }
+
+  async function submitCancelLayBy() {
+    if (!selected || !canCancelLayBy || !cancelPreviewValid() || !cancelPreview) return
+    setFormError(null)
+    setBusy(true)
+    try {
+      const body: Record<string, unknown> = { mode: cancelMode, tillCode }
+      if (cancelMode === 'percent_refund') {
+        body.percent = Number(cancelPct.replace(',', '.'))
+      }
+      const out = await apiFetch<LayByCancelResponse>(`/lay-bys/${selected._id}/cancel`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      })
+      const settlement = out.cancelSettlement ?? cancelPreview
+      setCancelSettlement(settlement)
+      setCancelSuccess(buildCancelSuccessMessage(settlement, selected.phone))
+      if (settlement.refundCash > 0.005) {
+        setCancelStep('payout')
+      } else {
+        setCancelStep('done')
+      }
+      await refresh()
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Cancel failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function openDrawerForCancelPayout() {
+    setFormError(null)
+    setDrawerNotice(null)
+    try {
+      const printerSettings = readPosPrinterSettings()
+      if (!window.electronPos) {
+        setDrawerNotice('Drawer command accepted (web preview)')
+        return
+      }
+      const d = await kickCashDrawerIfConfigured(printerSettings)
+      if (!d.ok) throw new Error(d.error ?? 'Drawer open failed')
+      setDrawerNotice('Cash drawer opened — pay customer from till.')
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Drawer open failed')
+    }
+  }
+
+  function finishCancelWizard() {
+    setView('list')
+    setSelected(null)
+    setCancelSettlement(null)
+    setCancelSuccess(null)
+    setDrawerNotice(null)
+    setCancelStep('summary')
+  }
+
   async function handleComplete() {
     if (!selected) return
     setFormError(null)
@@ -522,26 +716,39 @@ export function LayByModal({ open, onClose, cart, cartTotal, isAdmin, receiptEna
     }
   }
 
-  async function handleCancel() {
-    if (!selected || !isAdmin) return
-    if (!window.confirm(`Cancel lay-by ${selected.layByNumber}?`)) return
-    setFormError(null)
-    setBusy(true)
-    try {
-      const body: Record<string, unknown> = { mode: cancelMode }
-      if (cancelMode === 'percent_refund') body.percent = Number(cancelPct.replace(',', '.')) || 0
-      await apiFetch(`/lay-bys/${selected._id}/cancel`, {
-        method: 'POST',
-        body: JSON.stringify(body),
-      })
-      await refresh()
-      setView('list')
-      setSelected(null)
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : 'Cancel failed')
-    } finally {
-      setBusy(false)
-    }
+  function renderCancelSettlementPreview(settlement: LayByCancelSettlement) {
+    return (
+      <div className="layby-cancel-settlement">
+        <div className="layby-cancel-settlement-row">
+          <span>Total refund / credit</span>
+          <strong>R {settlement.refundTotal.toFixed(2)}</strong>
+        </div>
+        {settlement.refundCash > 0.005 ? (
+          <div className="layby-cancel-settlement-row">
+            <span>Cash from till</span>
+            <strong>R {settlement.refundCash.toFixed(2)}</strong>
+          </div>
+        ) : null}
+        {settlement.refundCard > 0.005 ? (
+          <div className="layby-cancel-settlement-row">
+            <span>Card reversal</span>
+            <strong>R {settlement.refundCard.toFixed(2)}</strong>
+          </div>
+        ) : null}
+        {settlement.storeCreditRestored > 0.005 ? (
+          <div className="layby-cancel-settlement-row">
+            <span>Store credit restored</span>
+            <strong>R {settlement.storeCreditRestored.toFixed(2)}</strong>
+          </div>
+        ) : null}
+        {settlement.storeCreditIssued > 0.005 ? (
+          <div className="layby-cancel-settlement-row">
+            <span>Store credit issued</span>
+            <strong>R {settlement.storeCreditIssued.toFixed(2)}</strong>
+          </div>
+        ) : null}
+      </div>
+    )
   }
 
   if (!open) return null
@@ -565,94 +772,111 @@ export function LayByModal({ open, onClose, cart, cartTotal, isAdmin, receiptEna
         </div>
 
         {view === 'list' && (
-          <div className="layby-modal-scroll">
-            <div className="open-tabs-section">
-              <div className="open-tabs-section-head">
-                <h3>Open lay-bys</h3>
-                <div className="open-tabs-section-head-actions">
-                  <button type="button" className="btn ghost" disabled={loading} onClick={() => void refresh()}>
-                    {loading ? 'Loading…' : 'Refresh'}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn primary small"
-                    disabled={busy || cart.length === 0}
-                    onClick={() => {
-                      setView('new')
-                      setFormError(null)
-                      if (settings) setDepositPct(settings.defaultDepositPercent)
-                    }}
-                    title={cart.length === 0 ? 'Add items to cart first' : undefined}
-                  >
-                    New lay-by
-                  </button>
+          <div className="layby-detail-layout">
+            <div className="layby-modal-scroll">
+              <div className="open-tabs-section">
+                <div className="open-tabs-section-head">
+                  <h3>Open lay-bys</h3>
+                  <div className="open-tabs-section-head-actions">
+                    <button type="button" className="btn ghost" disabled={loading} onClick={() => void refresh()}>
+                      {loading ? 'Loading…' : 'Refresh'}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn primary small"
+                      disabled={busy || cart.length === 0}
+                      onClick={() => {
+                        setView('new')
+                        setFormError(null)
+                        if (settings) setDepositPct(settings.defaultDepositPercent)
+                      }}
+                      title={cart.length === 0 ? 'Add items to cart first' : undefined}
+                    >
+                      New lay-by
+                    </button>
+                  </div>
                 </div>
-              </div>
-              <div className="layby-field-row">
-                <label className="open-tabs-field">
-                  <span>Search / scan lay-by barcode</span>
-                  <input
-                    ref={searchInputRef}
-                    className="open-tabs-input"
-                    value={searchQ}
-                    onChange={(e) => setSearchQ(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault()
-                        void refresh(searchQ)
-                      }
-                    }}
-                    placeholder="Scan barcode or type lay-by number"
-                  />
-                </label>
-                <div className="open-tabs-form-actions">
-                  <button type="button" className="btn ghost" disabled={loading} onClick={() => void refresh(searchQ)}>
-                    Search
-                  </button>
-                  <button
-                    type="button"
-                    className="btn ghost"
-                    disabled={loading}
-                    onClick={() => {
-                      setSearchQ('')
-                      void refresh('')
-                    }}
+                <div className="layby-field-row">
+                  <label className="open-tabs-field">
+                    <span>Search / scan lay-by barcode</span>
+                    <input
+                      ref={searchInputRef}
+                      className="open-tabs-input"
+                      value={searchQ}
+                      onChange={(e) => setSearchQ(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault()
+                          void refresh(searchQ)
+                        }
+                      }}
+                      placeholder="Scan barcode or type lay-by number"
+                      autoComplete="off"
+                      inputMode={layByScreenKbOpen ? 'none' : 'search'}
+                      {...layByKbHandlers('searchQ')}
+                    />
+                  </label>
+                  <div
+                    className={
+                      layByScreenKbOpen
+                        ? 'open-tabs-form-actions open-tabs-form-actions--with-keyboard'
+                        : 'open-tabs-form-actions'
+                    }
                   >
-                    Clear
-                  </button>
+                    <button type="button" className="btn ghost" disabled={loading} onClick={() => void refresh(searchQ)}>
+                      Search
+                    </button>
+                    <button
+                      type="button"
+                      className="btn ghost"
+                      disabled={loading}
+                      onClick={() => {
+                        setSearchQ('')
+                        void refresh('')
+                      }}
+                    >
+                      Clear
+                    </button>
+                  </div>
                 </div>
+                {list.length === 0 && !loading ? (
+                  <p className="muted open-tabs-empty">No active lay-bys.</p>
+                ) : (
+                  <ul className="open-tabs-list">
+                    {list.map((t) => (
+                      <li key={t._id} className="open-tabs-li">
+                        <div className="open-tabs-li-main">
+                          <span className="open-tabs-li-title">
+                            <strong>{t.layByNumber}</strong> · {t.customerName}
+                          </span>
+                          <span className="muted open-tabs-li-phone">{t.phone}</span>
+                          <span className="open-tabs-li-total">Bal {t.balance.toFixed(2)}</span>
+                        </div>
+                        <div className="open-tabs-li-actions">
+                          <button
+                            type="button"
+                            className="btn small"
+                            disabled={busy}
+                            onClick={() => {
+                              setSearchQ('')
+                              void openDetail(t._id)
+                            }}
+                          >
+                            Open
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
-              {list.length === 0 && !loading ? (
-                <p className="muted open-tabs-empty">No active lay-bys.</p>
-              ) : (
-                <ul className="open-tabs-list">
-                  {list.map((t) => (
-                    <li key={t._id} className="open-tabs-li">
-                      <div className="open-tabs-li-main">
-                        <span className="open-tabs-li-title">
-                          <strong>{t.layByNumber}</strong> · {t.customerName}
-                        </span>
-                        <span className="muted open-tabs-li-phone">{t.phone}</span>
-                        <span className="open-tabs-li-total">Bal {t.balance.toFixed(2)}</span>
-                      </div>
-                      <div className="open-tabs-li-actions">
-                        <button
-                          type="button"
-                          className="btn small"
-                          disabled={busy}
-                          onClick={() => {
-                            setSearchQ('')
-                            void openDetail(t._id)
-                          }}
-                        >
-                          Open
-                        </button>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
             </div>
+            <ScreenKeyboard
+              visible={layByScreenKbOpen}
+              onAction={handleLayByScreenKeyboardAction}
+              layout={layByKbLayout}
+              className="open-tabs-screen-keyboard layby-detail-screen-kb"
+            />
           </div>
         )}
 
@@ -883,25 +1107,90 @@ export function LayByModal({ open, onClose, cart, cartTotal, isAdmin, receiptEna
                 </div>
               ) : null}
 
-              {isAdmin && selected.status === 'active' ? (
+              {canCancelLayBy && selected.status === 'active' ? (
                 <div className="layby-cancel">
-                  <h4>Cancel (admin)</h4>
-                  <label className="open-tabs-field">
-                    <span>Mode</span>
-                    <select
-                      className="open-tabs-input"
-                      value={cancelMode}
-                      onChange={(e) => setCancelMode(e.target.value as typeof cancelMode)}
-                    >
-                      <option value="full_refund">Full refund (cash/card back)</option>
-                      <option value="percent_refund">Percentage refund (cash/card back)</option>
-                      <option value="store_credit">Store voucher / credit (no cash)</option>
-                    </select>
-                  </label>
+                  <button
+                    type="button"
+                    className="btn ghost open-tabs-void layby-cancel-start-btn"
+                    disabled={busy}
+                    onClick={beginCancelWizard}
+                  >
+                    Cancel lay-by…
+                  </button>
+                </div>
+              ) : null}
+            </div>
+            <ScreenKeyboard
+              visible={layByScreenKbOpen}
+              onAction={handleLayByScreenKeyboardAction}
+              layout={layByKbLayout}
+              className="open-tabs-screen-keyboard layby-detail-screen-kb"
+            />
+          </div>
+        )}
+
+        {view === 'cancel' && selected && (
+          <div className="open-tabs-section layby-cancel-wizard layby-detail-layout">
+            <div className="layby-modal-scroll">
+              <div className="open-tabs-section-head">
+                <h3>Cancel {selected.layByNumber}</h3>
+                <button type="button" className="btn ghost" disabled={busy} onClick={cancelWizardBack}>
+                  {cancelStep === 'payout' || cancelStep === 'done' ? 'Close' : 'Back'}
+                </button>
+              </div>
+              {formError && <p className="error open-tabs-form-error">{formError}</p>}
+              {cancelSuccess && (cancelStep === 'payout' || cancelStep === 'done') ? (
+                <p className="success open-tabs-form-error" role="status">
+                  {cancelSuccess}
+                </p>
+              ) : null}
+              {drawerNotice ? (
+                <p className="success open-tabs-form-error" role="status">
+                  {drawerNotice}
+                </p>
+              ) : null}
+
+              {cancelStep === 'summary' ? (
+                <>
+                  <p className="layby-detail-meta muted">
+                    {selected.customerName} · {selected.phone}
+                  </p>
+                  <div className="layby-summary">
+                    <div>Total: {selected.totalInclVat.toFixed(2)}</div>
+                    <div>
+                      Paid: <strong>{selected.amountPaid.toFixed(2)}</strong>
+                    </div>
+                    <div>Balance: {selected.balance.toFixed(2)}</div>
+                  </div>
+                  <p className="muted layby-cancel-hint">
+                    Cancelling releases reserved stock. Choose how to settle any amount already paid before confirming.
+                  </p>
+                  <div className="open-tabs-form-actions">
+                    <button type="button" className="btn primary" onClick={() => setCancelStep('mode')}>
+                      Continue
+                    </button>
+                  </div>
+                </>
+              ) : null}
+
+              {cancelStep === 'mode' ? (
+                <>
+                  <p className="muted layby-cancel-hint">How should we settle the {selected.amountPaid.toFixed(2)} already paid?</p>
+                  <div className="layby-cancel-mode-list">
+                    {(['full_refund', 'percent_refund', 'store_credit'] as const).map((mode) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        className={`btn layby-cancel-mode-btn${cancelMode === mode ? ' primary' : ' ghost'}`}
+                        onClick={() => setCancelMode(mode)}
+                      >
+                        {cancelModeLabel(mode)}
+                      </button>
+                    ))}
+                  </div>
                   {cancelMode === 'store_credit' ? (
                     <p className="muted layby-cancel-hint">
-                      Customer receives the amount paid as spendable in-store credit on this phone number — not cash from
-                      the till.
+                      Customer receives store credit on {selected.phone} — not cash from the till.
                     </p>
                   ) : null}
                   {cancelMode === 'percent_refund' ? (
@@ -917,8 +1206,77 @@ export function LayByModal({ open, onClose, cart, cartTotal, isAdmin, receiptEna
                       />
                     </label>
                   ) : null}
-                  <button type="button" className="btn ghost open-tabs-void" disabled={busy} onClick={() => void handleCancel()}>
-                    Cancel lay-by
+                  {!cancelPercentValid() && cancelMode === 'percent_refund' ? (
+                    <p className="error small">Enter a percentage between 1 and 100.</p>
+                  ) : null}
+                  <div className="open-tabs-form-actions">
+                    <button
+                      type="button"
+                      className="btn primary"
+                      disabled={!cancelPercentValid()}
+                      onClick={() => setCancelStep('preview')}
+                    >
+                      Review settlement
+                    </button>
+                  </div>
+                </>
+              ) : null}
+
+              {cancelStep === 'preview' && cancelPreview ? (
+                <>
+                  <p className="muted layby-cancel-hint">
+                    Settlement for <strong>{cancelModeLabel(cancelMode)}</strong>
+                    {cancelMode === 'percent_refund' ? ` (${cancelPct}%)` : ''}:
+                  </p>
+                  {renderCancelSettlementPreview(cancelPreview)}
+                  {!cancelPreviewValid() ? (
+                    <p className="error small">Refund amount must be greater than zero.</p>
+                  ) : null}
+                  <div className="open-tabs-form-actions">
+                    <button
+                      type="button"
+                      className="btn ghost open-tabs-void"
+                      disabled={busy || !cancelPreviewValid()}
+                      onClick={() => void submitCancelLayBy()}
+                    >
+                      {busy ? 'Cancelling…' : 'Confirm cancellation'}
+                    </button>
+                  </div>
+                </>
+              ) : null}
+
+              {cancelStep === 'payout' && cancelSettlement ? (
+                <>
+                  <p className="refund-payout-total-line">
+                    Pay customer <strong>R {cancelSettlement.refundCash.toFixed(2)}</strong> cash from the till.
+                  </p>
+                  {cancelSettlement.refundCard > 0.005 ? (
+                    <p className="muted layby-cancel-hint">
+                      Also process card reversal of R {cancelSettlement.refundCard.toFixed(2)} on the card terminal.
+                    </p>
+                  ) : null}
+                  <div className="refund-payout-actions">
+                    <button
+                      type="button"
+                      className="btn checkout-btn cash-checkout-btn"
+                      disabled={busy}
+                      onClick={() => void openDrawerForCancelPayout()}
+                    >
+                      Open cash drawer
+                    </button>
+                  </div>
+                  <div className="open-tabs-form-actions">
+                    <button type="button" className="btn primary" onClick={finishCancelWizard}>
+                      Done
+                    </button>
+                  </div>
+                </>
+              ) : null}
+
+              {cancelStep === 'done' ? (
+                <div className="open-tabs-form-actions">
+                  <button type="button" className="btn primary" onClick={finishCancelWizard}>
+                    Done
                   </button>
                 </div>
               ) : null}

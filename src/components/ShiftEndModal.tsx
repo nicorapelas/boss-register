@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { apiFetch } from '../api/client'
-import type { ShiftReport } from '../api/types'
+import type { ShiftCloseStartNextResponse, ShiftReport, ShiftSummary } from '../api/types'
+import { formatDateDdMmYyyy } from '../utils/dateFormat'
 
 type Props = {
   open: boolean
@@ -9,22 +10,158 @@ type Props = {
   onPrintReport: (report: ShiftReport) => Promise<void> | void
 }
 
+type ShiftEndedSummary = {
+  tillCode: string
+  zNumber?: number | null
+  openedAt: string
+  closedAt: string
+  summary: ShiftSummary
+}
+
+function formatMoney(amount: number): string {
+  return amount.toFixed(2)
+}
+
+function formatTimeHm(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return '—'
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
+function shiftSalesCount(summary: ShiftSummary): number {
+  return summary.cashierSales.reduce((total, row) => total + row.salesCount, 0)
+}
+
+function shiftDurationLabel(openedAt: string, closedAt: string): string {
+  const ms = new Date(closedAt).getTime() - new Date(openedAt).getTime()
+  if (!Number.isFinite(ms) || ms < 0) return ''
+  const totalMin = Math.floor(ms / 60_000)
+  const hours = Math.floor(totalMin / 60)
+  const minutes = totalMin % 60
+  if (hours > 0) return `${hours}h ${minutes}m`
+  return `${minutes}m`
+}
+
+function ShiftEndedConfirmation({
+  ended,
+  onDismiss,
+}: {
+  ended: ShiftEndedSummary
+  onDismiss: () => void
+}) {
+  const s = ended.summary
+  const salesCount = shiftSalesCount(s)
+  const duration = shiftDurationLabel(ended.openedAt, ended.closedAt)
+  const zLabel = ended.zNumber != null ? ` · Z${ended.zNumber}` : ''
+
+  return (
+    <div className="open-tabs-backdrop" role="dialog" aria-modal="true" aria-labelledby="shift-ended-title">
+      <div className="open-tabs-dialog quotes-modal-dialog shift-ended-dialog" style={{ maxWidth: 'min(96vw, 34rem)' }}>
+        <div className="shift-ended-header">
+          <h2 id="shift-ended-title">Shift Ended</h2>
+          <p className="muted shift-ended-subtitle">
+            Till <strong>{ended.tillCode}</strong>
+            {zLabel}
+            {' · '}
+            {formatDateDdMmYyyy(ended.closedAt)}
+          </p>
+        </div>
+        <div className="quotes-modal-body shift-ended-body">
+          <p className="shift-ended-turnover" aria-label={`Turnover ${formatMoney(s.turnover)}`}>
+            R {formatMoney(s.turnover)}
+          </p>
+          <p className="muted small shift-ended-turnover-label">Turnover</p>
+
+          <div className="shift-ended-stats" role="list">
+            <div className="shift-ended-stat" role="listitem">
+              <span className="shift-ended-stat-value">{salesCount}</span>
+              <span className="shift-ended-stat-label">Sales</span>
+            </div>
+            <div className="shift-ended-stat" role="listitem">
+              <span className="shift-ended-stat-value">R {formatMoney(s.cashSales)}</span>
+              <span className="shift-ended-stat-label">Cash</span>
+            </div>
+            <div className="shift-ended-stat" role="listitem">
+              <span className="shift-ended-stat-value">R {formatMoney(s.cardSales)}</span>
+              <span className="shift-ended-stat-label">Card</span>
+            </div>
+            <div className="shift-ended-stat" role="listitem">
+              <span className="shift-ended-stat-value">{s.refundCount}</span>
+              <span className="shift-ended-stat-label">Refunds</span>
+            </div>
+          </div>
+
+          {(s.voucherTotal > 0.005 ||
+            s.onAccountTotal > 0.005 ||
+            s.layByCompletions > 0 ||
+            s.quoteConversions > 0 ||
+            s.tabClosures > 0) && (
+            <p className="muted small shift-ended-extra">
+              {s.voucherTotal > 0.005 ? `Voucher R ${formatMoney(s.voucherTotal)}` : null}
+              {s.onAccountTotal > 0.005 ? ` · On account R ${formatMoney(s.onAccountTotal)}` : null}
+              {s.layByCompletions > 0 ? ` · Lay-bys ${s.layByCompletions}` : null}
+              {s.quoteConversions > 0 ? ` · Quotes ${s.quoteConversions}` : null}
+              {s.tabClosures > 0 ? ` · Tabs ${s.tabClosures}` : null}
+            </p>
+          )}
+
+          {s.refundCount > 0 ? (
+            <p className="muted small shift-ended-extra">
+              Refund total R {formatMoney(s.refundTotal)}
+              {s.refundCashTotal > 0.005 || s.refundCardTotal > 0.005
+                ? ` (cash R ${formatMoney(s.refundCashTotal)} · card R ${formatMoney(s.refundCardTotal)})`
+                : null}
+            </p>
+          ) : null}
+
+          <p className="muted small shift-ended-timing">
+            {formatTimeHm(ended.openedAt)} – {formatTimeHm(ended.closedAt)}
+            {duration ? ` · ${duration}` : ''}
+          </p>
+
+          <p className="muted small shift-ended-next">Next shift is now open on this till.</p>
+
+          <div className="shift-ended-actions">
+            <button type="button" className="btn primary" onClick={onDismiss}>
+              Continue
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function ShiftEndModal({ open, tillCode, onClose, onPrintReport }: Props) {
   const [busy, setBusy] = useState(false)
   const [report, setReport] = useState<ShiftReport | null>(null)
+  const [ended, setEnded] = useState<ShiftEndedSummary | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [diffOpen, setDiffOpen] = useState(false)
   const [kind, setKind] = useState<'over' | 'under'>('over')
   const [amount, setAmount] = useState('')
   const [note, setNote] = useState('')
+  const onPrintReportRef = useRef(onPrintReport)
+  onPrintReportRef.current = onPrintReport
+  /** One fetch + print per dialog open (survives StrictMode re-run and parent re-renders). */
+  const loadStartedRef = useRef(false)
 
   useEffect(() => {
-    if (!open) return
+    if (!open) {
+      loadStartedRef.current = false
+      setEnded(null)
+      return
+    }
+    if (loadStartedRef.current) return
+    loadStartedRef.current = true
+
     setDiffOpen(false)
     setKind('over')
     setAmount('')
     setNote('')
     setError(null)
+    setEnded(null)
+    setReport(null)
     setBusy(true)
     void apiFetch<ShiftReport>('/shifts/z-report', {
       method: 'POST',
@@ -32,13 +169,25 @@ export function ShiftEndModal({ open, tillCode, onClose, onPrintReport }: Props)
     })
       .then(async (r) => {
         setReport(r)
-        await onPrintReport(r)
+        await onPrintReportRef.current(r)
       })
       .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load shift report'))
       .finally(() => setBusy(false))
-  }, [open, tillCode, onPrintReport])
+  }, [open, tillCode])
 
   if (!open) return null
+
+  if (ended) {
+    return (
+      <ShiftEndedConfirmation
+        ended={ended}
+        onDismiss={() => {
+          setEnded(null)
+          onClose()
+        }}
+      />
+    )
+  }
 
   async function submitDifference() {
     if (!report) return
@@ -78,8 +227,18 @@ export function ShiftEndModal({ open, tillCode, onClose, onPrintReport }: Props)
     setBusy(true)
     setError(null)
     try {
-      await apiFetch(`/shifts/${report.shiftId}/close-start-next`, { method: 'POST', body: '{}' })
-      onClose()
+      const result = await apiFetch<ShiftCloseStartNextResponse>(
+        `/shifts/${report.shiftId}/close-start-next`,
+        { method: 'POST', body: '{}' },
+      )
+      const closed = result.closedShift
+      setEnded({
+        tillCode: closed.tillCode,
+        zNumber: closed.zNumber,
+        openedAt: closed.openedAt,
+        closedAt: closed.closedAt,
+        summary: closed.summary ?? report.summary,
+      })
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to close shift')
     } finally {
@@ -129,7 +288,9 @@ export function ShiftEndModal({ open, tillCode, onClose, onPrintReport }: Props)
           <div style={{ display: 'flex', gap: '0.6rem', marginTop: '0.8rem', flexWrap: 'wrap' }}>
             <button type="button" className="btn ghost" onClick={onClose}>Continue Shift</button>
             <button type="button" className="btn ghost" onClick={() => setDiffOpen((v) => !v)}>Cash Difference</button>
-            <button type="button" className="btn primary" disabled={busy || !report} onClick={() => void closeAndStartNext()}>Close Shift & Start Next</button>
+            <button type="button" className="btn primary" disabled={busy || !report} onClick={() => void closeAndStartNext()}>
+              {busy ? 'Closing…' : 'Close Shift & Start Next'}
+            </button>
           </div>
         </div>
       </div>

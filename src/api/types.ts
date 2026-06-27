@@ -87,6 +87,7 @@ export interface CustomerDisplaySettings {
     headline?: string
     subtext?: string
     imageUrl?: string
+    idleImageRevision?: number
   }
   theme?: {
     backgroundColor?: string
@@ -209,6 +210,31 @@ export interface LayByDetail {
   }>
 }
 
+export type LayByCancelMode = 'full_refund' | 'percent_refund' | 'store_credit'
+
+export interface LayByCancelSettlement {
+  refundTotal: number
+  refundCash: number
+  refundCard: number
+  storeCreditRestored: number
+  storeCreditIssued: number
+}
+
+export type LayByCancelResponse = LayByDetail & {
+  cancelSettlement?: LayByCancelSettlement
+  cancellation?: {
+    mode: LayByCancelMode
+    percent?: number
+    refundAmount?: number
+    refundCash?: number
+    refundCard?: number
+    storeCreditRestored?: number
+    storeCreditIssued?: number
+    tillCode?: string
+    at?: string
+  }
+}
+
 /** POST /lay-bys/:id/payments response includes optional tender / change metadata */
 export type LayByPaymentResponse = LayByDetail & {
   paymentChangeDue?: number
@@ -296,6 +322,27 @@ export interface SaleRefundPreview {
     remainingTotal: number
     lines: Array<{ index: number; soldQty: number; refundedQty: number; remainingQty: number }>
   }
+}
+
+export type ManualReturnLine = {
+  product?: string
+  sku?: string
+  name: string
+  quantity: number
+  unitPrice: number
+  lineTotal: number
+}
+
+export type ManualReturnResult = {
+  returnId: string
+  _id: string
+  returnTotal: number
+  payoutMethod: 'cash' | 'card' | 'store_credit'
+  returnCash: number
+  returnCard: number
+  returnStoreCreditIssued: number
+  lines: ManualReturnLine[]
+  note: string
 }
 
 export interface SaleExchangeEligibility {
@@ -414,6 +461,23 @@ export interface ShiftReport {
   cashDifferences: ShiftCashDifference[]
 }
 
+export interface ShiftCloseStartNextResponse {
+  closedShift: {
+    _id: string
+    tillCode: string
+    openedAt: string
+    closedAt: string
+    zNumber?: number | null
+    summary: ShiftSummary
+  }
+  nextShift: {
+    _id: string
+    tillCode: string
+    openedAt: string
+    status: 'open' | 'closed'
+  }
+}
+
 /** GET /house-accounts */
 export interface HouseAccountRow {
   _id: string
@@ -423,6 +487,7 @@ export interface HouseAccountRow {
   contactPerson?: string
   email?: string
   vatNumber?: string
+  companyRegistrationNumber?: string
   addressLines?: string[]
   paymentTerms?: string
   notes?: string

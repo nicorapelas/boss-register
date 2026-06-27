@@ -1,0 +1,3 @@
+# Posiflex integrated serial receipt printer (COM1 -> /dev/ttyS0 @ 38400).
+# Till user must be in the dialout group (log out/in after usermod -aG dialout USER).
+KERNEL=="ttyS0", MODE="0660", GROUP="dialout"

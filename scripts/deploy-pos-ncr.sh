@@ -2,6 +2,7 @@
 set -euo pipefail
 
 # Deploy POS to the NCR terminal (Till T2 @ 192.168.1.12).
+export VITE_POS_TERMINAL_PROFILE=ncr
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=pos-deploy-lib.sh
 source "$SCRIPT_DIR/pos-deploy-lib.sh"
@@ -12,6 +13,7 @@ SSH_OPTS="-o StrictHostKeyChecking=no"
 
 pos_install_ncr_printer_udev "$SSH_OPTS" "$POS_USER" "$POS_HOST" "$SCRIPT_DIR/udev/99-ncr-pos-printer.rules"
 pos_install_ncr_line_display_udev "$SSH_OPTS" "$POS_USER" "$POS_HOST" "$SCRIPT_DIR/udev/99-ncr-line-display.rules"
+pos_install_ncr_operator_touch "$SSH_OPTS" "$POS_USER" "$POS_HOST" "$SCRIPT_DIR/ncr-map-operator-touch.sh"
 
 exec "$SCRIPT_DIR/deploy-pos-terminal.sh" \
   --name NCR \

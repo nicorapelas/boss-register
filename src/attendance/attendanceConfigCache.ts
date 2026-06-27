@@ -4,6 +4,8 @@ const DEFAULT: StaffAttendanceSettings = {
   enabled: true,
   logoutClockOutPromptEnabled: true,
   logoutPromptAfterMinutes: 0,
+  autoClockOutEnabled: false,
+  autoClockOutTime: '18:00',
 }
 
 let cached: StaffAttendanceSettings = { ...DEFAULT }
@@ -17,6 +19,11 @@ export function setCachedStaffAttendanceSettings(next: StaffAttendanceSettings |
           typeof next.logoutPromptAfterMinutes === 'number' && next.logoutPromptAfterMinutes >= 0
             ? next.logoutPromptAfterMinutes
             : 0,
+        autoClockOutEnabled: next.autoClockOutEnabled === true,
+        autoClockOutTime:
+          typeof next.autoClockOutTime === 'string' && /^\d{2}:\d{2}$/.test(next.autoClockOutTime)
+            ? next.autoClockOutTime
+            : '18:00',
       }
     : { ...DEFAULT }
 }

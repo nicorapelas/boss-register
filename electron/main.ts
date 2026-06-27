@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { registerAuthIpc } from './auth-storage'
 import { initCustomerDisplayModule, onAppReadyCustomerDisplay, setCustomerDisplayMainWindowRef } from './customer-display'
+import { initOperatorTouchMap } from './operator-touch-map'
 import { registerOfflineIpc } from './offline-storage'
 import { buildReceiptEscPos, drawerKick, sendEscPosToPrinter, type PrintDensity, type PrinterTransport, type ReceiptPayload } from './pos-printer'
 
@@ -212,4 +213,5 @@ app.whenReady().then(() => {
   })
   createWindow()
   onAppReadyCustomerDisplay()
+  initOperatorTouchMap()
 })

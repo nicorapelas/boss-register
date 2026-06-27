@@ -3,6 +3,9 @@
 interface ImportMetaEnv {
   readonly VITE_API_BASE_URL: string
   readonly VITE_APP_VERSION: string
+  readonly VITE_POS_TILL_CODE?: string
+  /** ncr | posiflex — receipt printer connection defaults for this till build */
+  readonly VITE_POS_TERMINAL_PROFILE?: string
 }
 
 interface ImportMeta {

@@ -14,7 +14,12 @@ pos_build_appimage() {
   local api_base="${1:-http://192.168.1.10:4000/api}"
   local till_code="${2:-T1}"
   echo "== Build POS v$(pos_deploy_version) (till ${till_code}) =="
-  VITE_API_BASE_URL="$api_base" VITE_POS_TILL_CODE="$till_code" npm run build
+  if [[ -n "${VITE_POS_TERMINAL_PROFILE:-}" ]]; then
+    echo "   terminal profile: ${VITE_POS_TERMINAL_PROFILE}"
+    VITE_API_BASE_URL="$api_base" VITE_POS_TILL_CODE="$till_code" VITE_POS_TERMINAL_PROFILE="$VITE_POS_TERMINAL_PROFILE" npm run build
+  else
+    VITE_API_BASE_URL="$api_base" VITE_POS_TILL_CODE="$till_code" npm run build
+  fi
   npx electron-builder --publish never --linux AppImage
 }
 
@@ -83,6 +88,10 @@ for _ in \$(seq 1 90); do
   sleep 1
 done
 sleep 3
+
+if [ -x \"\$HOME/bin/ncr-map-operator-touch.sh\" ]; then
+  \"\$HOME/bin/ncr-map-operator-touch.sh\" >> \"\$LOG\" 2>&1 || true
+fi
 
 if [ ! -x \"\$APP\" ]; then
   echo \"[\$(date -Is)] CogniPOS autostart: AppImage missing: \$APP\" >> \"\$LOG\"
@@ -201,6 +210,36 @@ pos_install_ncr_printer_udev() {
   '
 }
 
+pos_install_posiflex_serial_udev() {
+  local ssh_opts="$1"
+  local user="$2"
+  local host="$3"
+  local rules_src="$4"
+
+  if [[ ! -f "$rules_src" ]]; then
+    echo "WARN: udev rules not found: $rules_src" >&2
+    return 0
+  fi
+
+  echo "== Install Posiflex serial printer udev rule on ${user}@${host} =="
+  scp $ssh_opts "$rules_src" "${user}@${host}:/tmp/99-posiflex-serial.rules"
+  ssh $ssh_opts "${user}@${host}" "
+    if sudo -n true 2>/dev/null; then
+      sudo install -m 644 /tmp/99-posiflex-serial.rules /etc/udev/rules.d/99-posiflex-serial.rules
+      sudo udevadm control --reload-rules
+      sudo udevadm trigger --subsystem-match=tty
+      sudo usermod -aG dialout ${user} 2>/dev/null || true
+      rm -f /tmp/99-posiflex-serial.rules
+      echo 'Posiflex serial udev rule installed (log out/in if dialout was just added)'
+    else
+      echo 'NOTE: sudo password required on the till. Run:'
+      echo '  sudo install -m 644 /tmp/99-posiflex-serial.rules /etc/udev/rules.d/99-posiflex-serial.rules'
+      echo '  sudo udevadm control --reload-rules && sudo udevadm trigger --subsystem-match=tty'
+      echo '  sudo usermod -aG dialout ${user}'
+    fi
+  "
+}
+
 pos_install_ncr_line_display_udev() {
   local ssh_opts="$1"
   local user="$2"
@@ -227,6 +266,45 @@ pos_install_ncr_line_display_udev() {
       echo "  sudo udevadm control --reload-rules && sudo udevadm trigger --subsystem-match=hidraw"
     fi
   '
+}
+
+pos_install_ncr_operator_touch() {
+  local ssh_opts="$1"
+  local user="$2"
+  local host="$3"
+  local script_src="$4"
+  local display="${5:-:0}"
+
+  if [[ ! -f "$script_src" ]]; then
+    echo "WARN: touch map script not found: $script_src" >&2
+    return 0
+  fi
+
+  local remote_script="/home/${user}/bin/ncr-map-operator-touch.sh"
+  local remote_autostart="/home/${user}/.config/autostart/ncr-map-operator-touch.desktop"
+
+  echo "== Install NCR operator touch mapping on ${user}@${host} =="
+  scp $ssh_opts "$script_src" "${user}@${host}:/tmp/ncr-map-operator-touch.sh"
+  ssh $ssh_opts "${user}@${host}" "
+    set -e
+    mkdir -p \"\$HOME/bin\" \"\$HOME/.config/autostart\"
+    install -m 755 /tmp/ncr-map-operator-touch.sh \"$remote_script\"
+    rm -f /tmp/ncr-map-operator-touch.sh
+    cat > \"$remote_autostart\" <<AUTOSTART
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=NCR operator touch map
+Comment=Map CoolTouch to primary display when customer monitor is connected
+Exec=${remote_script}
+Terminal=false
+X-GNOME-Autostart-enabled=true
+X-GNOME-Autostart-Delay=4
+AUTOSTART
+    chmod 644 \"$remote_autostart\"
+    DISPLAY=\"$display\" XAUTHORITY=\"/home/${user}/.Xauthority\" \"$remote_script\" || true
+    echo \"Operator touch map installed: $remote_script\"
+  "
 }
 
 pos_deploy_one_terminal() {

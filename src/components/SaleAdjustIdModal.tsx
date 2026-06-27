@@ -320,7 +320,7 @@ export function SaleAdjustIdModal({
                 <code>_id</code>.
                 {mode === 'exchange'
                   ? ' Return lines load into the cart — add replacements, then settle.'
-                  : ' The register switches to refund mode with refundable lines in the cart.'}
+                  : ' Refundable lines load into the cart — tap − to remove items the customer is keeping, then continue to refund.'}
               </p>
               <div className="quotes-modal-filters" style={{ flexWrap: 'wrap' }}>
                 <input

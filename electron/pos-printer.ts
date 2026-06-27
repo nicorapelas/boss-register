@@ -330,29 +330,32 @@ export function buildReceiptEscPos(payload: ReceiptPayload, opts?: ReceiptEscPos
   chunks.push(setPrintDensity(printDensity))
   // Some ESC/POS printers leak a stray byte (e.g. '0' from ESC 7 n2=48) — feed before header text.
   chunks.push(feed(2))
+  const isShiftSlip = payload.shiftReport != null
   // Centered block: store identity + doc title + receipt/quote number (short lines — full-width pLine would defeat ESC/POS centering).
   chunks.push(setAlign('center'))
-  const headerLines = payload.headerLines?.filter((x) => x.trim().length > 0) ?? []
-  if (headerLines.length > 0) {
-    if (headerBold) chunks.push(setEmph(true))
-    chunks.push(line(headerLines[0]))
-    if (headerBold) chunks.push(setEmph(false))
-    for (const h of headerLines.slice(1)) {
-      chunks.push(line(h))
+  if (!isShiftSlip) {
+    const headerLines = payload.headerLines?.filter((x) => x.trim().length > 0) ?? []
+    if (headerLines.length > 0) {
+      if (headerBold) chunks.push(setEmph(true))
+      chunks.push(line(headerLines[0]))
+      if (headerBold) chunks.push(setEmph(false))
+      for (const h of headerLines.slice(1)) {
+        chunks.push(line(h))
+      }
+    } else if (payload.storeName) {
+      if (headerBold) chunks.push(setEmph(true))
+      chunks.push(line(payload.storeName))
+      if (headerBold) chunks.push(setEmph(false))
+    } else {
+      if (headerBold) chunks.push(setEmph(true))
+      chunks.push(line('CogniPOS'))
+      if (headerBold) chunks.push(setEmph(false))
     }
-  } else if (payload.storeName) {
-    if (headerBold) chunks.push(setEmph(true))
-    chunks.push(line(payload.storeName))
-    if (headerBold) chunks.push(setEmph(false))
-  } else {
-    if (headerBold) chunks.push(setEmph(true))
-    chunks.push(line('CogniPOS'))
-    if (headerBold) chunks.push(setEmph(false))
+    if (payload.phone) chunks.push(line(`TEL ${payload.phone}`))
+    if (payload.vatNumber) chunks.push(line(`VAT ${payload.vatNumber}`))
   }
-  if (payload.phone) chunks.push(line(`TEL ${payload.phone}`))
-  if (payload.vatNumber) chunks.push(line(`VAT ${payload.vatNumber}`))
   if (payload.receiptTitle) {
-    const boldQuotation = headerBold && payload.receiptTitle.trim().toUpperCase() === 'QUOTATION'
+    const boldQuotation = !isShiftSlip && headerBold && payload.receiptTitle.trim().toUpperCase() === 'QUOTATION'
     if (boldQuotation) chunks.push(setEmph(true))
     chunks.push(line(payload.receiptTitle))
     if (boldQuotation) chunks.push(setEmph(false))
@@ -444,11 +447,13 @@ export function buildReceiptEscPos(payload: ReceiptPayload, opts?: ReceiptEscPos
   }
 
   chunks.push(pLine('-'.repeat(contentCols)))
-  const qtyHeader = payload.qtyHeader ?? 'QTY'
-  const priceHeader = payload.priceHeader ?? 'PRICE'
-  chunks.push(pLine(`${padRight('ITEM DESCRIPTION', contentCols - 14)}${padLeft(qtyHeader, 5)}${padLeft(priceHeader, 9)}`))
-  chunks.push(pLine('-'.repeat(contentCols)))
   const shift = payload.shiftReport
+  if (!shift) {
+    const qtyHeader = payload.qtyHeader ?? 'QTY'
+    const priceHeader = payload.priceHeader ?? 'PRICE'
+    chunks.push(pLine(`${padRight('ITEM DESCRIPTION', contentCols - 14)}${padLeft(qtyHeader, 5)}${padLeft(priceHeader, 9)}`))
+    chunks.push(pLine('-'.repeat(contentCols)))
+  }
   if (shift) {
     const section = (title: string) => {
       chunks.push(feed(1))
@@ -807,23 +812,42 @@ export function buildReceiptEscPos(payload: ReceiptPayload, opts?: ReceiptEscPos
   return Buffer.concat(chunks)
 }
 
-export async function sendEscPosToPrinter(transport: PrinterTransport, data: Buffer): Promise<void> {
-  if (transport.kind === 'usb') {
-    const fh = await fs.open(transport.path, 'w')
-    try {
-      await fh.write(data)
-    } finally {
-      await fh.close()
+/** User-facing message when ESC/POS I/O fails (serial, USB, LAN). */
+export function printerTransportErrorMessage(err: unknown, transport: PrinterTransport): string {
+  const raw = err instanceof Error ? err.message : String(err ?? 'Printer communication failed')
+  const lower = raw.toLowerCase()
+  const permissionDenied =
+    lower.includes('permission denied') || lower.includes('eacces') || lower.includes('access denied')
+  if (permissionDenied) {
+    if (transport.kind === 'serial') {
+      return `Cannot access printer port ${transport.path} (permission denied). Add the till user to the dialout group and log out/in, or install the Posiflex serial udev rule from deploy.`
     }
-    return
+    if (transport.kind === 'usb') {
+      return `Cannot access printer ${transport.path} (permission denied). Check USB printer udev rules or lp group membership.`
+    }
+    return `Printer connection refused (permission denied). Check till printer permissions.`
   }
+  if (lower.includes('enoent') || lower.includes('no such file') || lower.includes('not found')) {
+    const path =
+      transport.kind === 'serial' || transport.kind === 'usb'
+        ? transport.path
+        : `${transport.host}:${transport.port}`
+    return `Printer device not found (${path}). Check Settings → Printer connection.`
+  }
+  if (lower.includes('command failed: stty')) {
+    const path = transport.kind === 'serial' ? transport.path : 'printer'
+    return `Cannot configure serial port ${path}. Check permissions (dialout group) and that the device exists.`
+  }
+  return raw.length > 240 ? `${raw.slice(0, 237)}…` : raw
+}
 
-  if (transport.kind === 'serial') {
-    const run = promisify(execFile)
+async function configureSerialPort(path: string, baudRate: number): Promise<void> {
+  const run = promisify(execFile)
+  try {
     await run('stty', [
       '-F',
-      transport.path,
-      String(transport.baudRate),
+      path,
+      String(baudRate),
       'cs8',
       '-cstopb',
       '-parenb',
@@ -832,33 +856,55 @@ export async function sendEscPosToPrinter(transport: PrinterTransport, data: Buf
       'raw',
       '-echo',
     ])
-    const fh = await fs.open(transport.path, 'w')
-    try {
-      await fh.write(data)
-    } finally {
-      await fh.close()
-    }
-    return
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    console.warn(`[pos-print] stty on ${path} failed (will still try write): ${msg}`)
   }
+}
 
-  await new Promise<void>((resolve, reject) => {
-    const socket = new net.Socket()
-    const onErr = (e: unknown) => {
-      try {
-        socket.destroy()
-      } catch {
-        // ignore
-      }
-      reject(e instanceof Error ? e : new Error('Printer socket error'))
+async function writePrinterBytes(path: string, data: Buffer): Promise<void> {
+  const fh = await fs.open(path, 'w')
+  try {
+    await fh.write(data)
+  } finally {
+    await fh.close()
+  }
+}
+
+export async function sendEscPosToPrinter(transport: PrinterTransport, data: Buffer): Promise<void> {
+  try {
+    if (transport.kind === 'usb') {
+      await writePrinterBytes(transport.path, data)
+      return
     }
-    socket.once('error', onErr)
-    socket.connect(transport.port, transport.host, () => {
-      socket.write(data, (err) => {
-        if (err) return onErr(err)
-        socket.end()
+
+    if (transport.kind === 'serial') {
+      await configureSerialPort(transport.path, transport.baudRate)
+      await writePrinterBytes(transport.path, data)
+      return
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      const socket = new net.Socket()
+      const onErr = (e: unknown) => {
+        try {
+          socket.destroy()
+        } catch {
+          // ignore
+        }
+        reject(e instanceof Error ? e : new Error('Printer socket error'))
+      }
+      socket.once('error', onErr)
+      socket.connect(transport.port, transport.host, () => {
+        socket.write(data, (err) => {
+          if (err) return onErr(err)
+          socket.end()
+        })
       })
+      socket.once('close', () => resolve())
     })
-    socket.once('close', () => resolve())
-  })
+  } catch (e) {
+    throw new Error(printerTransportErrorMessage(e, transport))
+  }
 }
 

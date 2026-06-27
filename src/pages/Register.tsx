@@ -26,6 +26,7 @@ import type {
   SaleLine,
   SaleRefundPreview,
   SaleRefundSettlement,
+  ManualReturnResult,
   SaleExchangePreview,
   SaleExchangeSettlement,
   SaleExchangeSettlementKind,
@@ -40,17 +41,24 @@ import { StockOverrideModal, type StockOverrideModalRequest } from '../component
 import type { StockOverrideApprover } from '../register/managerStockOverrideVerify'
 import { stockOverrideLineFields, stockOverridePayloadFromLine } from '../register/stockOverrideLineFields'
 import {
+  cardAmountToApply,
+  cartCheckoutDisplay,
   cashRoundingFromSettings,
+  checkoutAmountDue,
   computeCheckoutTenders,
   DEFAULT_CASH_ROUNDING,
+  effectiveCashRoundingAdjustment,
+  exactMerchandiseDue,
   maxCardTender,
-  payableCartTotal,
   type CashRoundingConfig,
+  type CheckoutTenderInput,
 } from '../register/cashRounding'
 import {
   canManageShifts,
+  canCancelLayBys,
   canOverridePriceOnPos,
   canRefundSales,
+  canManualReturn,
   canExchangeSales,
   canBrowseSalesForAdjustment,
   isPosManager,
@@ -67,6 +75,7 @@ import {
   RefundSaleIdModal,
   ExchangeSaleIdModal,
   ShiftEndModal,
+  ManualReturnPayoutModal,
   ScreenKeyboard,
   type ScreenKeyboardAction,
 } from '../components'
@@ -160,7 +169,7 @@ type ReceiptPrintPayload = {
 
 type LastReceiptForReprint =
   | { kind: 'sale'; sale: Sale }
-  | { kind: 'raw'; payload: ReceiptPrintPayload; successNotice?: string }
+  | { kind: 'raw'; payload: ReceiptPrintPayload; payloads?: ReceiptPrintPayload[]; successNotice?: string }
 
 type StockOverrideApproval =
   | { approved: true; approver: StockOverrideApprover }
@@ -417,8 +426,10 @@ export function Register() {
     loadProducts,
   } = useCatalog()
   const isAdmin = isPosManager(session?.user)
+  const canCancelLayBy = canCancelLayBys(session?.user)
   const isStoreAdmin = isRoleAdmin(session?.user)
   const canRefund = canRefundSales(session?.user)
+  const canManualReturnPos = canManualReturn(session?.user)
   const canExchange = canExchangeSales(session?.user)
   const canBrowseSalesForAdjust = canBrowseSalesForAdjustment(session?.user)
   const canShiftEnd = canManageShifts(session?.user)
@@ -584,6 +595,12 @@ export function Register() {
   const refundPhoneInputRef = useRef<HTMLInputElement | null>(null)
   const [refundCartScreenKbOpen, setRefundCartScreenKbOpen] = useState(false)
   const [refundCartKbTarget, setRefundCartKbTarget] = useState<'note' | 'phone'>('note')
+  const [refundPayoutOpen, setRefundPayoutOpen] = useState(false)
+  const [exchangePayoutOpen, setExchangePayoutOpen] = useState(false)
+  const [manualReturnActive, setManualReturnActive] = useState(false)
+  const [manualReturnPayoutOpen, setManualReturnPayoutOpen] = useState(false)
+  const [manualReturnNote, setManualReturnNote] = useState('')
+  const [manualReturnCreditPhone, setManualReturnCreditPhone] = useState('')
   const [shiftEndModalOpen, setShiftEndModalOpen] = useState(false)
   const [houseAccountForCheckout, setHouseAccountForCheckout] = useState<HouseAccountRow | null>(null)
   const [houseAccountPaymentTarget, setHouseAccountPaymentTarget] = useState<HouseAccountRow | null>(null)
@@ -708,9 +725,14 @@ export function Register() {
   }, [cart.length])
 
   useEffect(() => {
-    setPosSaleInactivityGuard({ cartLineCount: cart.length, hasPendingSplit: !!pendingSplit })
-    return () => setPosSaleInactivityGuard({ cartLineCount: 0, hasPendingSplit: false })
-  }, [cart.length, pendingSplit])
+    setPosSaleInactivityGuard({
+      cartLineCount: cart.length,
+      hasPendingSplit: !!pendingSplit,
+      parkedSaleLineCount: parkedSlotLines(saleHoldSlots).length,
+    })
+    return () =>
+      setPosSaleInactivityGuard({ cartLineCount: 0, hasPendingSplit: false, parkedSaleLineCount: 0 })
+  }, [cart.length, pendingSplit, saleHoldSlots])
 
   useEffect(() => {
     if (!altPaymentExpanded) {
@@ -1060,6 +1082,8 @@ export function Register() {
 
   function handleRefundCartScreenKeyboardAction(action: ScreenKeyboardAction) {
     const f = refundCartKbTargetRef.current
+    const setNote = exchangePayoutOpen ? setExchangeNote : setRefundNote
+    const setPhone = exchangePayoutOpen ? setExchangeCreditPhone : setRefundCreditPhone
     if (action.type === 'done') {
       setRefundCartScreenKbOpen(false)
       return
@@ -1069,16 +1093,16 @@ export function Register() {
       return
     }
     if (f === 'note') {
-      if (action.type === 'char') setRefundNote((s) => s + action.char)
-      else if (action.type === 'backspace') setRefundNote((s) => s.slice(0, -1))
-      else if (action.type === 'space') setRefundNote((s) => s + ' ')
+      if (action.type === 'char') setNote((s) => s + action.char)
+      else if (action.type === 'backspace') setNote((s) => s.slice(0, -1))
+      else if (action.type === 'space') setNote((s) => s + ' ')
       return
     }
     if (f === 'phone') {
       if (action.type === 'char' && /\d/.test(action.char)) {
-        setRefundCreditPhone((s) => s + action.char)
+        setPhone((s) => s + action.char)
       } else if (action.type === 'backspace') {
-        setRefundCreditPhone((s) => s.slice(0, -1))
+        setPhone((s) => s.slice(0, -1))
       }
     }
   }
@@ -1120,10 +1144,13 @@ export function Register() {
   }, [showChangeView, cart.length, pendingSplit])
 
   useEffect(() => {
-    if ((!refundSession && !exchangeSession) || !refundCartScreenKbOpen) return
+    if (!refundCartScreenKbOpen) return
+    if (refundSession && !refundPayoutOpen) return
+    if (exchangeSession && !exchangePayoutOpen) return
+    if (!refundSession && !exchangeSession) return
     const t = window.setTimeout(() => scrollRefundCartFieldIntoView(refundCartKbTargetRef.current), 40)
     return () => clearTimeout(t)
-  }, [refundSession, exchangeSession, refundCartScreenKbOpen, refundCartKbTarget])
+  }, [refundSession, exchangeSession, refundPayoutOpen, exchangePayoutOpen, refundCartScreenKbOpen, refundCartKbTarget])
 
   useEffect(() => {
     if (!voucherFormOpen || !voucherScreenKbOpen) return
@@ -1786,6 +1813,10 @@ export function Register() {
     () => (exchangeSession ? roundCartMoney(exchangeNewTotal - exchangeReturnTotal) : 0),
     [exchangeSession, exchangeNewTotal, exchangeReturnTotal],
   )
+  const exchangeHasReplacements = useMemo(
+    () => (exchangeSession ? cartNewSaleLines(cart).some((l) => l.quantity > 0.005) : false),
+    [exchangeSession, cart],
+  )
 
   const cartTotal = useMemo(() => {
     const jobCardLabourActive = activeTabBanner?.kind === 'job_card'
@@ -1832,10 +1863,30 @@ export function Register() {
     setLoyaltyModalOpen(false)
   }
 
-  const cartPayable = useMemo(
-    () => payableCartTotal(cartTotal, loyalty.loyaltyDiscount, cashRoundingConfig),
+  const cartCheckout = useMemo(
+    () => cartCheckoutDisplay(cartTotal, loyalty.loyaltyDiscount, cashRoundingConfig),
     [cartTotal, loyalty.loyaltyDiscount, cashRoundingConfig],
   )
+
+  function checkoutTenderInput(
+    overrides: Partial<{
+      total: number
+      cashReceived: number
+      cardReceived: number
+      storeCredit: number
+      onAccount: number
+    }> = {},
+  ): CheckoutTenderInput {
+    return {
+      merchandiseTotal: overrides.total ?? pendingSplit?.total ?? cartTotal,
+      loyaltyDiscount: loyalty.loyaltyDiscount,
+      storeCredit: overrides.storeCredit ?? pendingSplit?.storeCreditApplied ?? 0,
+      onAccount: overrides.onAccount ?? pendingSplit?.onAccountApplied ?? 0,
+      cashReceived: overrides.cashReceived ?? pendingSplit?.cashReceived ?? 0,
+      cardReceived: overrides.cardReceived ?? pendingSplit?.cardReceived ?? 0,
+      config: cashRoundingConfig,
+    }
+  }
 
   function resolveSalePaymentMethod(
     cashApplied: number,
@@ -1890,12 +1941,7 @@ export function Register() {
   }
 
   function onAccountRemainingDueAmount() {
-    const total = pendingSplit?.total ?? cartTotal
-    const prevCash = pendingSplit?.cashReceived ?? 0
-    const prevCard = pendingSplit?.cardReceived ?? 0
-    const prevSc = pendingSplit?.storeCreditApplied ?? 0
-    const prevOa = pendingSplit?.onAccountApplied ?? 0
-    return round2(total - prevCash - prevCard - prevSc - prevOa - loyalty.loyaltyDiscount)
+    return checkoutAmountDue(checkoutTenderInput())
   }
 
   useCustomerDisplaySettingsLoader(session)
@@ -1928,7 +1974,7 @@ export function Register() {
     storeConfig: customerDisplayConfigForTill,
     storeName: storeDisplayName,
     cart,
-    cartTotal: cartPayable.payableTotal,
+    cartTotal: cartCheckout.displayTotal,
     productsById,
     showChangeView,
     lastTotal: lastTotal,
@@ -2208,6 +2254,10 @@ export function Register() {
   }
 
   function beginRefundMode(data: SaleRefundPreview, routeSaleId: string) {
+    if (manualReturnActive) {
+      setError('Exit manual return mode before starting a refund')
+      return
+    }
     if (exchangeSession) {
       setError('Exit exchange mode before starting a refund')
       return
@@ -2235,6 +2285,7 @@ export function Register() {
     )
     setRefundCartScreenKbOpen(false)
     cancelRefundCartKbBlurHide()
+    setRefundPayoutOpen(false)
     setAltPaymentExpanded(false)
     setVoucherFormOpen(false)
     setHouseAccountFormOpen(false)
@@ -2252,7 +2303,49 @@ export function Register() {
     setRefundCreditPhone('')
     setRefundCartScreenKbOpen(false)
     cancelRefundCartKbBlurHide()
+    setRefundPayoutOpen(false)
     setCart([])
+  }
+
+  function openRefundPayoutStep() {
+    if (!refundSession) return
+    const lines = cart.filter((l) => l.refundSaleLineIndex !== undefined && l.quantity > 0.005)
+    if (!lines.length) {
+      setError('Use − / + so at least one line has a quantity to refund')
+      return
+    }
+    if (refundSession.previewSale.refundStatus === 'refunded' || refundSession.refundPreview.remainingTotal <= 0.005) {
+      setError('This sale is already fully refunded')
+      return
+    }
+    setError(null)
+    setRefundPayoutOpen(true)
+  }
+
+  function closeRefundPayoutStep() {
+    setRefundPayoutOpen(false)
+    setRefundCartScreenKbOpen(false)
+    cancelRefundCartKbBlurHide()
+  }
+
+  function openExchangePayoutStep() {
+    if (!exchangeSession) return
+    if (!cartReturnLines(cart).some((l) => l.quantity > 0.005)) {
+      setError('Use − / + so at least one return line has quantity')
+      return
+    }
+    if (!cartNewSaleLines(cart).some((l) => l.quantity > 0.005)) {
+      setError('Add at least one replacement item before continuing')
+      return
+    }
+    setError(null)
+    setExchangePayoutOpen(true)
+  }
+
+  function closeExchangePayoutStep() {
+    setExchangePayoutOpen(false)
+    setRefundCartScreenKbOpen(false)
+    cancelRefundCartKbBlurHide()
   }
 
   async function exitRefundModePrompt() {
@@ -2263,6 +2356,10 @@ export function Register() {
   }
 
   function beginExchangeMode(data: SaleExchangePreview, routeSaleId: string) {
+    if (manualReturnActive) {
+      setError('Exit manual return mode before starting an exchange')
+      return
+    }
     if (refundSession) {
       setError('Exit refund mode before starting an exchange')
       return
@@ -2295,6 +2392,7 @@ export function Register() {
       typeof data.sale.storeCreditPhone === 'string' ? data.sale.storeCreditPhone : '',
     )
     setExchangeAdminBypass(false)
+    setExchangePayoutOpen(false)
     setRefundCartScreenKbOpen(false)
     cancelRefundCartKbBlurHide()
     setAltPaymentExpanded(false)
@@ -2314,6 +2412,7 @@ export function Register() {
     setExchangeNote('')
     setExchangeCreditPhone('')
     setExchangeAdminBypass(false)
+    setExchangePayoutOpen(false)
     setRefundCartScreenKbOpen(false)
     cancelRefundCartKbBlurHide()
     setCart([])
@@ -2462,6 +2561,118 @@ export function Register() {
     }
   }
 
+  function beginManualReturnMode() {
+    if (!canManualReturnPos) return
+    if (refundSession) {
+      setError('Exit refund mode before manual return')
+      return
+    }
+    if (exchangeSession) {
+      setError('Exit exchange mode before manual return')
+      return
+    }
+    if (activeOpenTabId) {
+      setError('Close or complete the open tab before manual return')
+      return
+    }
+    setError(null)
+    setNotice(null)
+    setCart([])
+    setManualReturnNote('')
+    setManualReturnCreditPhone('')
+    setManualReturnPayoutOpen(false)
+    setManualReturnActive(true)
+  }
+
+  function clearManualReturnMode() {
+    setManualReturnActive(false)
+    setManualReturnPayoutOpen(false)
+    setManualReturnNote('')
+    setManualReturnCreditPhone('')
+    setCart([])
+  }
+
+  async function exitManualReturnModePrompt() {
+    if (!manualReturnActive) return
+    if (!window.confirm('Leave manual return mode? The cart will clear.')) return
+    clearManualReturnMode()
+  }
+
+  function openManualReturnPayoutStep() {
+    if (!manualReturnActive || cart.length === 0) return
+    setManualReturnPayoutOpen(true)
+  }
+
+  function closeManualReturnPayoutStep() {
+    setManualReturnPayoutOpen(false)
+  }
+
+  async function submitManualReturnCheckout(method: 'cash' | 'card' | 'store_credit') {
+    if (!manualReturnActive || busy) return
+    const noteTrim = manualReturnNote.trim()
+    if (noteTrim.length < 3) {
+      setError('Enter a reason for this return (at least 3 characters)')
+      return
+    }
+    if (cart.length === 0) {
+      setError('Add at least one product to return')
+      return
+    }
+    if (method === 'store_credit') {
+      const phone = normalizePhone(manualReturnCreditPhone)
+      if (!phone) {
+        setError('Enter the customer phone number for store credit')
+        return
+      }
+    }
+    setBusy(true)
+    setError(null)
+    setNotice(null)
+    try {
+      const body: Record<string, unknown> = {
+        tillCode: POS_TILL_CODE,
+        note: noteTrim,
+        payoutMethod: method,
+        lines: cart.map((l) => ({ productId: l.productId, quantity: l.quantity })),
+      }
+      if (method === 'store_credit') {
+        body.storeCreditPhone = normalizePhone(manualReturnCreditPhone)
+      }
+      const resp = await apiFetch<{ manualReturn?: ManualReturnResult }>('/manual-returns', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      })
+      const result = resp.manualReturn
+      if (!result) {
+        throw new Error('Manual return failed')
+      }
+      setNotice('Manual return recorded — stock updated where applicable')
+      const printLines = cart.map((l) => ({
+        qty: l.quantity,
+        name: l.name,
+        unitPrice: l.unitPrice,
+        lineTotal: cartLineSubtotal(l),
+      }))
+      const printed = await printManualReturnReceipt(
+        result,
+        printLines,
+        method,
+        noteTrim,
+        method === 'store_credit' ? normalizePhone(manualReturnCreditPhone) : undefined,
+      )
+      if (!printed.ok) {
+        setNotice(
+          `Manual return saved. Receipt did not print — ${printed.error ?? 'printer error'}.`,
+        )
+      }
+      clearManualReturnMode()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Manual return failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function submitRefundCheckout(method: 'cash' | 'card' | 'store_credit') {
     if (!refundSession || busy) return
     const lines = cart
@@ -2519,27 +2730,23 @@ export function Register() {
       const settlement = resp.refundSettlement
       setNotice('Sale refunded — stock and accounts updated where applicable')
       if (refundedSale) {
-        try {
-          const printed = await printRefundReceiptToDevice(refundedSale, noteTrim || undefined, method, {
-            lines: refundLinesForPrint,
-            refundTotal: refundPrintTotal,
-            ...(settlement
-              ? {
-                  cashPaidOut: method === 'cash' ? settlement.netCashOrCardPaidOut : 0,
-                  cardPaidOut: method === 'card' ? settlement.netCashOrCardPaidOut : 0,
-                  storeCreditIssued: settlement.storeCreditIssued,
-                }
-              : {}),
-            ...(method === 'store_credit'
-              ? { storeCreditPhoneDigits: normalizePhone(refundCreditPhone) }
-              : {}),
-          })
-          if (!printed.ok) throw new Error(printed.error ?? 'Refund receipt print failed')
-        } catch (e) {
-          setError(
-            e instanceof Error
-              ? `${e.message} — refund was saved. Start a new refund from REFUND if you need another line.`
-              : 'Refund receipt print failed — refund was saved.',
+        const printed = await printRefundReceiptToDevice(refundedSale, noteTrim || undefined, method, {
+          lines: refundLinesForPrint,
+          refundTotal: refundPrintTotal,
+          ...(settlement
+            ? {
+                cashPaidOut: method === 'cash' ? settlement.netCashOrCardPaidOut : 0,
+                cardPaidOut: method === 'card' ? settlement.netCashOrCardPaidOut : 0,
+                storeCreditIssued: settlement.storeCreditIssued,
+              }
+            : {}),
+          ...(method === 'store_credit'
+            ? { storeCreditPhoneDigits: normalizePhone(refundCreditPhone) }
+            : {}),
+        })
+        if (!printed.ok) {
+          setNotice(
+            `Sale refunded. Receipt did not print — ${printed.error ?? 'printer error'}. Reprint from history if needed.`,
           )
         }
       }
@@ -2611,8 +2818,12 @@ export function Register() {
       }
       loyalty.appendLoyaltyToSaleBody(body)
       appendCashierSignInToSaleBody(body, session?.signInMethod)
-      if (cashRoundingAdjustment != null && Math.abs(cashRoundingAdjustment) > 0.005) {
-        body.cashRoundingAdjustment = round2(cashRoundingAdjustment)
+      const roundingAdj = effectiveCashRoundingAdjustment(
+        payment?.cashAmount ?? 0,
+        cashRoundingAdjustment ?? 0,
+      )
+      if (Math.abs(roundingAdj) > 0.005) {
+        body.cashRoundingAdjustment = round2(roundingAdj)
       }
       const sale = await apiFetch<Sale>('/sales', {
         method: 'POST',
@@ -2655,8 +2866,12 @@ export function Register() {
         }
         loyalty.appendLoyaltyToSaleBody(body)
         appendCashierSignInToSaleBody(body, session?.signInMethod)
-        if (cashRoundingAdjustment != null && Math.abs(cashRoundingAdjustment) > 0.005) {
-          body.cashRoundingAdjustment = round2(cashRoundingAdjustment)
+        const offlineRoundingAdj = effectiveCashRoundingAdjustment(
+          payment?.cashAmount ?? 0,
+          cashRoundingAdjustment ?? 0,
+        )
+        if (Math.abs(offlineRoundingAdj) > 0.005) {
+          body.cashRoundingAdjustment = round2(offlineRoundingAdj)
         }
         try {
           await enqueueOfflineSale(clientLocalId, body)
@@ -2705,8 +2920,17 @@ export function Register() {
                   loyaltyPhoneMasked: loyalty.loyaltyMasked ?? undefined,
                 }
               : {}),
-            ...(cashRoundingAdjustment != null && Math.abs(cashRoundingAdjustment) > 0.005
-              ? { cashRoundingAdjustment: round2(cashRoundingAdjustment) }
+            ...(Math.abs(
+              effectiveCashRoundingAdjustment(payment?.cashAmount ?? 0, cashRoundingAdjustment ?? 0),
+            ) > 0.005
+              ? {
+                  cashRoundingAdjustment: round2(
+                    effectiveCashRoundingAdjustment(
+                      payment?.cashAmount ?? 0,
+                      cashRoundingAdjustment ?? 0,
+                    ),
+                  ),
+                }
               : {}),
           }
           setLastSale(queuedSale)
@@ -2822,13 +3046,10 @@ export function Register() {
       return
     }
 
-    if (method === 'card' && entered > cardMax + 0.01) {
-      setError(`Card amount cannot exceed amount due (${cardMax.toFixed(2)})`)
-      return
-    }
-
+    const cardApply =
+      method === 'card' ? cardAmountToApply(entered, cardMax, cashRoundingConfig) : entered
     const nextCash = round2(prevCash + (method === 'cash' ? entered : 0))
-    const nextCard = round2(prevCard + (method === 'card' ? entered : 0))
+    const nextCard = round2(prevCard + (method === 'card' ? cardApply : 0))
     const state = computeCheckoutTenders({
       ...tenderBase,
       cashReceived: nextCash,
@@ -2923,7 +3144,15 @@ export function Register() {
       houseAccountNumber,
       houseAccountName,
       purchaseOrderNumber,
-      amountDue: round2(total - cashReceived - cardReceived - onAccountApplied),
+      amountDue: checkoutAmountDue(
+        checkoutTenderInput({
+          total,
+          cashReceived,
+          cardReceived,
+          storeCredit: 0,
+          onAccount: onAccountApplied,
+        }),
+      ),
     })
   }
 
@@ -2941,7 +3170,15 @@ export function Register() {
       houseAccountNumber: '',
       houseAccountName: '',
       purchaseOrderNumber: '',
-      amountDue: round2(total - cashReceived - cardReceived - storeCreditApplied),
+      amountDue: checkoutAmountDue(
+        checkoutTenderInput({
+          total,
+          cashReceived,
+          cardReceived,
+          storeCredit: storeCreditApplied,
+          onAccount: 0,
+        }),
+      ),
     })
   }
 
@@ -2949,8 +3186,9 @@ export function Register() {
     const total = pendingSplit?.total ?? cartTotal
     const prevCash = pendingSplit?.cashReceived ?? 0
     const prevCard = pendingSplit?.cardReceived ?? 0
+    const prevSc = pendingSplit?.storeCreditApplied ?? 0
     const prevOa = pendingSplit?.onAccountApplied ?? 0
-    const maxVoucher = round2(total - prevCash - prevCard - prevOa - loyalty.loyaltyDiscount)
+    const maxVoucher = round2(exactMerchandiseDue(total, loyalty.loyaltyDiscount, prevSc, prevOa) - prevCash - prevCard)
     if (voucherBalanceHint === null) {
       setError('Check balance first')
       return
@@ -2986,12 +3224,13 @@ export function Register() {
     const total = pendingSplit?.total ?? cartTotal
     const prevCash = pendingSplit?.cashReceived ?? 0
     const prevCard = pendingSplit?.cardReceived ?? 0
+    const prevSc = pendingSplit?.storeCreditApplied ?? 0
     const prevOa = pendingSplit?.onAccountApplied ?? 0
     const oaId = pendingSplit?.houseAccountId ?? ''
     const oaNum = pendingSplit?.houseAccountNumber ?? ''
     const oaName = pendingSplit?.houseAccountName ?? ''
     const poNumber = pendingSplit?.purchaseOrderNumber ?? ''
-    const maxVoucher = round2(total - prevCash - prevCard - prevOa - loyalty.loyaltyDiscount)
+    const maxVoucher = round2(exactMerchandiseDue(total, loyalty.loyaltyDiscount, prevSc, prevOa) - prevCash - prevCard)
     if (amt > maxVoucher + 0.01) {
       setError(`Voucher cannot exceed ${maxVoucher.toFixed(2)} (still due)`)
       return
@@ -3180,14 +3419,9 @@ export function Register() {
       await submitRefundCheckout('cash')
       return
     }
+    if (manualReturnActive) return
     if (exchangeSession) {
-      if (Math.abs(exchangeNetAmount) <= 0.005) {
-        await submitExchangeCheckout('even')
-      } else if (exchangeNetAmount > 0.005) {
-        await submitExchangeCheckout('customer_pays_cash')
-      } else {
-        await submitExchangeCheckout('customer_receives_cash')
-      }
+      setError('Use Continue to exchange, then settle in the confirmation step')
       return
     }
     await applyPartialPayment('cash')
@@ -3198,21 +3432,12 @@ export function Register() {
       await submitRefundCheckout('card')
       return
     }
+    if (manualReturnActive) return
     if (exchangeSession) {
       setError('Exchanges settle with cash or store credit only — not card')
       return
     }
     await applyPartialPayment('card')
-  }
-
-  async function checkoutRefundStoreCredit() {
-    if (!refundSession) return
-    await submitRefundCheckout('store_credit')
-  }
-
-  async function checkoutExchangeStoreCredit() {
-    if (!exchangeSession) return
-    await submitExchangeCheckout('customer_receives_store_credit')
   }
 
   function pressKey(key: string) {
@@ -4376,6 +4601,68 @@ export function Register() {
     return { ok: true }
   }
 
+  async function printManualReturnReceipt(
+    result: ManualReturnResult,
+    lines: Array<{ qty: number; name: string; unitPrice: number; lineTotal: number }>,
+    payoutMethod: 'cash' | 'card' | 'store_credit',
+    note: string,
+    storeCreditPhoneDigits?: string,
+  ): Promise<{ ok: boolean; error?: string }> {
+    if (!window.electronPos) return { ok: true }
+    const settings = readPosPrinterSettings()
+    const cfg = settings.receiptConfig
+    const total = result.returnTotal
+    const returnCash = payoutMethod === 'cash' ? total : 0
+    const returnCard = payoutMethod === 'card' ? total : 0
+    const returnStoreCredit = payoutMethod === 'store_credit' ? total : 0
+    const payoutLabel =
+      payoutMethod === 'store_credit' ? 'Store credit' : payoutMethod === 'card' ? 'Card' : 'Cash'
+    const digitsForMask = storeCreditPhoneDigits?.replace(/\D/g, '') ?? ''
+    const storeCreditPhoneDisplay =
+      returnStoreCredit > 0.005 && digitsForMask ? maskPhoneForReceipt(digitsForMask) : undefined
+    const receipt = {
+      headerLines: [cfg.headerLine1, cfg.headerLine2, cfg.headerLine3],
+      phone: cfg.phone,
+      vatNumber: cfg.vatNumber,
+      receiptTitle: 'MANUAL RETURN',
+      receiptNumberPrefix: 'Return',
+      receiptNumber: result.returnId,
+      cashierName: resolveCashierDisplayName(session?.user),
+      tillNumber: POS_TILL_CODE,
+      tillLabel: cfg.tillLabel,
+      slipLabel: cfg.slipLabel,
+      timestampIso: new Date().toISOString(),
+      paymentLabel: payoutMethod === 'store_credit' ? 'Return (store credit)' : 'Manual return',
+      copyLabel: 'MANUAL RETURN',
+      lines,
+      subtotal: total,
+      total,
+      totalDueLabel: 'RETURN TOTAL:',
+      thankYouLine: 'PLEASE SIGN BELOW',
+      refundAck: {
+        refundTotal: total,
+        refundCash: returnCash,
+        refundCard: returnCard,
+        refundStoreCredit: returnStoreCredit > 0.005 ? returnStoreCredit : undefined,
+        ...(storeCreditPhoneDisplay && storeCreditPhoneDisplay !== '—'
+          ? { storeCreditPhoneDisplay }
+          : {}),
+        note: [note.trim(), 'No original sale record', `Payout: ${payoutLabel}`].filter(Boolean).join(' · '),
+      },
+    }
+    if (settings.autoOpenDrawer && (returnCash > 0.005 || returnCard > 0.005)) {
+      const d = await kickCashDrawerIfConfigured(settings)
+      if (!d.ok) return { ok: false, error: d.error ?? 'Return saved, but drawer failed to open' }
+    }
+    const r = await window.electronPos.printReceipt(
+      settings.transport,
+      receipt,
+      receiptPrintOpts(settings),
+    )
+    if (!r.ok) return { ok: false, error: r.error ?? 'Return receipt print failed' }
+    return { ok: true }
+  }
+
   async function printExchangeReceiptToDevice(
     sale: Sale,
     note?: string,
@@ -4559,9 +4846,7 @@ export function Register() {
       transport: printerSettings.transport,
       ...receiptPrintOpts(printerSettings),
       receipt: {
-        headerLines: [cfg.headerLine1, cfg.headerLine2, cfg.headerLine3],
-        phone: cfg.phone,
-        vatNumber: cfg.vatNumber,
+        headerLines: [],
         receiptTitle: 'SHIFT Z REPORT',
         receiptNumberPrefix: 'Shift',
         receiptNumber: String(report.shiftId).slice(-8),
@@ -4571,7 +4856,7 @@ export function Register() {
         slipLabel: cfg.slipLabel,
         timestampIso: new Date().toISOString(),
         paymentLabel: 'Shift summary',
-        lines: [{ qty: 1, name: 'Shift report', unitPrice: s.turnover, lineTotal: s.turnover }],
+        lines: [],
         shiftReport: {
           turnover: s.turnover,
           cashSales: s.cashSales,
@@ -4712,20 +4997,23 @@ export function Register() {
     setError(null)
     try {
       if (last.kind === 'raw') {
+        const copies = last.payloads ?? [last.payload]
         if (!window.electronPos) {
           setNotice(last.successNotice ?? 'Receipt printed (web preview)')
           return
         }
-        const r = await window.electronPos.printReceipt(last.payload.transport, last.payload.receipt, {
-          columns: last.payload.columns,
-          cut: last.payload.cut,
-          printDensity: last.payload.printDensity,
-          lineSpacing: last.payload.lineSpacing,
-          headerBold: last.payload.headerBold,
-        })
-        if (!r.ok) {
-          setError(r.error ?? 'Receipt print failed')
-          return
+        for (const p of copies) {
+          const r = await window.electronPos.printReceipt(p.transport, p.receipt, {
+            columns: p.columns,
+            cut: p.cut,
+            printDensity: p.printDensity,
+            lineSpacing: p.lineSpacing,
+            headerBold: p.headerBold,
+          })
+          if (!r.ok) {
+            setError(r.error ?? 'Receipt print failed')
+            return
+          }
         }
         setNotice(last.successNotice ?? 'Receipt printed')
         return
@@ -4843,7 +5131,7 @@ export function Register() {
 
   return (
     <div
-      className={`register-viewport${refundSession ? ' register-viewport--refund-mode' : ''}${exchangeSession ? ' register-viewport--exchange-mode' : ''}${settingsObscured ? ' register-viewport--obscured' : ''}`}
+      className={`register-viewport${refundSession ? ' register-viewport--refund-mode' : ''}${exchangeSession ? ' register-viewport--exchange-mode' : ''}${manualReturnActive ? ' register-viewport--manual-return-mode' : ''}${settingsObscured ? ' register-viewport--obscured' : ''}`}
       aria-hidden={settingsObscured || undefined}
     >
       <PosShell
@@ -4913,6 +5201,21 @@ export function Register() {
               </span>
               <button type="button" className="btn ghost small register-refund-banner-exit" onClick={() => void exitExchangeModePrompt()}>
                 Exit exchange
+              </button>
+            </div>
+          ) : null}
+          {manualReturnActive ? (
+            <div className="register-refund-banner register-manual-return-banner" role="status" aria-live="polite">
+              <span className="register-refund-banner-badge">Manual return</span>
+              <span className="register-refund-banner-meta">
+                No original sale record · scan items to return · <strong>admin only</strong>
+              </span>
+              <button
+                type="button"
+                className="btn ghost small register-refund-banner-exit"
+                onClick={() => void exitManualReturnModePrompt()}
+              >
+                Exit manual return
               </button>
             </div>
           ) : null}
@@ -5120,9 +5423,11 @@ export function Register() {
                               ? 'Leave refund mode (cart will clear)'
                               : exchangeSession
                                 ? 'Finish exchange first'
-                                : 'Refund — enter sale id from receipt'
+                                : manualReturnActive
+                                  ? 'Finish manual return first'
+                                  : 'Refund — enter sale id from receipt'
                           }
-                          disabled={!!exchangeSession}
+                          disabled={!!exchangeSession || !!manualReturnActive}
                           onClick={() => {
                             if (refundSession) {
                               void exitRefundModePrompt()
@@ -5142,6 +5447,39 @@ export function Register() {
                           {refundSession ? 'EXIT REFUND' : 'REFUND'}
                         </button>
                       ) : null}
+                      {canManualReturnPos ? (
+                        <button
+                          type="button"
+                          className="key-btn key-btn-fn"
+                          title={
+                            manualReturnActive
+                              ? 'Leave manual return mode (cart will clear)'
+                              : refundSession
+                                ? 'Finish refund first'
+                                : exchangeSession
+                                  ? 'Finish exchange first'
+                                  : 'Return without sale record (admin)'
+                          }
+                          disabled={!!refundSession || !!exchangeSession}
+                          onClick={() => {
+                            if (manualReturnActive) {
+                              void exitManualReturnModePrompt()
+                              return
+                            }
+                            if (activeOpenTabId) {
+                              setError('Close or complete the open tab before manual return')
+                              return
+                            }
+                            if (cart.length > 0) {
+                              setError('Clear the cart before manual return')
+                              return
+                            }
+                            beginManualReturnMode()
+                          }}
+                        >
+                          {manualReturnActive ? 'EXIT RETURN' : 'NO-SALE RETURN'}
+                        </button>
+                      ) : null}
                       {canExchange ? (
                         <button
                           type="button"
@@ -5153,7 +5491,7 @@ export function Register() {
                                 ? 'Finish refund first'
                                 : 'Exchange — return items and add replacements'
                           }
-                          disabled={!!refundSession}
+                          disabled={!!refundSession || !!manualReturnActive}
                           onClick={() => {
                             if (exchangeSession) {
                               void exitExchangeModePrompt()
@@ -5279,8 +5617,8 @@ export function Register() {
                         onClick={() => lastReceiptForReprint && void printLastReceipt(lastReceiptForReprint)}
                         title={
                           lastReceiptForReprint
-                            ? 'Reprint last completed sale receipt'
-                            : 'Complete a sale to enable reprint'
+                            ? 'Reprint last receipt (sale, lay-by payment, or account payment)'
+                            : 'Complete a transaction to enable reprint'
                         }
                       >
                         PRINT LAST
@@ -5768,9 +6106,21 @@ export function Register() {
               </div>
             ) : (
               <>
-                <h2>{refundSession ? 'Refund cart' : exchangeSession ? 'Exchange cart' : 'Cart'}</h2>
+                <h2>
+                  {refundSession
+                    ? 'Refund cart'
+                    : exchangeSession
+                      ? 'Exchange cart'
+                      : manualReturnActive
+                        ? 'Return cart'
+                        : 'Cart'}
+                </h2>
                 <div
-                  className={`cart-body${refundSession && refundCartScreenKbOpen ? ' cart-body--refund-kb-open' : ''}`}
+                  className={`cart-body${
+                    refundSession && refundCartScreenKbOpen && refundPayoutOpen ? ' cart-body--refund-kb-open' : ''
+                  }${exchangeSession && refundCartScreenKbOpen && exchangePayoutOpen ? ' cart-body--refund-kb-open' : ''}${
+                    refundSession ? ' cart-body--refund-select' : ''
+                  }${exchangeSession ? ' cart-body--refund-select cart-body--exchange-build' : ''}`}
                 >
                   {cart.length === 0 ? (
                     <p className="muted empty-hint cart-empty-msg">
@@ -5781,6 +6131,17 @@ export function Register() {
                           : 'Tap a product to add.'}
                     </p>
                   ) : (
+                    <>
+                      {refundSession ? (
+                        <p className="muted small register-refund-select-hint" role="note">
+                          Tap <strong>−</strong> to remove items the customer is keeping, or reduce quantity on a line.
+                        </p>
+                      ) : null}
+                      {exchangeSession ? (
+                        <p className="muted small register-refund-select-hint" role="note">
+                          Adjust return quantities with <strong>− / +</strong>, then add replacement items from the list.
+                        </p>
+                      ) : null}
                     <div className="cart-lines" ref={cartLinesScrollRef}>
                       {cart.map((l, i) => {
                         const lineProduct = productsById.get(l.productId)
@@ -5868,6 +6229,7 @@ export function Register() {
                         )
                       })}
                     </div>
+                    </>
                   )}
                 </div>
                 <div className="cart-footer">
@@ -6066,71 +6428,6 @@ export function Register() {
                       ) : null}
                     </div>
                   ) : null}
-                  {(refundSession || exchangeSession) && cart.length > 0 ? (
-                    <>
-                      <label className="register-refund-note-field">
-                        <span className="muted small">
-                          {exchangeSession ? 'Exchange note (optional, audit)' : 'Refund note (optional, audit)'}
-                        </span>
-                        <textarea
-                          ref={refundNoteInputRef}
-                          className="register-refund-note-input"
-                          rows={2}
-                          value={exchangeSession ? exchangeNote : refundNote}
-                          onChange={(e) =>
-                            exchangeSession ? setExchangeNote(e.target.value) : setRefundNote(e.target.value)
-                          }
-                          placeholder="Reason or reference"
-                          inputMode={refundCartScreenKbOpen && refundCartKbTarget === 'note' ? 'none' : 'text'}
-                          {...refundCartKbHandlers('note')}
-                        />
-                      </label>
-                      {exchangeSession && !exchangeSession.eligibility.eligible && isRoleAdmin(session?.user) ? (
-                        <label className="register-refund-note-field" style={{ flexDirection: 'row', alignItems: 'center', gap: '0.5rem' }}>
-                          <input
-                            type="checkbox"
-                            checked={exchangeAdminBypass}
-                            onChange={(e) => setExchangeAdminBypass(e.target.checked)}
-                          />
-                          <span className="muted small">Admin bypass — allow exchange outside {exchangeSession.eligibility.maxDays}-day window</span>
-                        </label>
-                      ) : null}
-                      {(refundSession || (exchangeSession && exchangeNetAmount < -0.005)) ? (
-                        <>
-                          <label className="register-refund-note-field">
-                            <span className="muted small">
-                              Phone for store credit {exchangeSession ? '(exchange balance)' : '(required for Refund voucher)'}
-                            </span>
-                            <input
-                              ref={refundPhoneInputRef}
-                              className="register-refund-note-input"
-                              type="tel"
-                              inputMode={refundCartScreenKbOpen && refundCartKbTarget === 'phone' ? 'none' : 'numeric'}
-                              autoComplete="tel"
-                              value={exchangeSession ? exchangeCreditPhone : refundCreditPhone}
-                              onChange={(e) =>
-                                exchangeSession
-                                  ? setExchangeCreditPhone(e.target.value)
-                                  : setRefundCreditPhone(e.target.value)
-                              }
-                              placeholder="Digits only — credit loads onto this account"
-                              {...refundCartKbHandlers('phone')}
-                            />
-                          </label>
-                          {refundSession ? (
-                            <p className="muted small register-refund-credit-hint">
-                              Refund voucher: credits the cash/card portion of this refund as store credit. Any voucher used on
-                              the original sale is still restored automatically.
-                            </p>
-                          ) : (
-                            <p className="muted small register-refund-credit-hint">
-                              Issue the exchange balance as store credit on this phone number.
-                            </p>
-                          )}
-                        </>
-                      ) : null}
-                    </>
-                  ) : null}
                   {!refundSession && !exchangeSession && !showChangeView && cart.length > 0 && loyalty.loyaltyProgram?.enabled ? (
                     <button
                       type="button"
@@ -6158,161 +6455,372 @@ export function Register() {
                       <>
                         Refund total <strong className="total-amount">{cartTotal.toFixed(2)}</strong>
                       </>
+                    ) : manualReturnActive ? (
+                      <>
+                        Return total <strong className="total-amount">{cartTotal.toFixed(2)}</strong>
+                      </>
                     ) : exchangeSession ? (
                       <div className="cart-total-stack">
                         <div className="cart-total-row muted">
                           <span>Return value</span>
                           <span>−{exchangeReturnTotal.toFixed(2)}</span>
                         </div>
-                        <div className="cart-total-row muted">
-                          <span>Replacement value</span>
-                          <span>{exchangeNewTotal.toFixed(2)}</span>
-                        </div>
-                        <div className="cart-total-row cart-total-row--due">
-                          <span>{exchangeNetAmount >= -0.005 ? 'Net due' : 'Credit to customer'}</span>
-                          <strong className="total-amount">{Math.abs(exchangeNetAmount).toFixed(2)}</strong>
-                        </div>
+                        {exchangeHasReplacements ? (
+                          <>
+                            <div className="cart-total-row muted">
+                              <span>Replacement value</span>
+                              <span>{exchangeNewTotal.toFixed(2)}</span>
+                            </div>
+                            <div className="cart-total-row cart-total-row--due">
+                              <span>{exchangeNetAmount >= -0.005 ? 'Net due' : 'Credit to customer'}</span>
+                              <strong className="total-amount">{Math.abs(exchangeNetAmount).toFixed(2)}</strong>
+                            </div>
+                          </>
+                        ) : (
+                          <p className="muted small register-exchange-build-hint">
+                            Add replacement items from the list to see the net balance.
+                          </p>
+                        )}
                       </div>
-                    ) : loyalty.loyaltyDiscount > 0.005 || cartPayable.cashRoundingAdjustment > 0.005 ? (
+                    ) : loyalty.loyaltyDiscount > 0.005 || cartCheckout.showCashPayableHint ? (
                       <div className="cart-total-stack">
-                        <div className="cart-total-row muted">
-                          <span>Subtotal</span>
-                          <span>{cartTotal.toFixed(2)}</span>
-                        </div>
                         {loyalty.loyaltyDiscount > 0.005 ? (
-                          <div className="cart-total-row cart-total-row--loyalty">
-                            <span>Loyalty</span>
-                            <span>−{loyalty.loyaltyDiscount.toFixed(2)}</span>
-                          </div>
-                        ) : null}
-                        {cartPayable.cashRoundingAdjustment > 0.005 ? (
-                          <div className="cart-total-row muted">
-                            <span>Cash rounding</span>
-                            <span>+{cartPayable.cashRoundingAdjustment.toFixed(2)}</span>
-                          </div>
-                        ) : null}
-                        {cartPayable.cashRoundingAdjustment < -0.005 ? (
-                          <div className="cart-total-row muted">
-                            <span>Cash rounding</span>
-                            <span>{cartPayable.cashRoundingAdjustment.toFixed(2)}</span>
-                          </div>
+                          <>
+                            <div className="cart-total-row muted">
+                              <span>Subtotal</span>
+                              <span>{cartTotal.toFixed(2)}</span>
+                            </div>
+                            <div className="cart-total-row cart-total-row--loyalty">
+                              <span>Loyalty</span>
+                              <span>−{loyalty.loyaltyDiscount.toFixed(2)}</span>
+                            </div>
+                          </>
                         ) : null}
                         <div className="cart-total-row cart-total-row--due">
-                          <span>{cashRoundingConfig.enabled ? 'Cash due' : 'Due'}</span>
-                          <strong className="total-amount">{cartPayable.payableTotal.toFixed(2)}</strong>
+                          <span>Total</span>
+                          <strong className="total-amount">{cartCheckout.displayTotal.toFixed(2)}</strong>
                         </div>
-                      </div>
-                    ) : cashRoundingConfig.enabled && Math.abs(cartPayable.cashRoundingAdjustment) > 0.005 ? (
-                      <div className="cart-total-stack">
-                        <div className="cart-total-row muted">
-                          <span>Subtotal</span>
-                          <span>{cartTotal.toFixed(2)}</span>
-                        </div>
-                        <div className="cart-total-row muted">
-                          <span>Cash rounding</span>
-                          <span>
-                            {cartPayable.cashRoundingAdjustment > 0 ? '+' : ''}
-                            {cartPayable.cashRoundingAdjustment.toFixed(2)}
-                          </span>
-                        </div>
-                        <div className="cart-total-row cart-total-row--due">
-                          <span>Cash due</span>
-                          <strong className="total-amount">{cartPayable.payableTotal.toFixed(2)}</strong>
-                        </div>
+                        {cartCheckout.showCashPayableHint ? (
+                          <div className="cart-total-row muted">
+                            <span>Card</span>
+                            <span>{cartCheckout.exactTotal.toFixed(2)}</span>
+                          </div>
+                        ) : null}
                       </div>
                     ) : (
                       <>
-                        Total <strong className="total-amount">{cartTotal.toFixed(2)}</strong>
+                        Total <strong className="total-amount">{cartCheckout.displayTotal.toFixed(2)}</strong>
                       </>
                     )}
                   </div>
-                  <div className={`cash-footer${refundSession || exchangeSession ? ' refund-cart-checkout-footer' : ''}`}>
-                    <button
-                      type="button"
-                      className="btn checkout-btn cash-checkout-btn"
-                      disabled={
-                        busy ||
-                        cart.length === 0 ||
-                        (refundSession != null &&
-                          (refundSession.previewSale.refundStatus === 'refunded' ||
-                            refundSession.refundPreview.remainingTotal <= 0.005)) ||
-                        (exchangeSession != null &&
-                          (cartReturnLines(cart).length === 0 || cartNewSaleLines(cart).length === 0))
-                      }
-                      onClick={() => void checkoutCash()}
-                    >
-                      {busy
-                        ? 'Processing…'
-                        : refundSession
-                          ? 'Refund cash'
-                          : exchangeSession
-                            ? Math.abs(exchangeNetAmount) <= 0.005
-                              ? 'Complete exchange'
-                              : exchangeNetAmount > 0.005
-                                ? 'Pay cash'
-                                : 'Pay out cash'
-                            : 'Cash'}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn checkout-btn card-checkout-btn"
-                      disabled={
-                        busy ||
-                        cart.length === 0 ||
-                        !!exchangeSession ||
-                        (refundSession != null &&
-                          (refundSession.previewSale.refundStatus === 'refunded' ||
-                            refundSession.refundPreview.remainingTotal <= 0.005))
-                      }
-                      onClick={() => void checkoutCard()}
-                    >
-                      {busy ? 'Processing…' : refundSession ? 'Refund card' : 'Card'}
-                    </button>
-                    {refundSession ? (
+                  <div
+                    className={`cash-footer${refundSession || exchangeSession || manualReturnActive ? ' refund-cart-checkout-footer' : ''}`}
+                  >
+                    {manualReturnActive ? (
                       <button
                         type="button"
-                        className="btn checkout-btn storecredit-checkout-btn"
+                        className="btn checkout-btn primary refund-continue-btn"
+                        disabled={busy || cart.length === 0}
+                        onClick={openManualReturnPayoutStep}
+                      >
+                        Continue to return · R {cartTotal.toFixed(2)}
+                      </button>
+                    ) : refundSession ? (
+                      <button
+                        type="button"
+                        className="btn checkout-btn primary refund-continue-btn"
                         disabled={
                           busy ||
                           cart.length === 0 ||
                           refundSession.previewSale.refundStatus === 'refunded' ||
                           refundSession.refundPreview.remainingTotal <= 0.005
                         }
-                        onClick={() => void checkoutRefundStoreCredit()}
+                        onClick={openRefundPayoutStep}
                       >
-                        {busy ? 'Processing…' : 'Refund voucher'}
+                        Continue to refund · R {cartTotal.toFixed(2)}
                       </button>
-                    ) : null}
-                    {exchangeSession && exchangeNetAmount < -0.005 ? (
+                    ) : exchangeSession ? (
                       <button
                         type="button"
-                        className="btn checkout-btn storecredit-checkout-btn"
+                        className="btn checkout-btn primary refund-continue-btn"
                         disabled={
                           busy ||
                           cart.length === 0 ||
-                          cartReturnLines(cart).length === 0 ||
-                          cartNewSaleLines(cart).length === 0
+                          !cartReturnLines(cart).some((l) => l.quantity > 0.005) ||
+                          !cartNewSaleLines(cart).some((l) => l.quantity > 0.005)
                         }
-                        onClick={() => void checkoutExchangeStoreCredit()}
+                        onClick={openExchangePayoutStep}
                       >
-                        {busy ? 'Processing…' : 'Issue store credit'}
+                        {exchangeHasReplacements
+                          ? `Continue to exchange · R ${Math.abs(exchangeNetAmount).toFixed(2)}`
+                          : 'Continue to exchange'}
                       </button>
-                    ) : null}
+                    ) : (
+                      <>
+                    <button
+                      type="button"
+                      className="btn checkout-btn cash-checkout-btn"
+                      disabled={busy || cart.length === 0}
+                      onClick={() => void checkoutCash()}
+                    >
+                      {busy ? 'Processing…' : 'Cash'}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn checkout-btn card-checkout-btn"
+                      disabled={busy || cart.length === 0}
+                      onClick={() => void checkoutCard()}
+                    >
+                      {busy ? 'Processing…' : 'Card'}
+                    </button>
+                      </>
+                    )}
                   </div>
-                  {(refundSession || exchangeSession) && cart.length > 0 ? (
-                    <ScreenKeyboard
-                      visible={refundCartScreenKbOpen}
-                      layout={refundCartKbTarget === 'phone' ? 'numeric' : 'full'}
-                      onAction={handleRefundCartScreenKeyboardAction}
-                      className="open-tabs-screen-keyboard register-refund-cart-screen-kb"
-                    />
-                  ) : null}
                 </div>
               </>
             )}
           </section>
         </div>
         </div>
+        {refundPayoutOpen && refundSession ? (
+          <div
+            className="open-tabs-backdrop refund-payout-backdrop"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="refund-payout-title"
+            onMouseDown={(e) => {
+              if (e.target === e.currentTarget && !busy) closeRefundPayoutStep()
+            }}
+          >
+            <div className="open-tabs-dialog refund-payout-dialog">
+              <div className="open-tabs-header">
+                <h2 id="refund-payout-title">Complete refund</h2>
+                <button type="button" className="btn ghost open-tabs-close" disabled={busy} onClick={closeRefundPayoutStep}>
+                  Back
+                </button>
+              </div>
+              <div className={`quotes-modal-body${refundCartScreenKbOpen ? ' quotes-modal-body--with-keyboard' : ''}`}>
+                <p className="refund-payout-total-line">
+                  Refunding <strong>R {cartTotal.toFixed(2)}</strong>
+                </p>
+                <label className="register-refund-note-field">
+                  <span className="muted small">Refund note (optional, audit)</span>
+                  <textarea
+                    ref={refundNoteInputRef}
+                    className="register-refund-note-input"
+                    rows={2}
+                    value={refundNote}
+                    onChange={(e) => setRefundNote(e.target.value)}
+                    placeholder="Reason or reference"
+                    inputMode={refundCartScreenKbOpen && refundCartKbTarget === 'note' ? 'none' : 'text'}
+                    {...refundCartKbHandlers('note')}
+                  />
+                </label>
+                <div className="refund-payout-actions">
+                  <button
+                    type="button"
+                    className="btn checkout-btn cash-checkout-btn"
+                    disabled={busy}
+                    onClick={() => void submitRefundCheckout('cash')}
+                  >
+                    {busy ? 'Processing…' : 'Refund cash'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn checkout-btn card-checkout-btn"
+                    disabled={busy}
+                    onClick={() => void submitRefundCheckout('card')}
+                  >
+                    {busy ? 'Processing…' : 'Refund card'}
+                  </button>
+                </div>
+                <div className="refund-payout-voucher-block">
+                  <label className="register-refund-note-field">
+                    <span className="muted small">Phone for refund voucher (store credit)</span>
+                    <input
+                      ref={refundPhoneInputRef}
+                      className="register-refund-note-input"
+                      type="tel"
+                      inputMode={refundCartScreenKbOpen && refundCartKbTarget === 'phone' ? 'none' : 'numeric'}
+                      autoComplete="tel"
+                      value={refundCreditPhone}
+                      onChange={(e) => setRefundCreditPhone(e.target.value)}
+                      placeholder="Required for refund voucher only"
+                      {...refundCartKbHandlers('phone')}
+                    />
+                  </label>
+                  <p className="muted small register-refund-credit-hint">
+                    Refund voucher credits the cash/card portion as store credit. Any voucher used on the original sale is
+                    still restored automatically.
+                  </p>
+                  <button
+                    type="button"
+                    className="btn checkout-btn storecredit-checkout-btn refund-payout-voucher-btn"
+                    disabled={busy}
+                    onClick={() => void submitRefundCheckout('store_credit')}
+                  >
+                    {busy ? 'Processing…' : 'Refund voucher'}
+                  </button>
+                </div>
+                <ScreenKeyboard
+                  visible={refundCartScreenKbOpen}
+                  layout={refundCartKbTarget === 'phone' ? 'numeric' : 'full'}
+                  onAction={handleRefundCartScreenKeyboardAction}
+                  className="open-tabs-screen-keyboard register-refund-cart-screen-kb"
+                />
+              </div>
+            </div>
+          </div>
+        ) : null}
+        {exchangePayoutOpen && exchangeSession ? (
+          <div
+            className="open-tabs-backdrop refund-payout-backdrop"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="exchange-payout-title"
+            onMouseDown={(e) => {
+              if (e.target === e.currentTarget && !busy) closeExchangePayoutStep()
+            }}
+          >
+            <div className="open-tabs-dialog refund-payout-dialog">
+              <div className="open-tabs-header">
+                <h2 id="exchange-payout-title">Complete exchange</h2>
+                <button type="button" className="btn ghost open-tabs-close" disabled={busy} onClick={closeExchangePayoutStep}>
+                  Back
+                </button>
+              </div>
+              <div className={`quotes-modal-body${refundCartScreenKbOpen ? ' quotes-modal-body--with-keyboard' : ''}`}>
+                <div className="register-exchange-payout-summary">
+                  <div className="cart-total-row muted">
+                    <span>Return value</span>
+                    <span>−{exchangeReturnTotal.toFixed(2)}</span>
+                  </div>
+                  <div className="cart-total-row muted">
+                    <span>Replacement value</span>
+                    <span>{exchangeNewTotal.toFixed(2)}</span>
+                  </div>
+                  <div className="cart-total-row cart-total-row--due">
+                    <span>{exchangeNetAmount >= -0.005 ? 'Net due' : 'Credit to customer'}</span>
+                    <strong>{Math.abs(exchangeNetAmount).toFixed(2)}</strong>
+                  </div>
+                </div>
+                <label className="register-refund-note-field">
+                  <span className="muted small">Exchange note (optional, audit)</span>
+                  <textarea
+                    ref={refundNoteInputRef}
+                    className="register-refund-note-input"
+                    rows={2}
+                    value={exchangeNote}
+                    onChange={(e) => setExchangeNote(e.target.value)}
+                    placeholder="Reason or reference"
+                    inputMode={refundCartScreenKbOpen && refundCartKbTarget === 'note' ? 'none' : 'text'}
+                    {...refundCartKbHandlers('note')}
+                  />
+                </label>
+                {exchangeSession && !exchangeSession.eligibility.eligible && isRoleAdmin(session?.user) ? (
+                  <label
+                    className="register-refund-note-field"
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: '0.5rem' }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={exchangeAdminBypass}
+                      onChange={(e) => setExchangeAdminBypass(e.target.checked)}
+                    />
+                    <span className="muted small">
+                      Admin bypass — allow exchange outside {exchangeSession.eligibility.maxDays}-day window
+                    </span>
+                  </label>
+                ) : null}
+                {Math.abs(exchangeNetAmount) <= 0.005 ? (
+                  <button
+                    type="button"
+                    className="btn checkout-btn primary refund-continue-btn"
+                    disabled={busy}
+                    onClick={() => void submitExchangeCheckout('even')}
+                  >
+                    {busy ? 'Processing…' : 'Complete exchange'}
+                  </button>
+                ) : exchangeNetAmount > 0.005 ? (
+                  <>
+                    <p className="muted small register-exchange-cash-hint">
+                      Customer pays <strong>R {exchangeNetAmount.toFixed(2)}</strong> in cash. Enter tender on the
+                      register keypad if they pay more than the amount due.
+                    </p>
+                    <button
+                      type="button"
+                      className="btn checkout-btn cash-checkout-btn refund-continue-btn"
+                      disabled={busy}
+                      onClick={() => void submitExchangeCheckout('customer_pays_cash')}
+                    >
+                      {busy ? 'Processing…' : 'Customer pays cash'}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <p className="refund-payout-total-line">
+                      Pay customer <strong>R {Math.abs(exchangeNetAmount).toFixed(2)}</strong>
+                    </p>
+                    <div className="refund-payout-actions">
+                      <button
+                        type="button"
+                        className="btn checkout-btn cash-checkout-btn"
+                        disabled={busy}
+                        onClick={() => void submitExchangeCheckout('customer_receives_cash')}
+                      >
+                        {busy ? 'Processing…' : 'Pay out cash'}
+                      </button>
+                    </div>
+                    <div className="refund-payout-voucher-block">
+                      <label className="register-refund-note-field">
+                        <span className="muted small">Phone for store credit (exchange balance)</span>
+                        <input
+                          ref={refundPhoneInputRef}
+                          className="register-refund-note-input"
+                          type="tel"
+                          inputMode={refundCartScreenKbOpen && refundCartKbTarget === 'phone' ? 'none' : 'numeric'}
+                          autoComplete="tel"
+                          value={exchangeCreditPhone}
+                          onChange={(e) => setExchangeCreditPhone(e.target.value)}
+                          placeholder="Required for store credit only"
+                          {...refundCartKbHandlers('phone')}
+                        />
+                      </label>
+                      <p className="muted small register-refund-credit-hint">
+                        Issue the exchange balance as store credit on this phone number instead of cash from the till.
+                      </p>
+                      <button
+                        type="button"
+                        className="btn checkout-btn storecredit-checkout-btn refund-payout-voucher-btn"
+                        disabled={busy}
+                        onClick={() => void submitExchangeCheckout('customer_receives_store_credit')}
+                      >
+                        {busy ? 'Processing…' : 'Issue store credit'}
+                      </button>
+                    </div>
+                  </>
+                )}
+                <ScreenKeyboard
+                  visible={refundCartScreenKbOpen}
+                  layout={refundCartKbTarget === 'phone' ? 'numeric' : 'full'}
+                  onAction={handleRefundCartScreenKeyboardAction}
+                  className="open-tabs-screen-keyboard register-refund-cart-screen-kb"
+                />
+              </div>
+            </div>
+          </div>
+        ) : null}
+        <ManualReturnPayoutModal
+          open={manualReturnPayoutOpen}
+          busy={busy}
+          returnTotal={cartTotal}
+          note={manualReturnNote}
+          creditPhone={manualReturnCreditPhone}
+          onNoteChange={setManualReturnNote}
+          onCreditPhoneChange={setManualReturnCreditPhone}
+          onClose={closeManualReturnPayoutStep}
+          onSubmit={(method) => void submitManualReturnCheckout(method)}
+        />
         <StockOverrideModal
           request={stockOverrideRequest}
           selfApprover={stockOverrideSelfApprover}
@@ -6444,12 +6952,20 @@ export function Register() {
           cart={cart}
           cartTotal={cartTotal}
           isAdmin={isAdmin}
-          receiptEnabled={receiptEnabled}
+          canCancelLayBy={canCancelLayBy}
           tillCode={POS_TILL_CODE}
           onCreated={() => {
             clearActiveQuote()
             setCart([])
             void loadProducts()
+          }}
+          onPaymentReceiptPrinted={(payloads, successNotice) => {
+            setLastReceiptForReprint({
+              kind: 'raw',
+              payload: payloads[0],
+              payloads,
+              successNotice,
+            })
           }}
         />
         <HouseAccountsModal

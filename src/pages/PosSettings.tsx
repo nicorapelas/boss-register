@@ -11,9 +11,12 @@ import { usePosTheme } from '../theme/PosThemeContext'
 import type { PosTheme } from '../theme/posTheme'
 import { readPosKeySoundEnabled, writePosKeySoundEnabled } from '../audio/posKeySound'
 import {
-  DEFAULT_PRINTER_SETTINGS,
+  defaultPrinterSettingsForTill,
+  defaultUsbPrinterPath,
+  printerProfileLabel,
   readPosPrinterSettings,
   receiptPrintOpts,
+  resetPrinterLayoutKeepTransport,
   writePosPrinterSettings,
   type PosPrinterSettings,
   type PrintDensity,
@@ -228,7 +231,11 @@ export function PosSettingsPanel({ onClose }: { onClose: () => void }) {
           <h2 id="pos-printer-heading" className="pos-settings-section-title">
             Receipt printer
           </h2>
-          <p className="muted pos-settings-section-lead">Applies to this device only.</p>
+          <p className="muted pos-settings-section-lead">
+            Applies to this device only. This till: <strong>{printerProfileLabel()}</strong>.
+            <strong> Reset printer settings</strong> restores connection defaults for this hardware;
+            <strong> Reset receipt layout</strong> keeps your connection and resets columns, density, and header text.
+          </p>
 
           <div className="pos-settings-row">
             <label className="pos-settings-check">
@@ -265,7 +272,7 @@ export function PosSettingsPanel({ onClose }: { onClose: () => void }) {
                         ? { kind: 'lan', host: '192.168.1.50', port: 9100 }
                         : kind === 'serial'
                           ? { kind: 'serial', path: '/dev/ttyS0', baudRate: 38400 }
-                        : { kind: 'usb', path: '/dev/usb/lp0' },
+                        : { kind: 'usb', path: defaultUsbPrinterPath() },
                   })
                 }}
               >
@@ -419,8 +426,19 @@ export function PosSettingsPanel({ onClose }: { onClose: () => void }) {
             <button type="button" className="btn ghost" onClick={() => void testReceiptPrint()}>
               Print test receipt
             </button>
-            <button type="button" className="btn ghost" onClick={() => updatePrinter(DEFAULT_PRINTER_SETTINGS)}>
+            <button
+              type="button"
+              className="btn ghost"
+              onClick={() => updatePrinter(defaultPrinterSettingsForTill())}
+            >
               Reset printer settings
+            </button>
+            <button
+              type="button"
+              className="btn ghost"
+              onClick={() => updatePrinter(resetPrinterLayoutKeepTransport(printer))}
+            >
+              Reset receipt layout
             </button>
           </div>
           {printerNotice ? <p className="muted">{printerNotice}</p> : null}

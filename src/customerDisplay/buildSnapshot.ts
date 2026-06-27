@@ -1,6 +1,7 @@
 import type { CartLine, Product, StoreSettings } from '../api/types'
 import type { SessionBundle } from '../auth/types'
 import type { CustomerDisplaySnapshot, CustomerDisplayStoreConfig } from './types'
+import { resolveStoreIdleImageUrl } from './idleImageUrl'
 
 function roundCartMoney(n: number): number {
   return Math.round(n * 100) / 100
@@ -167,7 +168,7 @@ export function storeConfigFromSettings(settings: StoreSettings): CustomerDispla
     idle: {
       headline: cd?.idle?.headline?.trim() || 'Welcome',
       subtext: cd?.idle?.subtext?.trim() ?? '',
-      imageUrl: cd?.idle?.imageUrl?.trim() ?? '',
+      imageUrl: resolveStoreIdleImageUrl(cd?.idle),
     },
     theme: {
       backgroundColor: cd?.theme?.backgroundColor ?? '#0f1419',

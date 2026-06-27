@@ -141,6 +141,27 @@ export function computeCheckoutTenders(input: CheckoutTenderInput): {
   }
 }
 
+/** Card leg settles at exact merchandise due; keypad may show cash-rounded display total. */
+export function cardAmountToApply(
+  entered: number,
+  exactCardDue: number,
+  config: CashRoundingConfig,
+): number {
+  if (entered > exactCardDue + 0.005) return entered
+  if (entered + 0.005 >= exactCardDue) return exactCardDue
+  const inc = config.enabled ? config.incrementCents / 100 : 0
+  if (inc > 0 && exactCardDue - entered <= inc + 0.005) return exactCardDue
+  return entered
+}
+
+/** Cash rounding only applies when a cash leg is actually being paid. */
+export function effectiveCashRoundingAdjustment(
+  cashAmount: number,
+  adjustment: number,
+): number {
+  return cashAmount > 0.005 ? adjustment : 0
+}
+
 export function maxCardTender(
   input: Omit<CheckoutTenderInput, 'cashReceived' | 'cardReceived'> & { cardReceived: number },
 ): number {
@@ -153,6 +174,61 @@ export function maxCardTender(
   return round2(Math.max(0, remainingAfterScOa - input.cardReceived))
 }
 
+/** Exact merchandise still due (card / voucher / account — no cash rounding). */
+export function exactMerchandiseDue(
+  merchandiseTotal: number,
+  loyaltyDiscount = 0,
+  storeCredit = 0,
+  onAccount = 0,
+): number {
+  return round2(merchandiseTotal - loyaltyDiscount - storeCredit - onAccount)
+}
+
+export function checkoutAmountDue(input: CheckoutTenderInput): number {
+  return computeCheckoutTenders(input).amountDue
+}
+
+export type CartCheckoutDisplay = {
+  /** Exact amount due before cash rounding (card / voucher / account). */
+  exactTotal: number
+  /** Rounded cash leg when the full remainder would be paid in cash. */
+  cashPayableAmount: number
+  cashRoundingAdjustment: number
+  /** Show secondary card-exact hint when rounding would change the cash leg. */
+  showCashPayableHint: boolean
+  /** Primary register / customer-display total (payable after cash rounding when enabled). */
+  displayTotal: number
+}
+
+/** Register total area: exact total for card; optional cash-payable hint for cash. */
+export function cartCheckoutDisplay(
+  merchandiseTotal: number,
+  loyaltyDiscount: number,
+  config: CashRoundingConfig,
+): CartCheckoutDisplay {
+  const exactTotal = exactMerchandiseDue(merchandiseTotal, loyaltyDiscount)
+  const leg = computeCashPaymentLeg({
+    merchandiseTotal,
+    loyaltyDiscount,
+    storeCredit: 0,
+    onAccount: 0,
+    cardAmount: 0,
+    config,
+  })
+  const showCashPayableHint =
+    config.enabled &&
+    leg.cashDueExact > 0.005 &&
+    Math.abs(leg.cashAmount - leg.cashDueExact) > 0.005
+  return {
+    exactTotal,
+    cashPayableAmount: leg.cashAmount,
+    cashRoundingAdjustment: leg.cashRoundingAdjustment,
+    showCashPayableHint,
+    displayTotal: leg.payableTotal,
+  }
+}
+
+/** @deprecated Prefer cartCheckoutDisplay — kept for callers that need legacy payable total. */
 export function payableCartTotal(
   merchandiseTotal: number,
   loyaltyDiscount: number,

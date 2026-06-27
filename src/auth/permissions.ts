@@ -14,12 +14,25 @@ export function isPosManager(user: AuthUser | null | undefined): boolean {
   return p.includes('register.manager')
 }
 
+/** Lay-by cancellation — admin, manager role, or laybys.admin / register.manager permission. */
+export function canCancelLayBys(user: AuthUser | null | undefined): boolean {
+  if (!user) return false
+  if (user.role === 'admin' || user.role === 'manager') return true
+  const p = user.permissions ?? []
+  if (p.includes('*')) return true
+  return p.includes('laybys.admin') || p.includes('register.manager')
+}
+
 export function canOverridePriceOnPos(user: AuthUser | null | undefined): boolean {
   if (!user) return false
   if (user.role === 'admin') return true
   const p = user.permissions ?? []
   if (p.includes('*')) return true
   return p.includes('register.price_override')
+}
+
+export function canManualReturn(user: AuthUser | null | undefined): boolean {
+  return isRoleAdmin(user)
 }
 
 export function canRefundSales(user: AuthUser | null | undefined): boolean {
