@@ -93,6 +93,10 @@ if [ -x \"\$HOME/bin/ncr-map-operator-touch.sh\" ]; then
   \"\$HOME/bin/ncr-map-operator-touch.sh\" >> \"\$LOG\" 2>&1 || true
 fi
 
+if [ -x \"\$HOME/bin/posiflex-dual-display-setup.sh\" ]; then
+  \"\$HOME/bin/posiflex-dual-display-setup.sh\" >> \"\$LOG\" 2>&1 || true
+fi
+
 if [ ! -x \"\$APP\" ]; then
   echo \"[\$(date -Is)] CogniPOS autostart: AppImage missing: \$APP\" >> \"\$LOG\"
   exit 1
@@ -172,6 +176,9 @@ DESKTOP
     if command -v update-desktop-database >/dev/null 2>&1; then
       update-desktop-database \"\$HOME/.local/share/applications\" 2>/dev/null || true
     fi
+    if [ -x \"\$HOME/bin/posiflex-dual-display-setup.sh\" ]; then
+      env DISPLAY=\"$display\" XAUTHORITY=\"$xauthority\" \"\$HOME/bin/posiflex-dual-display-setup.sh\" >> /home/${user}/electropos.log 2>&1 || true
+    fi
     nohup env DISPLAY=\"$display\" XAUTHORITY=\"$xauthority\" \"$remote_app\" --no-sandbox --disable-gpu > /home/${user}/electropos.log 2>&1 < /dev/null &
     sleep 2
     echo REMOTE_PROCESS:
@@ -240,6 +247,32 @@ pos_install_posiflex_serial_udev() {
   "
 }
 
+pos_install_posiflex_touchscreen_xorg() {
+  local ssh_opts="$1"
+  local user="$2"
+  local host="$3"
+  local conf_src="$4"
+
+  if [[ ! -f "$conf_src" ]]; then
+    echo "WARN: touchscreen xorg conf not found: $conf_src" >&2
+    return 0
+  fi
+
+  echo "== Install Posiflex touch calibration (xorg) on ${user}@${host} =="
+  scp $ssh_opts "$conf_src" "${user}@${host}:/tmp/99-touchscreen-matrix.conf"
+  ssh $ssh_opts "${user}@${host}" "
+    if sudo -n true 2>/dev/null; then
+      sudo install -m 644 /tmp/99-touchscreen-matrix.conf /etc/X11/xorg.conf.d/99-touchscreen-matrix.conf
+      rm -f /tmp/99-touchscreen-matrix.conf
+      echo 'Touch calibration installed — log out/in (or reboot) once for xorg to apply'
+    else
+      echo 'NOTE: sudo password required on the till. Run:'
+      echo '  sudo install -m 644 /tmp/99-touchscreen-matrix.conf /etc/X11/xorg.conf.d/99-touchscreen-matrix.conf'
+      echo 'Then log out and back in (or reboot).'
+    fi
+  "
+}
+
 pos_install_ncr_line_display_udev() {
   local ssh_opts="$1"
   local user="$2"
@@ -304,6 +337,45 @@ AUTOSTART
     chmod 644 \"$remote_autostart\"
     DISPLAY=\"$display\" XAUTHORITY=\"/home/${user}/.Xauthority\" \"$remote_script\" || true
     echo \"Operator touch map installed: $remote_script\"
+  "
+}
+
+pos_install_posiflex_dual_display() {
+  local ssh_opts="$1"
+  local user="$2"
+  local host="$3"
+  local script_src="$4"
+  local display="${5:-:0}"
+
+  if [[ ! -f "$script_src" ]]; then
+    echo "WARN: dual display script not found: $script_src" >&2
+    return 0
+  fi
+
+  local remote_script="/home/${user}/bin/posiflex-dual-display-setup.sh"
+  local remote_autostart="/home/${user}/.config/autostart/posiflex-dual-display.desktop"
+
+  echo "== Install Posiflex dual-display setup on ${user}@${host} =="
+  scp $ssh_opts "$script_src" "${user}@${host}:/tmp/posiflex-dual-display-setup.sh"
+  ssh $ssh_opts "${user}@${host}" "
+    set -e
+    mkdir -p \"\$HOME/bin\" \"\$HOME/.config/autostart\"
+    install -m 755 /tmp/posiflex-dual-display-setup.sh \"$remote_script\"
+    rm -f /tmp/posiflex-dual-display-setup.sh
+    cat > \"$remote_autostart\" <<AUTOSTART
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Posiflex dual display
+Comment=Operator LVDS primary + touch map for customer VGA
+Exec=${remote_script}
+Terminal=false
+X-GNOME-Autostart-enabled=true
+X-GNOME-Autostart-Delay=2
+AUTOSTART
+    chmod 644 \"$remote_autostart\"
+    DISPLAY=\"$display\" XAUTHORITY=\"/home/${user}/.Xauthority\" \"$remote_script\" || true
+    echo \"Posiflex dual display setup installed: $remote_script\"
   "
 }
 

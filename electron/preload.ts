@@ -45,8 +45,24 @@ contextBridge.exposeInMainWorld('electronPos', {
         printDensity?: 'light' | 'normal' | 'dark'
         lineSpacing?: number
         headerBold?: boolean
+        skipHardwareLeftMargin?: boolean
       },
     ) => ipcRenderer.invoke('pos:receipt:print', { transport, receipt, ...opts }) as Promise<{ ok: boolean; error?: string }>,
+    printHouseAccountStatement: (
+      transport: unknown,
+      statement: unknown,
+      opts?: {
+        columns?: number
+        cut?: boolean
+        printDensity?: 'light' | 'normal' | 'dark'
+        lineSpacing?: number
+        skipHardwareLeftMargin?: boolean
+      },
+    ) =>
+      ipcRenderer.invoke('pos:statement:print', { transport, statement, ...opts }) as Promise<{
+        ok: boolean
+        error?: string
+      }>,
 })
 
 contextBridge.exposeInMainWorld('electronCustomerDisplay', {

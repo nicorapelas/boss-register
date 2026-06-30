@@ -11,6 +11,7 @@ export type ReceiptPrintOpts = {
   printDensity: PrintDensity
   lineSpacing: number
   headerBold: boolean
+  skipHardwareLeftMargin: boolean
 }
 
 export type PosPrinterSettings = {
@@ -169,6 +170,8 @@ export function readPosPrinterSettings(): PosPrinterSettings {
       }
     }
     if (typeof next.columns !== 'number' || !Number.isFinite(next.columns) || next.columns < 24) next.columns = 48
+    // 32 cols was a workaround for hardware left margin on narrow Posiflex units — full width is safe now.
+    if (posTerminalPrinterProfile() === 'posiflex' && next.columns === 32) next.columns = 42
     if (next.printDensity !== 'light' && next.printDensity !== 'normal' && next.printDensity !== 'dark') {
       next.printDensity = DEFAULT_LAYOUT.printDensity
     }
@@ -222,6 +225,7 @@ export function receiptPrintOpts(settings: PosPrinterSettings): ReceiptPrintOpts
     printDensity: settings.printDensity,
     lineSpacing: settings.lineSpacing,
     headerBold: settings.headerBold,
+    skipHardwareLeftMargin: posTerminalPrinterProfile() === 'posiflex',
   }
 }
 

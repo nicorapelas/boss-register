@@ -47,6 +47,50 @@ function round2(n: number) {
   return Math.round(n * 100) / 100
 }
 
+/** Receipt payment lines — match retail sale labels (Card / Cash / Split), not a long parenthetical. */
+function layByPaymentReceiptFields(applied: {
+  cash: number
+  card: number
+  storeCredit?: number
+  tenderedCash?: number
+  changeDue?: number
+}): {
+  paymentLabel: string
+  installmentPaid: number
+  paymentTenders?: { cash?: number; card?: number; storeVoucher?: number }
+  tenderedCash?: number
+  changeDue?: number
+} {
+  const cash = round2(applied.cash)
+  const card = round2(applied.card)
+  const storeCredit = round2(applied.storeCredit ?? 0)
+  const installmentPaid = round2(cash + card + storeCredit)
+  const hasCash = cash > 0.005
+  const hasCard = card > 0.005
+  const hasSc = storeCredit > 0.005
+  const kindCount = [hasCash, hasCard, hasSc].filter(Boolean).length
+  let paymentLabel = 'Cash'
+  if (kindCount >= 2) paymentLabel = 'Split'
+  else if (hasCard) paymentLabel = 'Card'
+  else if (hasSc) paymentLabel = 'Store voucher'
+
+  const paymentTenders =
+    kindCount >= 2
+      ? {
+          ...(hasCash ? { cash } : {}),
+          ...(hasCard ? { card } : {}),
+          ...(hasSc ? { storeVoucher: storeCredit } : {}),
+        }
+      : undefined
+
+  const rawTendered = applied.tenderedCash ?? cash
+  const tenderedCash = rawTendered > 0.005 ? round2(rawTendered) : undefined
+  const changeDue =
+    applied.changeDue != null && applied.changeDue > 0.005 ? round2(applied.changeDue) : undefined
+
+  return { paymentLabel, installmentPaid, paymentTenders, tenderedCash, changeDue }
+}
+
 function vatFromIncl(totalIncl: number, vatRate: number) {
   const net = totalIncl / (1 + vatRate)
   return round2(totalIncl - net)
@@ -344,6 +388,8 @@ export function LayByModal({
   function buildLayByReceiptPayload(input: {
     detail: LayByDetail
     paymentLabel: string
+    installmentPaid?: number
+    paymentTenders?: { cash?: number; card?: number; storeVoucher?: number }
     payment?: { tenderedCash?: number; changeDue?: number }
     receiptTitle: string
     receiptNumber: string
@@ -377,6 +423,10 @@ export function LayByModal({
         slipLabel: cfg.slipLabel,
         timestampIso: input.timestampIso ?? input.detail.createdAt ?? new Date().toISOString(),
         paymentLabel: input.paymentLabel,
+        ...(input.installmentPaid != null && input.installmentPaid > 0.005
+          ? { installmentPaid: input.installmentPaid }
+          : {}),
+        ...(input.paymentTenders ? { paymentTenders: input.paymentTenders } : {}),
         lines: input.detail.lines.map((l) => ({
           qty: l.quantity,
           name: l.name,
@@ -395,8 +445,12 @@ export function LayByModal({
         thankYouLine: input.thankYouLine,
         total: input.detail.totalInclVat,
         balanceRemaining: input.detail.balance,
-        tendered: input.payment?.tenderedCash,
-        changeDue: input.payment?.changeDue,
+        ...(input.payment?.tenderedCash != null && input.payment.tenderedCash > 0.005
+          ? { tendered: input.payment.tenderedCash }
+          : {}),
+        ...(input.payment?.changeDue != null && input.payment.changeDue > 0.005
+          ? { changeDue: input.payment.changeDue }
+          : {}),
       },
     }
   }
@@ -404,6 +458,8 @@ export function LayByModal({
   async function printLayByReceipt(input: {
     detail: LayByDetail
     paymentLabel: string
+    installmentPaid?: number
+    paymentTenders?: { cash?: number; card?: number; storeVoucher?: number }
     payment?: { tenderedCash?: number; changeDue?: number }
     receiptTitle: string
     receiptNumber: string
@@ -421,8 +477,7 @@ export function LayByModal({
       setPrintNotice(`${input.successMessage} (web preview)`)
       return { payloads, successMessage: input.successMessage }
     }
-    const cashTendered = input.payment?.tenderedCash ?? 0
-    if (cashTendered > 0.005) {
+    if (settings.autoOpenDrawer) {
       const d = await kickCashDrawerIfConfigured(settings)
       if (!d.ok) throw new Error(d.error ?? 'Drawer open failed')
     }
@@ -492,21 +547,29 @@ export function LayByModal({
       }
       const created = await apiFetch<LayByDetail>('/lay-bys', { method: 'POST', body: JSON.stringify(body) })
       const firstPayment = created.payments[0]
-      const paymentLabel = firstPayment
-        ? `Deposit paid ${firstPayment.amount.toFixed(2)} (cash ${firstPayment.cashAmount.toFixed(2)}, card ${firstPayment.cardAmount.toFixed(2)})`
-        : `Deposit paid ${paid.toFixed(2)}`
+      const payFields = firstPayment
+        ? layByPaymentReceiptFields({
+            cash: firstPayment.cashAmount,
+            card: firstPayment.cardAmount,
+            storeCredit: firstPayment.storeCreditAmount,
+            tenderedCash: firstPayment.cashAmount,
+            changeDue: 0,
+          })
+        : layByPaymentReceiptFields({
+            cash: paid,
+            card: 0,
+            tenderedCash: cash,
+            changeDue: 0,
+          })
       await printLayByReceipt({
         detail: created,
-        paymentLabel,
-        payment: firstPayment
-          ? {
-              tenderedCash: firstPayment.cashAmount,
-              changeDue: 0,
-            }
-          : {
-              tenderedCash: cash,
-              changeDue: 0,
-            },
+        paymentLabel: payFields.paymentLabel,
+        installmentPaid: payFields.installmentPaid,
+        paymentTenders: payFields.paymentTenders,
+        payment: {
+          tenderedCash: payFields.tenderedCash,
+          changeDue: payFields.changeDue,
+        },
         receiptTitle: 'LAY-BY CREATED',
         receiptNumber: created.layByNumber,
         thankYouLine: 'LAY-BY AGREEMENT CREATED',
@@ -543,12 +606,21 @@ export function LayByModal({
         (d.paymentAppliedCash ?? 0) + (d.paymentAppliedCard ?? 0) + (d.paymentAppliedStoreCredit ?? 0),
       )
       const ch = d.paymentChangeDue ?? 0
+      const payFields = layByPaymentReceiptFields({
+        cash: d.paymentAppliedCash ?? 0,
+        card: d.paymentAppliedCard ?? 0,
+        storeCredit: d.paymentAppliedStoreCredit ?? 0,
+        tenderedCash: d.paymentTenderedCash,
+        changeDue: ch,
+      })
       const printed = await printLayByReceipt({
         detail: d,
-        paymentLabel: `Installment ${applied.toFixed(2)} (cash ${(d.paymentAppliedCash ?? 0).toFixed(2)}, card ${(d.paymentAppliedCard ?? 0).toFixed(2)})`,
+        paymentLabel: payFields.paymentLabel,
+        installmentPaid: payFields.installmentPaid,
+        paymentTenders: payFields.paymentTenders,
         payment: {
-          tenderedCash: d.paymentTenderedCash ?? 0,
-          changeDue: ch,
+          tenderedCash: payFields.tenderedCash,
+          changeDue: payFields.changeDue,
         },
         receiptTitle: 'LAY-BY PAYMENT',
         receiptNumber: d.layByNumber,

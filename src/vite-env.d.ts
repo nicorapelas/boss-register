@@ -35,6 +35,18 @@ interface Window {
         printDensity?: 'light' | 'normal' | 'dark'
         lineSpacing?: number
         headerBold?: boolean
+        skipHardwareLeftMargin?: boolean
+      },
+    ) => Promise<{ ok: boolean; error?: string }>
+    printHouseAccountStatement: (
+      transport: unknown,
+      statement: unknown,
+      opts?: {
+        columns?: number
+        cut?: boolean
+        printDensity?: 'light' | 'normal' | 'dark'
+        lineSpacing?: number
+        skipHardwareLeftMargin?: boolean
       },
     ) => Promise<{ ok: boolean; error?: string }>
   }

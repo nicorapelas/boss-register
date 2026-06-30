@@ -5,7 +5,7 @@ import { registerAuthIpc } from './auth-storage'
 import { initCustomerDisplayModule, onAppReadyCustomerDisplay, setCustomerDisplayMainWindowRef } from './customer-display'
 import { initOperatorTouchMap } from './operator-touch-map'
 import { registerOfflineIpc } from './offline-storage'
-import { buildReceiptEscPos, drawerKick, sendEscPosToPrinter, type PrintDensity, type PrinterTransport, type ReceiptPayload } from './pos-printer'
+import { buildHouseAccountStatementEscPos, buildReceiptEscPos, drawerKick, sendEscPosToPrinter, type HouseAccountStatementPayload, type PrintDensity, type PrinterTransport, type ReceiptPayload } from './pos-printer'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -97,6 +97,7 @@ ipcMain.handle(
           printDensity?: unknown
           lineSpacing?: unknown
           headerBold?: unknown
+          skipHardwareLeftMargin?: unknown
         }
       | undefined,
   ) => {
@@ -111,11 +112,20 @@ ipcMain.handle(
       const lineSpacing =
         typeof args.lineSpacing === 'number' && Number.isFinite(args.lineSpacing) ? args.lineSpacing : undefined
       const headerBold = typeof args.headerBold === 'boolean' ? args.headerBold : undefined
+      const skipHardwareLeftMargin =
+        typeof args.skipHardwareLeftMargin === 'boolean' ? args.skipHardwareLeftMargin : undefined
       const now = new Date().toISOString()
       console.log(
         `[pos-print] ${now} request kind=${transport.kind} columns=${columns ?? 'default'} cut=${cut ?? 'default'} density=${printDensity ?? 'default'} receiptNo=${receipt.receiptNumber ?? 'n/a'} lines=${Array.isArray(receipt.lines) ? receipt.lines.length : 0}`,
       )
-      const bytes = buildReceiptEscPos(receipt, { columns, cut, printDensity, lineSpacing, headerBold })
+      const bytes = buildReceiptEscPos(receipt, {
+        columns,
+        cut,
+        printDensity,
+        lineSpacing,
+        headerBold,
+        skipHardwareLeftMargin,
+      })
       console.log(`[pos-print] ${now} encodedBytes=${bytes.length}`)
       await sendEscPosToPrinter(transport, bytes)
       console.log(`[pos-print] ${now} print-success kind=${transport.kind}`)
@@ -123,6 +133,52 @@ ipcMain.handle(
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Receipt print failed'
       console.error(`[pos-print] ${new Date().toISOString()} print-error ${msg}`)
+      return { ok: false, error: msg }
+    }
+  },
+)
+
+ipcMain.handle(
+  'pos:statement:print',
+  async (
+    _evt,
+    args:
+      | {
+          transport: unknown
+          statement: unknown
+          columns?: unknown
+          cut?: unknown
+          printDensity?: unknown
+          lineSpacing?: unknown
+          skipHardwareLeftMargin?: unknown
+        }
+      | undefined,
+  ) => {
+    try {
+      const transport = parseTransport(args?.transport)
+      if (!transport) return { ok: false, error: 'Invalid printer transport' }
+      if (!args?.statement || typeof args.statement !== 'object') {
+        return { ok: false, error: 'Invalid statement payload' }
+      }
+      const statement = args.statement as HouseAccountStatementPayload
+      const columns = typeof args.columns === 'number' && Number.isFinite(args.columns) ? args.columns : undefined
+      const cut = typeof args.cut === 'boolean' ? args.cut : undefined
+      const printDensity = parsePrintDensity(args?.printDensity)
+      const lineSpacing =
+        typeof args.lineSpacing === 'number' && Number.isFinite(args.lineSpacing) ? args.lineSpacing : undefined
+      const skipHardwareLeftMargin =
+        typeof args.skipHardwareLeftMargin === 'boolean' ? args.skipHardwareLeftMargin : undefined
+      const bytes = buildHouseAccountStatementEscPos(statement, {
+        columns,
+        cut,
+        printDensity,
+        lineSpacing,
+        skipHardwareLeftMargin,
+      })
+      await sendEscPosToPrinter(transport, bytes)
+      return { ok: true }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Statement print failed'
       return { ok: false, error: msg }
     }
   },

@@ -16,6 +16,7 @@ import type {
   CartLine,
   CreateOpenTabModalInput,
   HouseAccountRow,
+  HouseAccountStatement,
   OpenTabDetail,
   OpenTabListItem,
   OpenTabKind,
@@ -66,6 +67,7 @@ import {
 } from '../auth/permissions'
 import {
   AssignPresetModal,
+  ConfirmMessageModal,
   ConfirmPresetDeleteModal,
   HouseAccountsModal,
   LayByModal,
@@ -584,6 +586,7 @@ export function Register() {
   const [exchangeSaleIdModalOpen, setExchangeSaleIdModalOpen] = useState(false)
   const [refundSession, setRefundSession] = useState<RefundSession | null>(null)
   const [exchangeSession, setExchangeSession] = useState<ExchangeSession | null>(null)
+  const [exchangeExitConfirmOpen, setExchangeExitConfirmOpen] = useState(false)
   const [refundNote, setRefundNote] = useState('')
   const [exchangeNote, setExchangeNote] = useState('')
   const [refundCreditPhone, setRefundCreditPhone] = useState('')
@@ -729,10 +732,16 @@ export function Register() {
       cartLineCount: cart.length,
       hasPendingSplit: !!pendingSplit,
       parkedSaleLineCount: parkedSlotLines(saleHoldSlots).length,
+      layByModalOpen,
     })
     return () =>
-      setPosSaleInactivityGuard({ cartLineCount: 0, hasPendingSplit: false, parkedSaleLineCount: 0 })
-  }, [cart.length, pendingSplit, saleHoldSlots])
+      setPosSaleInactivityGuard({
+        cartLineCount: 0,
+        hasPendingSplit: false,
+        parkedSaleLineCount: 0,
+        layByModalOpen: false,
+      })
+  }, [cart.length, pendingSplit, saleHoldSlots, layByModalOpen])
 
   useEffect(() => {
     if (!altPaymentExpanded) {
@@ -1068,10 +1077,14 @@ export function Register() {
   function refundCartKbHandlers(which: 'note' | 'phone') {
     return {
       onFocus: () => openRefundCartKeyboard(which),
-      // Some touchscreen kiosk sessions don't fire focus consistently.
-      // Open keyboard on pointer/tap as a fallback.
-      onPointerDown: () => openRefundCartKeyboard(which),
-      onTouchStart: () => openRefundCartKeyboard(which),
+      onPointerDown: (e: React.PointerEvent) => {
+        e.preventDefault()
+        openRefundCartKeyboard(which)
+      },
+      onTouchStart: (e: React.TouchEvent) => {
+        e.preventDefault()
+        openRefundCartKeyboard(which)
+      },
       onClick: () => openRefundCartKeyboard(which),
       // Keep refund keyboard sticky on kiosk touch sessions.
       // Blur can fire spuriously while tapping between fields and was
@@ -2340,6 +2353,7 @@ export function Register() {
     }
     setError(null)
     setExchangePayoutOpen(true)
+    setSkuInput('')
   }
 
   function closeExchangePayoutStep() {
@@ -2418,9 +2432,13 @@ export function Register() {
     setCart([])
   }
 
-  async function exitExchangeModePrompt() {
+  function exitExchangeModePrompt() {
     if (!exchangeSession) return
-    if (!window.confirm('Leave exchange mode? The exchange cart will be cleared.')) return
+    setExchangeExitConfirmOpen(true)
+  }
+
+  function confirmExitExchangeMode() {
+    setExchangeExitConfirmOpen(false)
     clearExchangeModeAndCart()
     setError(null)
   }
@@ -2477,8 +2495,12 @@ export function Register() {
     let changeDue: number | undefined
     if (settlementKind === 'customer_pays_cash') {
       const due = round2(net)
-      const entered = parseTenderedInput(skuInputRef.current, due)
-      const tendered = Number.isFinite(entered) && entered > 0.005 ? entered : due
+      const entered = parseTenderedInput(skuInputRef.current, 0)
+      if (!Number.isFinite(entered) || entered <= 0.005) {
+        setError(`Enter cash tendered on the register keypad (amount due ${due.toFixed(2)})`)
+        return
+      }
+      const tendered = entered
       if (tendered + 0.03 < due) {
         setError(`Enter cash tendered on keypad (amount due ${due.toFixed(2)})`)
         return
@@ -2540,6 +2562,13 @@ export function Register() {
                 ? normalizePhone(exchangeCreditPhone)
                 : undefined,
           })
+          if (printed.payload) {
+            setLastReceiptForReprint({
+              kind: 'raw',
+              payload: printed.payload,
+              successNotice: 'Exchange receipt printed',
+            })
+          }
           if (!printed.ok) throw new Error(printed.error ?? 'Exchange receipt print failed')
         } catch (e) {
           setError(
@@ -2738,6 +2767,7 @@ export function Register() {
                 cashPaidOut: method === 'cash' ? settlement.netCashOrCardPaidOut : 0,
                 cardPaidOut: method === 'card' ? settlement.netCashOrCardPaidOut : 0,
                 storeCreditIssued: settlement.storeCreditIssued,
+                reversedOnAccount: settlement.reversedOnAccount,
               }
             : {}),
           ...(method === 'store_credit'
@@ -3444,6 +3474,14 @@ export function Register() {
     if (loyalty.loyaltyEntryActiveRef.current) {
       return
     }
+    if (refundPayoutOpen) {
+      return
+    }
+    if (exchangePayoutOpen) {
+      if (key === 'enter') return
+      // Customer owes cash — register keypad is for tender entry only.
+      if (exchangeNetAmount <= 0.005) return
+    }
     if (refundSession && key !== 'clear') {
       return
     }
@@ -3624,7 +3662,7 @@ export function Register() {
 
     function onKeyDown(e: KeyboardEvent) {
       if (settingsObscured) return
-      if (refundSession) return
+      if (refundSession || refundPayoutOpen || exchangePayoutOpen) return
       if (loyalty.loyaltyEntryActiveRef.current) {
         if (e.key === 'Escape') {
           e.preventDefault()
@@ -3709,7 +3747,7 @@ export function Register() {
     }
     // pressKey/addBySku/read of refs are stable enough for this listener.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [registerLeftPanel, refundSession, loyalty.cancelLoyaltyEntry, settingsObscured])
+  }, [registerLeftPanel, refundSession, refundPayoutOpen, exchangePayoutOpen, loyalty.cancelLoyaltyEntry, settingsObscured])
 
   function voidLastItem() {
     clearActiveQuote()
@@ -4181,6 +4219,9 @@ export function Register() {
         refundCard: number
         refundStoreCredit?: number
         storeCreditPhoneDisplay?: string
+        accountCredit?: number
+        houseAccountNumber?: string
+        houseAccountName?: string
         note?: string
       }
       /** Refund slip only: line items and total for this refund (original sale document is unchanged). */
@@ -4411,6 +4452,17 @@ export function Register() {
           }
         : undefined
 
+    const receiptNumber = sale.saleId ?? sale._id.slice(-8)
+    const isNormalSaleReceipt =
+      !opts?.refundPrintSlice &&
+      !opts?.exchangePrintSlice &&
+      !opts?.refundAck &&
+      !opts?.exchangeAck &&
+      opts?.receiptNumberPrefix == null
+    const saleReceiptBarcode = isNormalSaleReceipt
+      ? receiptNumber.replace(/[^0-9A-Za-z]/g, '').toUpperCase() || undefined
+      : undefined
+
     return {
       transport: printerSettings.transport,
       ...receiptPrintOpts(printerSettings),
@@ -4426,7 +4478,8 @@ export function Register() {
         tillNumber: POS_TILL_CODE,
         tillLabel: cfg.tillLabel,
         slipLabel: cfg.slipLabel,
-        receiptNumber: sale.saleId ?? sale._id.slice(-8),
+        receiptNumber,
+        ...(saleReceiptBarcode ? { barcodeValue: saleReceiptBarcode, barcodeCompact: true } : {}),
         timestampIso: ts,
         paymentLabel,
         copyLabel: opts?.copyLabel,
@@ -4531,6 +4584,7 @@ export function Register() {
       cashPaidOut?: number
       cardPaidOut?: number
       storeCreditIssued?: number
+      reversedOnAccount?: number
       /** Digits-only phone used for refund voucher payout (masked on slip). */
       storeCreditPhoneDigits?: string
     },
@@ -4567,6 +4621,7 @@ export function Register() {
       refundStoreCredit > 0.005 && digitsForMask
         ? maskPhoneForReceipt(digitsForMask)
         : undefined
+    const accountCredit = Math.max(0, Number(printSlice?.reversedOnAccount ?? 0))
     const p = receiptPayloadFromSale(sale, {
       copyLabel: 'REFUND',
       receiptTitle: 'REFUND RECEIPT',
@@ -4583,6 +4638,13 @@ export function Register() {
         ...(storeCreditPhoneDisplay && storeCreditPhoneDisplay !== '—'
           ? { storeCreditPhoneDisplay }
           : {}),
+        ...(accountCredit > 0.005
+          ? {
+              accountCredit,
+              houseAccountNumber: sale.houseAccountNumber?.trim(),
+              houseAccountName: sale.houseAccountName?.trim(),
+            }
+          : {}),
         note: ackNoteParts.join(' · '),
       },
     })
@@ -4596,6 +4658,7 @@ export function Register() {
       printDensity: p.printDensity,
       lineSpacing: p.lineSpacing,
       headerBold: p.headerBold,
+      skipHardwareLeftMargin: p.skipHardwareLeftMargin,
     })
     if (!r.ok) return { ok: false, error: r.error ?? 'Refund receipt print failed' }
     return { ok: true }
@@ -4677,8 +4740,8 @@ export function Register() {
       storeCreditIssued?: number
       storeCreditPhoneDigits?: string
     },
-  ): Promise<{ ok: boolean; error?: string }> {
-    if (!window.electronPos || !printSlice) return { ok: true }
+  ): Promise<{ ok: boolean; error?: string; payload?: ReceiptPrintPayload }> {
+    if (!printSlice) return { ok: true }
     const settings = readPosPrinterSettings()
     const net = printSlice.netAmount
     const paymentLabel =
@@ -4717,17 +4780,19 @@ export function Register() {
     })
     if (settings.autoOpenDrawer && ((printSlice.cashPaidOut ?? 0) > 0.005 || (printSlice.cashPaidIn ?? 0) > 0.005)) {
       const d = await kickCashDrawerIfConfigured(settings)
-      if (!d.ok) return { ok: false, error: d.error ?? 'Exchange saved, but drawer failed to open' }
+      if (!d.ok) return { ok: false, error: d.error ?? 'Exchange saved, but drawer failed to open', payload: p }
     }
+    if (!window.electronPos) return { ok: true, payload: p }
     const r = await window.electronPos.printReceipt(p.transport, p.receipt, {
       columns: p.columns,
       cut: p.cut,
       printDensity: p.printDensity,
       lineSpacing: p.lineSpacing,
       headerBold: p.headerBold,
+      skipHardwareLeftMargin: p.skipHardwareLeftMargin,
     })
-    if (!r.ok) return { ok: false, error: r.error ?? 'Exchange receipt print failed' }
-    return { ok: true }
+    if (!r.ok) return { ok: false, error: r.error ?? 'Exchange receipt print failed', payload: p }
+    return { ok: true, payload: p }
   }
 
   function houseAccountPaymentReceiptPayload(input: {
@@ -4787,6 +4852,7 @@ export function Register() {
       printDensity: p.printDensity,
       lineSpacing: p.lineSpacing,
       headerBold: p.headerBold,
+      skipHardwareLeftMargin: p.skipHardwareLeftMargin,
     })
     if (!r.ok) return { ok: false, error: r.error ?? 'Account payment receipt print failed', payload: p }
     return { ok: true, payload: p }
@@ -4833,6 +4899,7 @@ export function Register() {
       printDensity: payload.printDensity,
       lineSpacing: payload.lineSpacing,
       headerBold: payload.headerBold,
+      skipHardwareLeftMargin: payload.skipHardwareLeftMargin,
     })
     if (!r.ok) return { ok: false, error: r.error ?? 'Failed to print reconciliation list' }
     return { ok: true }
@@ -4914,6 +4981,7 @@ export function Register() {
       printDensity: payload.printDensity,
       lineSpacing: payload.lineSpacing,
       headerBold: payload.headerBold,
+      skipHardwareLeftMargin: payload.skipHardwareLeftMargin,
     })
   }
 
@@ -5009,6 +5077,7 @@ export function Register() {
             printDensity: p.printDensity,
             lineSpacing: p.lineSpacing,
             headerBold: p.headerBold,
+            skipHardwareLeftMargin: p.skipHardwareLeftMargin,
           })
           if (!r.ok) {
             setError(r.error ?? 'Receipt print failed')
@@ -5069,6 +5138,30 @@ export function Register() {
       setNotice('Drawer opened')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Drawer command failed')
+    }
+  }
+
+  async function printHouseAccountStatementToDevice(account: HouseAccountRow): Promise<{ ok: boolean; error?: string }> {
+    if (!window.electronPos?.printHouseAccountStatement) {
+      return { ok: false, error: 'Statement print is only available on the POS app' }
+    }
+    const settings = readPosPrinterSettings()
+    setError(null)
+    setNotice(null)
+    try {
+      const statement = await apiFetch<HouseAccountStatement>(
+        `/house-accounts/${encodeURIComponent(account._id)}/statement`,
+      )
+      const r = await window.electronPos.printHouseAccountStatement(
+        settings.transport,
+        statement,
+        receiptPrintOpts(settings),
+      )
+      if (!r.ok) return { ok: false, error: r.error ?? 'Statement print failed' }
+      setNotice(`Statement printed for ${account.accountNumber}`)
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : 'Statement print failed' }
     }
   }
 
@@ -5199,7 +5292,7 @@ export function Register() {
                   </>
                 ) : null}
               </span>
-              <button type="button" className="btn ghost small register-refund-banner-exit" onClick={() => void exitExchangeModePrompt()}>
+              <button type="button" className="btn ghost small register-refund-banner-exit" onClick={exitExchangeModePrompt}>
                 Exit exchange
               </button>
             </div>
@@ -5494,7 +5587,7 @@ export function Register() {
                           disabled={!!refundSession || !!manualReturnActive}
                           onClick={() => {
                             if (exchangeSession) {
-                              void exitExchangeModePrompt()
+                              exitExchangeModePrompt()
                               return
                             }
                             if (activeOpenTabId) {
@@ -6153,14 +6246,19 @@ export function Register() {
                         const vol = l.volumeSegments && l.volumeSegments.length > 0
                         const volShowAvg = (l.volumeSegments?.length ?? 0) > 1
                         const refundMax = l.refundQtyMax
+                        const isExchangeReturn =
+                          exchangeSession && l.refundSaleLineIndex != null && l.quantity > 0.005
                         return (
                         <div
-                          className="cart-line"
+                          className={`cart-line${isExchangeReturn ? ' cart-line--exchange-return' : ''}`}
                           data-cart-line-key={cartLineDomKey(l)}
                           key={l.refundSaleLineIndex != null ? `refund-${l.refundSaleLineIndex}` : `cart-${i}`}
                         >
                           <div className="cart-line-info">
                             <span className="cart-line-name">
+                              {isExchangeReturn ? (
+                                <span className="cart-line-role-badge cart-line-role-badge--return">Return</span>
+                              ) : null}
                               {l.name}
                               {vol ? <span className="muted cart-line-vol-badge"> · Volume</span> : null}
                             </span>
@@ -6689,123 +6787,127 @@ export function Register() {
                   Back
                 </button>
               </div>
-              <div className={`quotes-modal-body${refundCartScreenKbOpen ? ' quotes-modal-body--with-keyboard' : ''}`}>
-                <div className="register-exchange-payout-summary">
-                  <div className="cart-total-row muted">
-                    <span>Return value</span>
-                    <span>−{exchangeReturnTotal.toFixed(2)}</span>
+              <div className={`quotes-modal-body exchange-payout-body${refundCartScreenKbOpen ? ' quotes-modal-body--with-keyboard' : ''}`}>
+                <div className="exchange-payout-scroll">
+                  <div className="register-exchange-payout-summary">
+                    <div className="cart-total-row muted">
+                      <span>Return value</span>
+                      <span>−{exchangeReturnTotal.toFixed(2)}</span>
+                    </div>
+                    <div className="cart-total-row muted">
+                      <span>Replacement value</span>
+                      <span>{exchangeNewTotal.toFixed(2)}</span>
+                    </div>
+                    <div className="cart-total-row cart-total-row--due">
+                      <span>{exchangeNetAmount >= -0.005 ? 'Net due' : 'Credit to customer'}</span>
+                      <strong>{Math.abs(exchangeNetAmount).toFixed(2)}</strong>
+                    </div>
                   </div>
-                  <div className="cart-total-row muted">
-                    <span>Replacement value</span>
-                    <span>{exchangeNewTotal.toFixed(2)}</span>
-                  </div>
-                  <div className="cart-total-row cart-total-row--due">
-                    <span>{exchangeNetAmount >= -0.005 ? 'Net due' : 'Credit to customer'}</span>
-                    <strong>{Math.abs(exchangeNetAmount).toFixed(2)}</strong>
-                  </div>
-                </div>
-                <label className="register-refund-note-field">
-                  <span className="muted small">Exchange note (optional, audit)</span>
-                  <textarea
-                    ref={refundNoteInputRef}
-                    className="register-refund-note-input"
-                    rows={2}
-                    value={exchangeNote}
-                    onChange={(e) => setExchangeNote(e.target.value)}
-                    placeholder="Reason or reference"
-                    inputMode={refundCartScreenKbOpen && refundCartKbTarget === 'note' ? 'none' : 'text'}
-                    {...refundCartKbHandlers('note')}
-                  />
-                </label>
-                {exchangeSession && !exchangeSession.eligibility.eligible && isRoleAdmin(session?.user) ? (
-                  <label
-                    className="register-refund-note-field"
-                    style={{ flexDirection: 'row', alignItems: 'center', gap: '0.5rem' }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={exchangeAdminBypass}
-                      onChange={(e) => setExchangeAdminBypass(e.target.checked)}
+                  <label className="register-refund-note-field">
+                    <span className="muted small">Exchange note (optional, audit)</span>
+                    <textarea
+                      ref={refundNoteInputRef}
+                      className="register-refund-note-input"
+                      rows={2}
+                      value={exchangeNote}
+                      onChange={(e) => setExchangeNote(e.target.value)}
+                      placeholder="Reason or reference"
+                      inputMode={refundCartScreenKbOpen && refundCartKbTarget === 'note' ? 'none' : 'text'}
+                      {...refundCartKbHandlers('note')}
                     />
-                    <span className="muted small">
-                      Admin bypass — allow exchange outside {exchangeSession.eligibility.maxDays}-day window
-                    </span>
                   </label>
-                ) : null}
-                {Math.abs(exchangeNetAmount) <= 0.005 ? (
-                  <button
-                    type="button"
-                    className="btn checkout-btn primary refund-continue-btn"
-                    disabled={busy}
-                    onClick={() => void submitExchangeCheckout('even')}
-                  >
-                    {busy ? 'Processing…' : 'Complete exchange'}
-                  </button>
-                ) : exchangeNetAmount > 0.005 ? (
-                  <>
-                    <p className="muted small register-exchange-cash-hint">
-                      Customer pays <strong>R {exchangeNetAmount.toFixed(2)}</strong> in cash. Enter tender on the
-                      register keypad if they pay more than the amount due.
-                    </p>
-                    <button
-                      type="button"
-                      className="btn checkout-btn cash-checkout-btn refund-continue-btn"
-                      disabled={busy}
-                      onClick={() => void submitExchangeCheckout('customer_pays_cash')}
+                  {exchangeSession && !exchangeSession.eligibility.eligible && isRoleAdmin(session?.user) ? (
+                    <label
+                      className="register-refund-note-field"
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: '0.5rem' }}
                     >
-                      {busy ? 'Processing…' : 'Customer pays cash'}
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <p className="refund-payout-total-line">
-                      Pay customer <strong>R {Math.abs(exchangeNetAmount).toFixed(2)}</strong>
-                    </p>
-                    <div className="refund-payout-actions">
-                      <button
-                        type="button"
-                        className="btn checkout-btn cash-checkout-btn"
-                        disabled={busy}
-                        onClick={() => void submitExchangeCheckout('customer_receives_cash')}
-                      >
-                        {busy ? 'Processing…' : 'Pay out cash'}
-                      </button>
-                    </div>
-                    <div className="refund-payout-voucher-block">
-                      <label className="register-refund-note-field">
-                        <span className="muted small">Phone for store credit (exchange balance)</span>
-                        <input
-                          ref={refundPhoneInputRef}
-                          className="register-refund-note-input"
-                          type="tel"
-                          inputMode={refundCartScreenKbOpen && refundCartKbTarget === 'phone' ? 'none' : 'numeric'}
-                          autoComplete="tel"
-                          value={exchangeCreditPhone}
-                          onChange={(e) => setExchangeCreditPhone(e.target.value)}
-                          placeholder="Required for store credit only"
-                          {...refundCartKbHandlers('phone')}
-                        />
-                      </label>
-                      <p className="muted small register-refund-credit-hint">
-                        Issue the exchange balance as store credit on this phone number instead of cash from the till.
-                      </p>
-                      <button
-                        type="button"
-                        className="btn checkout-btn storecredit-checkout-btn refund-payout-voucher-btn"
-                        disabled={busy}
-                        onClick={() => void submitExchangeCheckout('customer_receives_store_credit')}
-                      >
-                        {busy ? 'Processing…' : 'Issue store credit'}
-                      </button>
-                    </div>
-                  </>
-                )}
+                      <input
+                        type="checkbox"
+                        checked={exchangeAdminBypass}
+                        onChange={(e) => setExchangeAdminBypass(e.target.checked)}
+                      />
+                      <span className="muted small">
+                        Admin bypass — allow exchange outside {exchangeSession.eligibility.maxDays}-day window
+                      </span>
+                    </label>
+                  ) : null}
+                </div>
                 <ScreenKeyboard
                   visible={refundCartScreenKbOpen}
                   layout={refundCartKbTarget === 'phone' ? 'numeric' : 'full'}
                   onAction={handleRefundCartScreenKeyboardAction}
                   className="open-tabs-screen-keyboard register-refund-cart-screen-kb"
                 />
+                <div className="exchange-payout-settle">
+                  {Math.abs(exchangeNetAmount) <= 0.005 ? (
+                    <button
+                      type="button"
+                      className="btn checkout-btn primary refund-continue-btn"
+                      disabled={busy}
+                      onClick={() => void submitExchangeCheckout('even')}
+                    >
+                      {busy ? 'Processing…' : 'Complete exchange'}
+                    </button>
+                  ) : exchangeNetAmount > 0.005 ? (
+                    <>
+                      <p className="muted small register-exchange-cash-hint">
+                        Enter tender on the <strong>register keypad</strong>, then confirm below. Amount due:{' '}
+                        <strong>R {exchangeNetAmount.toFixed(2)}</strong>
+                      </p>
+                      <button
+                        type="button"
+                        className="btn checkout-btn cash-checkout-btn refund-continue-btn"
+                        disabled={busy}
+                        onClick={() => void submitExchangeCheckout('customer_pays_cash')}
+                      >
+                        {busy ? 'Processing…' : 'Customer pays cash'}
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <p className="refund-payout-total-line">
+                        Pay customer <strong>R {Math.abs(exchangeNetAmount).toFixed(2)}</strong>
+                      </p>
+                      <div className="refund-payout-actions">
+                        <button
+                          type="button"
+                          className="btn checkout-btn cash-checkout-btn"
+                          disabled={busy}
+                          onClick={() => void submitExchangeCheckout('customer_receives_cash')}
+                        >
+                          {busy ? 'Processing…' : 'Pay out cash'}
+                        </button>
+                      </div>
+                      <div className="refund-payout-voucher-block">
+                        <label className="register-refund-note-field">
+                          <span className="muted small">Phone for store credit (exchange balance)</span>
+                          <input
+                            ref={refundPhoneInputRef}
+                            className="register-refund-note-input"
+                            type="tel"
+                            inputMode={refundCartScreenKbOpen && refundCartKbTarget === 'phone' ? 'none' : 'numeric'}
+                            autoComplete="tel"
+                            value={exchangeCreditPhone}
+                            onChange={(e) => setExchangeCreditPhone(e.target.value)}
+                            placeholder="Required for store credit only"
+                            {...refundCartKbHandlers('phone')}
+                          />
+                        </label>
+                        <p className="muted small register-refund-credit-hint">
+                          Issue the exchange balance as store credit on this phone number instead of cash from the till.
+                        </p>
+                        <button
+                          type="button"
+                          className="btn checkout-btn storecredit-checkout-btn refund-payout-voucher-btn"
+                          disabled={busy}
+                          onClick={() => void submitExchangeCheckout('customer_receives_store_credit')}
+                        >
+                          {busy ? 'Processing…' : 'Issue store credit'}
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -6977,6 +7079,10 @@ export function Register() {
               ? 'Select an account and record a customer payment against the amount owed.'
               : 'Select an account to charge the current sale (on account). Create or edit accounts in Back Office.'
           }
+          onPrintStatement={async (row) => {
+            const r = await printHouseAccountStatementToDevice(row)
+            if (!r.ok) setError(r.error ?? 'Statement print failed')
+          }}
           onSelectAccount={(row) => {
             if (houseAccountsModalMode === 'payment') {
               setHouseAccountPaymentTarget(row)
@@ -7173,6 +7279,18 @@ export function Register() {
             }}
           />
         ) : null}
+        <ConfirmMessageModal
+          open={exchangeExitConfirmOpen}
+          title="Leave exchange mode?"
+          stackOnPosOverlay
+          confirmLabel="Leave exchange"
+          onClose={() => setExchangeExitConfirmOpen(false)}
+          onConfirm={confirmExitExchangeMode}
+        >
+          <p className="muted confirm-preset-delete-body">
+            The exchange cart will be cleared and you will return to normal sales.
+          </p>
+        </ConfirmMessageModal>
       </PosShell>
     </div>
   )

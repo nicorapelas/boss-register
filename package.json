@@ -10,6 +10,7 @@
     "build": "tsc && vite build",
     "release": "npm run build && electron-builder",
     "deploy:posiflex": "./scripts/deploy-posiflex.sh",
+    "deploy:pos:t3": "./scripts/deploy-posiflex-t3.sh",
     "deploy:pos:ncr": "./scripts/deploy-pos-ncr.sh",
     "deploy:pos:all": "./scripts/deploy-pos-all.sh",
     "deploy:pos": "./scripts/deploy-pos-terminal.sh",

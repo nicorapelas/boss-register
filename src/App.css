@@ -1150,6 +1150,26 @@ html.electron-shell .auth-window-actions button {
   text-align: center;
 }
 
+.exchange-payout-body {
+  max-height: min(88vh, 36rem);
+}
+
+.exchange-payout-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding-bottom: 0.35rem;
+}
+
+.exchange-payout-settle {
+  flex-shrink: 0;
+  margin-top: 0.65rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #4a4a4a;
+}
+
 .refund-continue-btn {
   width: 100%;
   min-height: 52px !important;
@@ -2378,6 +2398,29 @@ html.electron-shell .auth-window-actions button {
   letter-spacing: 0.02em;
   color: #fff;
   background: #6b4c00;
+}
+
+.cart-line-role-badge {
+  display: inline-block;
+  margin-right: 0.4rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+.cart-line-role-badge--return {
+  color: #fff8e1;
+  background: #e65100;
+  box-shadow: 0 0 0 1px rgba(255, 183, 77, 0.35);
+}
+
+.cart-line--exchange-return {
+  border-color: rgba(230, 81, 0, 0.55);
+  background: linear-gradient(180deg, #2a1a0a 0%, #181818 100%);
 }
 
 

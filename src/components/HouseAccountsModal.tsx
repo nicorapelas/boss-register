@@ -9,6 +9,8 @@ export type HouseAccountsModalProps = {
   onClose: () => void
   /** Called when user confirms account selection. */
   onSelectAccount: (account: HouseAccountRow) => void
+  /** Print itemised account statement on receipt printer. */
+  onPrintStatement?: (account: HouseAccountRow) => void | Promise<void>
   actionLabel?: string
   helperText?: string
 }
@@ -17,12 +19,14 @@ export function HouseAccountsModal({
   open,
   onClose,
   onSelectAccount,
+  onPrintStatement,
   actionLabel = 'Use for checkout',
   helperText = 'Select an account to charge the current sale (on account). Create or edit accounts in Back Office.',
 }: HouseAccountsModalProps) {
   const [q, setQ] = useState('')
   const [list, setList] = useState<HouseAccountRow[]>([])
   const [loading, setLoading] = useState(false)
+  const [printingId, setPrintingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [searchKeyboardOpen, setSearchKeyboardOpen] = useState(false)
   const requestSeqRef = useRef(0)
@@ -176,6 +180,25 @@ export function HouseAccountsModal({
                       {row.contactPerson ? ` · ${row.contactPerson}` : ''}
                     </div>
                     <div className="open-tabs-li-actions">
+                      {onPrintStatement ? (
+                        <button
+                          type="button"
+                          className="btn small"
+                          disabled={loading || printingId === row._id}
+                          onClick={() => {
+                            void (async () => {
+                              setPrintingId(row._id)
+                              try {
+                                await onPrintStatement(row)
+                              } finally {
+                                setPrintingId(null)
+                              }
+                            })()
+                          }}
+                        >
+                          {printingId === row._id ? 'Printing…' : 'Statement'}
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         className="btn small primary"

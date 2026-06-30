@@ -35,6 +35,8 @@ export type ReceiptPayload = {
   receiptNumber?: string
   /** Optional barcode printed above receipt number (e.g. lay-by number). */
   barcodeValue?: string
+  /** Shorter/narrower barcode (e.g. sale receipt ID). */
+  barcodeCompact?: boolean
   timestampIso: string
   paymentLabel: string
   lines: ReceiptLine[]
@@ -64,6 +66,8 @@ export type ReceiptPayload = {
   changeDue?: number
   /** Optional line item after payment showing outstanding balance (used by lay-by receipts). */
   balanceRemaining?: number
+  /** Optional lay-by installment / deposit amount paid on this slip (not the agreement total). */
+  installmentPaid?: number
   /** Tighter vertical gap before the item table (e.g. quotations). */
   compactTopMargin?: boolean
   /** e.g. CUSTOMER COPY / STORE COPY (on-account dual receipts). */
@@ -123,6 +127,11 @@ export type ReceiptPayload = {
     refundStoreCredit?: number
     /** Masked phone for store-credit refund line, e.g. "*** *** 8788". */
     storeCreditPhoneDisplay?: string
+    /** House account credit applied (on-account portion reversed). */
+    accountCredit?: number
+    houseAccountNumber?: string
+    /** Company / account holder name from house account. */
+    houseAccountName?: string
     note?: string
   }
   /** Optional dedicated layout for shift/Z reports. */
@@ -243,6 +252,15 @@ function receiptLeftMarginDots(columns: number): number {
   return 28
 }
 
+/** Body width: Posiflex serial printers skip hardware margin and side padding so items match header/barcode width. */
+function receiptContentLayout(columns: number, skipHardwareLeftMargin?: boolean) {
+  const capped = Math.max(32, Math.min(columns, 48))
+  const marginDots = skipHardwareLeftMargin ? 0 : receiptLeftMarginDots(capped)
+  const sidePad = marginDots > 0 ? receiptSidePad(capped) : 0
+  const contentCols = marginDots > 0 ? Math.max(24, capped - sidePad * 2) : capped
+  return { capped, marginDots, sidePad, contentCols }
+}
+
 function setEmph(on: boolean): Buffer {
   return cmd([ESC, 0x45, on ? 1 : 0])
 }
@@ -283,14 +301,14 @@ function appendReceiptCut(chunks: Buffer[], cut: boolean): void {
   if (cut) chunks.push(cutPartial())
 }
 
-function barcodeCode39(value: string): Buffer {
+function barcodeCode39(value: string, compact = false): Buffer {
   const clean = value.toUpperCase().replace(/[^0-9A-Z \-.$/+%]/g, '').trim()
   if (!clean) return Buffer.alloc(0)
   const data = Buffer.from(clean, 'ascii')
   return Buffer.concat([
     cmd([GS, 0x48, 0x02]), // HRI below barcode
-    cmd([GS, 0x68, 0x58]), // barcode height
-    cmd([GS, 0x77, 0x02]), // barcode module width
+    cmd([GS, 0x68, compact ? 0x28 : 0x58]), // barcode height
+    cmd([GS, 0x77, compact ? 0x01 : 0x02]), // barcode module width
     cmd([GS, 0x6b, 0x04]), // CODE39
     data,
     cmd([0x00]), // NUL terminator for CODE39 (m=4)
@@ -310,22 +328,25 @@ export type ReceiptEscPosBuildOpts = {
   printDensity?: PrintDensity
   lineSpacing?: number
   headerBold?: boolean
+  /** Posiflex integrated serial — no GS L margin; body uses full column count. */
+  skipHardwareLeftMargin?: boolean
 }
 
 export function buildReceiptEscPos(payload: ReceiptPayload, opts?: ReceiptEscPosBuildOpts): Buffer {
   const requestedColumns = opts?.columns ?? 42
-  const columns = Math.max(32, Math.min(requestedColumns, 48))
+  const { marginDots, sidePad, contentCols } = receiptContentLayout(
+    requestedColumns,
+    opts?.skipHardwareLeftMargin,
+  )
   const cut = opts?.cut ?? true
   const printDensity = opts?.printDensity ?? 'normal'
   const lineSpacing = opts?.lineSpacing ?? 36
   const headerBold = opts?.headerBold !== false
-  const sidePad = receiptSidePad(columns)
-  const contentCols = Math.max(24, columns - sidePad * 2)
   const pLine = (text = '') => line(`${' '.repeat(sidePad)}${padRight(text, contentCols)}${' '.repeat(sidePad)}`)
 
   const chunks: Buffer[] = []
   chunks.push(cmd([ESC, 0x40])) // Initialize
-  chunks.push(setLeftMarginDots(receiptLeftMarginDots(columns)))
+  chunks.push(setLeftMarginDots(marginDots))
   chunks.push(setLineSpacingDots(lineSpacing))
   chunks.push(setPrintDensity(printDensity))
   // Some ESC/POS printers leak a stray byte (e.g. '0' from ESC 7 n2=48) — feed before header text.
@@ -363,7 +384,7 @@ export function buildReceiptEscPos(payload: ReceiptPayload, opts?: ReceiptEscPos
   if (payload.barcodeValue?.trim()) {
     chunks.push(feed(1))
     chunks.push(setAlign('center'))
-    chunks.push(barcodeCode39(payload.barcodeValue))
+    chunks.push(barcodeCode39(payload.barcodeValue, payload.barcodeCompact === true))
   }
   const showReceiptNumberLine = payload.showReceiptNumberLine !== false
   if (payload.receiptNumber && showReceiptNumberLine) {
@@ -451,7 +472,15 @@ export function buildReceiptEscPos(payload: ReceiptPayload, opts?: ReceiptEscPos
   if (!shift) {
     const qtyHeader = payload.qtyHeader ?? 'QTY'
     const priceHeader = payload.priceHeader ?? 'PRICE'
-    chunks.push(pLine(`${padRight('ITEM DESCRIPTION', contentCols - 14)}${padLeft(qtyHeader, 5)}${padLeft(priceHeader, 9)}`))
+    const descHeader = contentCols >= 36 ? 'ITEM DESCRIPTION' : 'ITEM'
+    const priceCol = contentCols >= 36 ? 9 : 8
+    const qtyCol = 5
+    const descCol = Math.max(8, contentCols - qtyCol - priceCol)
+    chunks.push(
+      pLine(
+        `${padRight(descHeader, descCol)}${padLeft(qtyHeader, qtyCol)}${padLeft(priceHeader, priceCol)}`,
+      ),
+    )
     chunks.push(pLine('-'.repeat(contentCols)))
   }
   if (shift) {
@@ -647,7 +676,12 @@ export function buildReceiptEscPos(payload: ReceiptPayload, opts?: ReceiptEscPos
   chunks.push(setEmph(true))
   chunks.push(totalLine(payload.totalDueLabel ?? 'TOTAL DUE:', money(payload.total)))
   chunks.push(setEmph(false))
-  chunks.push(pLine(`Payment: ${payload.paymentLabel}`))
+  for (const w of wrapText(`Payment: ${payload.paymentLabel}`, contentCols)) {
+    chunks.push(pLine(w))
+  }
+  if (typeof payload.installmentPaid === 'number' && payload.installmentPaid > 0.005) {
+    chunks.push(totalLine('Installment paid:', money(payload.installmentPaid)))
+  }
   const pt = payload.paymentTenders
   if (pt) {
     const cashT = pt.cash && pt.cash > 0.005 ? pt.cash : 0
@@ -707,7 +741,7 @@ export function buildReceiptEscPos(payload: ReceiptPayload, opts?: ReceiptEscPos
   if (typeof payload.balanceRemaining === 'number' && Number.isFinite(payload.balanceRemaining)) {
     chunks.push(totalLine('Balance remaining:', money(Math.max(0, payload.balanceRemaining))))
   }
-  if (typeof payload.tendered === 'number' && Number.isFinite(payload.tendered)) {
+  if (typeof payload.tendered === 'number' && Number.isFinite(payload.tendered) && payload.tendered > 0.005) {
     chunks.push(totalLine(payload.cashTenderedLabel ?? 'CASH TENDERED:', money(payload.tendered)))
   }
   if (typeof payload.changeDue === 'number' && Number.isFinite(payload.changeDue) && payload.changeDue > 0.005) {
@@ -788,7 +822,22 @@ export function buildReceiptEscPos(payload: ReceiptPayload, opts?: ReceiptEscPos
       chunks.push(pLine(`Store credit issued: ${money(refundAck.refundStoreCredit)}`))
     }
     if (refundAck.storeCreditPhoneDisplay?.trim()) {
-      chunks.push(pLine(`Account: ${refundAck.storeCreditPhoneDisplay.trim()}`))
+      chunks.push(pLine(`Voucher account: ${refundAck.storeCreditPhoneDisplay.trim()}`))
+    }
+    if (typeof refundAck.accountCredit === 'number' && refundAck.accountCredit > 0.005) {
+      chunks.push(feed(1))
+      chunks.push(setEmph(true))
+      chunks.push(pLine('HOUSE ACCOUNT CREDIT'))
+      chunks.push(setEmph(false))
+      if (refundAck.houseAccountName?.trim()) {
+        for (const w of wrapText(refundAck.houseAccountName.trim(), contentCols)) {
+          chunks.push(pLine(w))
+        }
+      }
+      if (refundAck.houseAccountNumber?.trim()) {
+        chunks.push(pLine(`Account no: ${refundAck.houseAccountNumber.trim()}`))
+      }
+      chunks.push(pLine(`Amount credited: ${money(refundAck.accountCredit)}`))
     }
     if (refundAck.note?.trim()) {
       for (const w of wrapText(`Reason: ${refundAck.note.trim()}`, contentCols)) {
@@ -839,6 +888,153 @@ export function printerTransportErrorMessage(err: unknown, transport: PrinterTra
     return `Cannot configure serial port ${path}. Check permissions (dialout group) and that the device exists.`
   }
   return raw.length > 240 ? `${raw.slice(0, 237)}…` : raw
+}
+
+export type HouseAccountStatementPayload = {
+  generatedAt: string
+  periodFrom: string
+  periodTo: string
+  store: { name: string; addressLines: string[]; phone: string; vatNumber: string }
+  account: {
+    accountNumber: string
+    name: string
+    vatNumber?: string
+    companyRegistrationNumber?: string
+    addressLines?: string[]
+  }
+  openingBalance: number
+  closingBalance: number
+  rows: Array<{
+    id: string
+    date: string
+    kind: 'charge' | 'payment'
+    debit: number
+    credit: number
+    balanceAfter: number
+    note?: string
+    cashAmount?: number
+    cardAmount?: number
+    charge?: {
+      saleId?: string
+      tillCode?: string
+      purchaseOrderNumber?: string
+      onAccountAmount: number
+      saleTotal: number
+      items: Array<{ name: string; quantity: number; unitPrice: number; lineTotal: number }>
+      summaryOnly?: boolean
+    }
+  }>
+}
+
+export type HouseAccountStatementEscPosOpts = {
+  columns?: number
+  cut?: boolean
+  printDensity?: PrintDensity
+  lineSpacing?: number
+  skipHardwareLeftMargin?: boolean
+}
+
+export function buildHouseAccountStatementEscPos(
+  payload: HouseAccountStatementPayload,
+  opts?: HouseAccountStatementEscPosOpts,
+): Buffer {
+  const { marginDots, sidePad, contentCols } = receiptContentLayout(
+    opts?.columns ?? 42,
+    opts?.skipHardwareLeftMargin,
+  )
+  const printDensity = opts?.printDensity ?? 'normal'
+  const lineSpacing = opts?.lineSpacing ?? 36
+  const cut = opts?.cut ?? true
+  const pLine = (text = '') => line(`${' '.repeat(sidePad)}${padRight(text, contentCols)}${' '.repeat(sidePad)}`)
+
+  const chunks: Buffer[] = []
+  chunks.push(cmd([ESC, 0x40]))
+  chunks.push(setLeftMarginDots(marginDots))
+  chunks.push(setLineSpacingDots(lineSpacing))
+  chunks.push(setPrintDensity(printDensity))
+  chunks.push(feed(2))
+  chunks.push(setAlign('center'))
+  chunks.push(setEmph(true))
+  chunks.push(line(payload.store.name))
+  chunks.push(setEmph(false))
+  for (const addr of payload.store.addressLines) {
+    if (addr.trim()) chunks.push(line(addr.trim()))
+  }
+  if (payload.store.phone) chunks.push(line(`TEL ${payload.store.phone}`))
+  if (payload.store.vatNumber) chunks.push(line(`VAT ${payload.store.vatNumber}`))
+  chunks.push(feed(1))
+  chunks.push(setEmph(true))
+  chunks.push(line('ACCOUNT STATEMENT'))
+  chunks.push(setEmph(false))
+  chunks.push(feed(1))
+  chunks.push(setAlign('left'))
+  chunks.push(pLine(payload.account.name))
+  chunks.push(pLine(`Account ${payload.account.accountNumber}`))
+  if (payload.account.vatNumber?.trim()) chunks.push(pLine(`VAT ${payload.account.vatNumber.trim()}`))
+  chunks.push(
+    pLine(`${formatDdMmYyyy(new Date(payload.periodFrom))} - ${formatDdMmYyyy(new Date(payload.periodTo))}`),
+  )
+  chunks.push(pLine(`Opening ${money(payload.openingBalance)}`))
+  chunks.push(setEmph(true))
+  chunks.push(pLine(`BALANCE DUE ${money(payload.closingBalance)}`))
+  chunks.push(setEmph(false))
+  chunks.push(pLine('-'.repeat(contentCols)))
+
+  for (const row of payload.rows) {
+    const dt = formatDdMmYyyy(new Date(row.date))
+    if (row.kind === 'charge' && row.charge) {
+      const c = row.charge
+      const head = [dt, c.saleId ? `Sale ${c.saleId}` : 'Charge', c.purchaseOrderNumber ? `PO ${c.purchaseOrderNumber}` : '']
+        .filter(Boolean)
+        .join(' · ')
+      chunks.push(setEmph(true))
+      chunks.push(pLine(head.slice(0, contentCols)))
+      chunks.push(setEmph(false))
+      if (c.items.length > 0) {
+        for (const item of c.items) {
+          const nameCol = Math.max(10, contentCols - 14)
+          const qty = padLeft(String(item.quantity), 4)
+          const lt = padLeft(money(item.lineTotal), 10)
+          const nameLines = wrapText(item.name, nameCol)
+          chunks.push(pLine(`${padRight(nameLines[0] ?? '', nameCol)}${qty}${lt}`))
+          for (const extra of nameLines.slice(1)) {
+            chunks.push(pLine(padRight(extra, nameCol)))
+          }
+        }
+        if (c.saleTotal > c.onAccountAmount + 0.005) {
+          chunks.push(pLine(`Sale ${money(c.saleTotal)} · Acct ${money(c.onAccountAmount)}`))
+        }
+      } else if (row.note?.trim()) {
+        for (const w of wrapText(row.note.trim(), contentCols)) chunks.push(pLine(w))
+      }
+      const labelCol = Math.max(8, contentCols - 10)
+      chunks.push(pLine(`${padRight('Charge', labelCol)}${padLeft(money(row.debit), contentCols - labelCol)}`))
+      chunks.push(pLine(`${padRight('Balance', labelCol)}${padLeft(money(row.balanceAfter), contentCols - labelCol)}`))
+      chunks.push(pLine('-'.repeat(contentCols)))
+      continue
+    }
+    const payParts = [
+      row.note,
+      row.cashAmount != null && row.cashAmount > 0 ? `cash ${money(row.cashAmount)}` : '',
+      row.cardAmount != null && row.cardAmount > 0 ? `card ${money(row.cardAmount)}` : '',
+    ]
+      .filter(Boolean)
+      .join(' · ')
+    chunks.push(pLine(`${dt} Payment`))
+    if (payParts) {
+      for (const w of wrapText(payParts, contentCols)) chunks.push(pLine(w))
+    }
+    const labelCol = Math.max(8, contentCols - 10)
+    chunks.push(pLine(`${padRight('Credit', labelCol)}${padLeft(money(row.credit), contentCols - labelCol)}`))
+    chunks.push(pLine(`${padRight('Balance', labelCol)}${padLeft(money(row.balanceAfter), contentCols - labelCol)}`))
+    chunks.push(pLine('-'.repeat(contentCols)))
+  }
+
+  chunks.push(feed(1))
+  chunks.push(setAlign('center'))
+  chunks.push(pLine('END OF STATEMENT'))
+  appendReceiptCut(chunks, cut)
+  return Buffer.concat(chunks)
 }
 
 async function configureSerialPort(path: string, baudRate: number): Promise<void> {
